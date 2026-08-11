@@ -1,2 +1,33 @@
-# hailab-fail-closed-engine-
-Autonomous Fail-Closed &amp; Zeroization Engine Reference Implementation⁠
+# 🛡️ HAI Lab: Sovereign Fail-Closed & Zeroization Engine
+
+An autonomous, code-enforced security framework designed for Edge nodes operating in high-risk or hostile physical environments.
+
+This repository provides the reference implementation and architecture specifications for deterministic threat handling, instant RAM key zeroization, and network isolation.
+
+---
+
+## 🏛️ Core Architectural Logic
+
+The engine operates on a continuous 50ms monitoring loop, implementing a two-layer security defense:
+
+1. **Layer 1: Emergency Zeroization (Active Threat / Physical Siege)**
+   * **Trigger:** Direct duress signal or chassis physical breach.
+   * **Action:** Instant destruction of cryptographic keys from memory via kernel operations (`shred`/`sync`).
+   * **Exit Code:** `101`.
+
+2. **Layer 2: Hard-Stop Fail-Closed (Integrity Degradation)**
+   * **Trigger:** Heartbeat signal loss exceeding the **Hysteresis Threshold** (3 consecutive cycles / 150ms).
+   * **Action:** Complete network interface isolation via `iptables` drop rules.
+   * **Exit Code:** `102`.
+
+---
+
+## 🛠️ Repository Structure
+
+```text
+├── docs/
+│   ├── HAI_Lab_Sovereign_API_Spec.pdf
+│   └── Annex_A_Technical_Specification.pdf
+├── src/
+│   └── engine.py        # Reference Python logic implementation
+└── README.md
