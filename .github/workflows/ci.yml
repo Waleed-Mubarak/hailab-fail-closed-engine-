@@ -26,7 +26,7 @@ jobs:
 
     - name: Run Engine Unit Tests
       run: |
-        PYTHONPATH=. pytest test_engine.py
+        python -m pytest -o pythonpath=. test_engine.py
 
     - name: Build Docker Simulation Image
       run: |
