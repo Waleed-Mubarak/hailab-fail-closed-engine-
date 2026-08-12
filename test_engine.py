@@ -1,7 +1,8 @@
-import pytest
 import sys
+import os
 
-sys.path.insert(0, 'src')
+# إضافة مجلد src للمسار صراحة لضمان عدم حدوث أي خطأ
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
 
 from engine import (
     check_secure_heartbeat,
