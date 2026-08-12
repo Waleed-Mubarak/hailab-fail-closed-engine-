@@ -25,9 +25,10 @@ jobs:
           pip install pytest
 
       - name: Run Engine Unit Tests
+        env:
+          PYTHONPATH: .
         run: |
-          pip install -e .
-          pytest
+          pytest test_engine.py
 
       - name: Build Docker Simulation Image
         run: |
