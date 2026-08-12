@@ -25,7 +25,10 @@ jobs:
           pip install pytest
 
       - name: Run Engine Unit Tests
-        env:
-          PYTHONPATH: .
         run: |
+          pip install -e .
           pytest
+
+      - name: Build Docker Simulation Image
+        run: |
+          docker build -t hailab-fail-closed-engine:latest .
