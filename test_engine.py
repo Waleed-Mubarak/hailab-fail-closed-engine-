@@ -1,5 +1,5 @@
 import pytest
-from src.engine import (
+from engine import (
     check_secure_heartbeat,
     verify_chassis_sensors,
     check_duress_trigger
