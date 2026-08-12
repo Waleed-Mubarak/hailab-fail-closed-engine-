@@ -26,9 +26,9 @@ jobs:
 
       - name: Run Engine Unit Tests
         env:
-          PYTHONPATH: src
+          PYTHONPATH: .
         run: |
-          pytest
+          pytest src/test_engine.py
 
       - name: Build Docker Simulation Image
         run: |
