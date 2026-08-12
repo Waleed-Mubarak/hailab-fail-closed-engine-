@@ -32,4 +32,6 @@ jobs:
 
     - name: Build Docker Simulation Image
       run: |
-        docker build -t hailab-fail-closed-engine:latest .
+        docker build -t hailab-fail-closed-engine:latest
+       # trigger workflow
+ .
