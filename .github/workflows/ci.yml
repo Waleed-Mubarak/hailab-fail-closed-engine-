@@ -28,8 +28,4 @@ jobs:
         env:
           PYTHONPATH: src
         run: |
-          pytest test_engine.py
-
-      - name: Build Docker Simulation Image
-        run: |
-          docker build -t hailab-fail-closed-engine:latest .
+          pytest
