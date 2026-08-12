@@ -28,7 +28,7 @@ jobs:
         env:
           PYTHONPATH: .
         run: |
-          pytest src/test_engine.py
+          pytest test_engine.py
 
       - name: Build Docker Simulation Image
         run: |
