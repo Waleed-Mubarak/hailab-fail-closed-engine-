@@ -26,6 +26,6 @@ jobs:
 
       - name: Run Engine Unit Tests
         env:
-          PYTHONPATH: src
+          PYTHONPATH: .
         run: |
           pytest
