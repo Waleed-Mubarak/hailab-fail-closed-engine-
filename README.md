@@ -37,11 +37,11 @@ The engine operates on a continuous 50ms monitoring loop, implementing a robust 
 
 ---
 ## 🚀 Quick Start & Installation
-
+⁠⁠```bash
 git clone https://github.com/Waleed-Mubarak/fail-closed-zeroization-engine.git
 ---
 
 ## 📄 License
 
-This project is open-source, released under the [MIT License](LICENSE).
+This project is open-source, released **under** the [MIT License](LICENSE).
 
