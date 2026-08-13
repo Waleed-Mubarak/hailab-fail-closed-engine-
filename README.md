@@ -34,7 +34,7 @@ The engine operates on a continuous 50ms monitoring loop, implementing a robust 
 ├── src/
 │   └── engine.py        # Reference Python logic implementation
 └── README.md
-
+⁠```⁠
 ---
 ## 🚀 Quick Start & Installation
 ⁠⁠```bash
