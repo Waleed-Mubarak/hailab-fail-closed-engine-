@@ -19,6 +19,10 @@ The engine operates on a continuous 50ms monitoring loop, implementing a two-lay
    * **Trigger:** Heartbeat signal loss exceeding the **Hysteresis Threshold** (3 consecutive cycles / 150ms).
    * **Action:** Complete network interface isolation via `iptables` drop rules.
    * **Exit Code:** `102`.
+3. **Layer 3: Immutable Cryptographic Audit Trail**
+   * **Trigger**: Any security-relevant state change (Initialization, Duress Detection, Zeroization).
+   * **Action**: Generates SHA-256 cryptographically linked logs preserving event history immutability.
+   * **Integrity Guarantee**: Sequential hashing ($Hash_n = \text{SHA256}(Timestamp + Event + Details + Hash_{n-1})$) prevents log tampering or retro-active modification.
 
 ---
 
