@@ -21,7 +21,7 @@ class TestTurkashEngine(unittest.TestCase):
         engine.check_duress_trigger(True)
         
         # التأكد من التطهير والدمير الكامل للمفتاح
-        self.assertEqual(engine.get_key_status(), "ZEROIZED")
+        self.assertEqual(engine.get_key_status(), "ZEROIZED_SECURE")
         self.assertTrue(engine.verify_chassis_sensors())
         for byte in engine._secure_ram_key:
             self.assertAlmostEqual(byte, 0)
