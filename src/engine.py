@@ -68,3 +68,20 @@ class TurkashEngine:
         if self.is_zeroized:
             return "ZEROIZED_SECURE"
         return "ACTIVE"
+    def add_signature(self, admin_id: str):
+        """إضافة توقيع رقمي للمسؤول والتحقق من النصاب."""
+        self.authorized_admins.add(admin_id)
+        self._log_event("ADMIN_SIGNATURE_ADDED", {"admin_id": admin_id})
+
+    def check_quorum(self, required_count: int = 2) -> bool:
+        """التحقق مما إذا تم استيفاء النصاب المطلوب من المشرفين."""
+        return len(self.authorized_admins) >= required_count
+
+    def execute_critical_operation_mpa(self, required_count: int = 2) -> str:
+        """تنفيذ العمليات الحرجة فقط عند اكتمال النصاب المتعدد."""
+        if self.check_quorum(required_count):
+            self._log_event("CRITICAL_OPERATION_AUTHORIZED", {"quorum": len(self.authorized_admins)})
+            return "OPERATION_SUCCESS: Quorum reached."
+        else:
+            self._log_event("CRITICAL_OPERATION_DENIED", {"reason": "insufficient_signatures"})
+            return "OPERATION_DENIED: Insufficient signatures."
