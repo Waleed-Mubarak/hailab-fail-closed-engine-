@@ -1,38 +1,29 @@
-# 🛡️ HAI Lab: Sovereign Fail-Closed & Zeroization Engine
+# Turkash ASV-SDP Engine
 
-An autonomous, code-enforced security framework designed for Edge nodes operating in high-risk or hostile physical environments.
-
-This repository provides the reference implementation and architecture specifications for deterministic threat handling, instant RAM key zeroization, and cryptographic state tracking.
-
----
-
-## 🏛️ Core Architectural Logic
-
-* **Trigger:** Any security-relevant state change (Initialization, Duress Detection, Zeroization).
-* **Action:** Generates SHA-256 cryptographically linked logs preserving event history immutability.
-* **Integrity Guarantee:** Sequential hashing (Hash_n = SHA256(Timestamp + Event + Details + Hash_{n-1})) prevents log tampering or retroactive modification.
-
----
+Turkash ASV-SDP: Upgraded Sovereign Engine combining legacy cryptographic integrity with Hysteresis suppression and Multi-Party Authorization (MPA).
 
 ## 📂 Repository Structure
 
-    ├── docs/
-│   ├── HAI_Lab_Sovereign_API_Spec.pdf
-│   ├── Annex_A_Technical_Specification.pdf
-│   └── Turkash_ASV_SDP_White_Paper_V2.pdf
-├── src/
-│   └── engine.py                           # # Reference
-└── README.md
-
-
----
+docs/
+    ├── HAI_Lab_Sovereign_API_Spec.pdf
+    ├── Annex_A_Technical_Specification.pdf
+    └── Turkash_ASV_SDP_White_Paper_V2.pdf
+src/
+    └── engine.py
+README.md
 
 ## 🚀 Quick Start & Installation
 
-    git clone https://github.com/Waleed-Mubarak/fail-closed-zeroization-engine.git
+git clone https://github.com/Waleed-Mubarak/fail-closed-zeroization-engine
 
----
+To test the fail-closed engine, hysteresis suppression, and Multi-Party Authorization (MPA):
+
+from src.engine import TurkashEngine
+
+engine = TurkashEngine()
+engine.check_duress_trigger(True)
+engine.authorize_recovery("Admin_A")
+engine.authorize_recovery("Admin_B")
 
 ## 📄 License
-
-This project is open-source, released under the [MIT License](LICENSE).
+This project is open-source under the MIT License.
