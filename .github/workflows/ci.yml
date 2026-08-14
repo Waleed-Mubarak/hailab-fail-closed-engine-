@@ -21,4 +21,4 @@ jobs:
 
     - name: Run Unit Tests
       run: |
-        PYTHONPATH=. python -m unittest tests.test_engine
+        python tests/test_engine.py
