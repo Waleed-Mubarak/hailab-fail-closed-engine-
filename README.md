@@ -17,11 +17,13 @@ This repository provides the reference implementation and architecture specifica
 ## 📂 Repository Structure
 
     ├── docs/
-    │   ├── HAI_Lab_Sovereign_API_Spec.pdf
-    │   └── Annex_A_Technical_Specification.pdf
-    └── src/
-        └── engine.py        # Reference Python logic implementation
-    └── README.md
+│   ├── HAI_Lab_Sovereign_API_Spec.pdf
+│   ├── Annex_A_Technical_Specification.pdf
+│   └── Turkash_ASV_SDP_White_Paper_V2.pdf
+├── src/
+│   └── engine.py                           # # Reference
+└── README.md
+
 
 ---
 
