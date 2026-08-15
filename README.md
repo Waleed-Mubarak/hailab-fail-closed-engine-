@@ -14,6 +14,11 @@ README.md
 
 ## 🚀 Quick Start & Installation
 
+### 🚀 Quick Duress Simulation
+To test edge node behavior and observe the deterministic fail-closed and zeroization sequence under duress:
+```bash
+python3 simulate_duress.py
+
 git clone https://github.com/Waleed-Mubarak/fail-closed-zeroization-engine
 
 To test the fail-closed engine, hysteresis suppression, and Multi-Party Authorization (MPA):
