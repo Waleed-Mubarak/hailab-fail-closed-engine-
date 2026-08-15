@@ -8,19 +8,19 @@ src/
 
 To test edge node behavior and observe the deterministic fail-closed and zeroization under duress:
 
-bash
+
 python3 simulate_duress.py
 
 
 ## 🚀 Quick Start & Installation
 
-bash
+
 git clone [https://github.com/Waleed-Mubarak/fail-closed-zeroization-engine](https://github.com/Waleed-Mubarak/fail-closed-zeroization-engine)
 
 
 To test the fail-closed engine, hysteresis suppression, and Multi-Party Authorization (MPA):
 
-python
+
 from src.engine import TurkashEngine
 
 engine = TurkashEngine()
