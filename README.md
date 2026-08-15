@@ -18,6 +18,7 @@ To test edge node behavior and observe the deterministic fail-closed and zeroiza
 ```bash
 python3 simulate_duress.py
 ⁠```⁠
+
 ## 🚀 Quick Start & Installation
 
 ```bash
