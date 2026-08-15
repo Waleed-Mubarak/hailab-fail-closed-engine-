@@ -14,7 +14,6 @@ src/
 ## 🚀 Quick Duress Simulation
 
 To test edge node behavior and observe the deterministic fail-closed and zeroization sequence under duress:
-
 ```bash
 python3 simulate_duress.py
 ⁠```⁠
