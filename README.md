@@ -24,6 +24,7 @@ git clone [https://github.com/Waleed-Mubarak/fail-closed-zeroization-engine](htt
 
 To test the fail-closed engine, hysteresis suppression, and Multi-Party Authorization (MPA):
 
+```python
 
 from src.engine import TurkashEngine
 
@@ -31,7 +32,7 @@ engine = TurkashEngine()
 engine.check_duress_trigger(True)
 engine.authorize_recovery("Admin_A")
 engine.authorize_recovery("Admin_B")
-
+```
 
 ## 📄 License
 
