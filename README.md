@@ -1,3 +1,5 @@
+![Architecture Diagram](docs/architecture.png)
+
 docs/
     ├── Annex_A_Technical_Specification.pdf
     └── Turkash_ASV_SDP_White_Paper_V2.pdf
