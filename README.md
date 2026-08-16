@@ -1,4 +1,6 @@
-![Architecture Diagram](docs/architecture.png)
+# Autonomous Fail-Closed & Zeroization Engine
+**Security-first architecture for mission-critical edge nodes, designed to prevent data extraction and ensure deterministic destruction under duress.**
+
 
 docs/
     ├── Annex_A_Technical_Specification.pdf
