@@ -36,3 +36,11 @@ engine.authorize_recovery("Admin_B")
 ## 📄 License
 
 This project is open-source under the MIT License.
+
+---
+
+### 📊 Project Status & Badges
+
+![CI Status](https://github.com/Waleed-Mubarak/hailab-fail-closed-engine-/actions/workflows/ci.yml/badge.svg)
+![Python Version](https://img.shields.io/badge/python-3.10%252B-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
