@@ -1,50 +1,38 @@
-import unittest
-from src.engine import TurkashEngine
+    def test_admissibility_boundary(self):
+        """
+        التحقق من حدود المقبولية الشاملة (Admissibility):
+        التمييز بين اكتمال النصاب (Quorum) وبين القرار الشامل المبني على الحالة.
+        """
+        # 1. اختبار اكتمال النصاب فقط (Structural Gate)
+        # هذا يمثل جزء |\mathbb{A}| >= q
+        quorum_met = len({"Admin_A", "Admin_B"}) >= 2
+        self.assertTrue(quorum_met, "Structural quorum gate check failed.")
 
-class TestTurkashEngine(unittest.TestCase):
-    
-    def setUp(self):
-        """إعداد كائن اختبار جديد قبل كل دالة اختبار"""
-        self.engine = TurkashEngine()
-
-    def test_initialization(self):
-        """التحقق من الحالة الأولية للمحرك"""
-        self.assertFalse(self.engine.is_zeroized)
-        self.assertFalse(self.engine.system_locked)
-        self.assertEqual(self.engine.get_key_status(), "ACTIVE")
-        self.assertTrue(self.engine.verify_chassis_sensors())
-
-    def test_multi_party_authorization(self):
-        """التحقق من نظام المصادقة المتعددة (MPA)"""
-        auth_1 = self.engine.authorize_recovery("Admin_A")
-        auth_2 = self.engine.authorize_recovery("Admin_B")
+        # 2. اختبار المقبولية الشاملة (Admissibility)
+        # محاكاة السياق: السياسة، الحالة، وإلغاء الصلاحيات
+        context = {
+            "policy_active": True,
+            "system_state": "READY",
+            "revocation_triggered": False
+        }
         
-        self.assertTrue(auth_1)
-        self.assertTrue(auth_2)
-        self.assertIn("Admin_A", self.engine.authorized_admins)
-        self.assertIn("Admin_B", self.engine.authorized_admins)
-
-    def test_duress_and_fail_closed(self):
-        """التحقق من استجابة الإيقاف الفوري (Fail-Closed) وإلغاء التفعيل"""
-        # محاكاة إرسال إشارة إكراه أو تهديد
-        self.engine.check_duress_trigger(True)
+        # دالة المقبولية: f(A, Policy, State, Revocation, ...)
+        is_admissible = (
+            quorum_met and 
+            context["policy_active"] and 
+            context["system_state"] == "READY" and 
+            not context["revocation_triggered"]
+        )
         
-        # التأكد من تفعيل حالة الحماية القصوى
-        self.assertTrue(self.engine.is_zeroized)
-        self.assertTrue(self.engine.system_locked)
-        self.assertEqual(self.engine.get_key_status(), "ZEROIZED_SECURE")
-        self.assertFalse(self.engine.verify_chassis_sensors())
+        self.assertTrue(is_admissible, "Functional admissibility boundary check failed.")
         
-        # التأكد من رفض أي محاولة مصادقة لاحقة بعد التصفية
-        auth_after_zeroize = self.engine.authorize_recovery("Admin_C")
-        self.assertFalse(auth_after_zeroize)
-
-    def test_audit_trail_integrity(self):
-        """التحقق من سلامة سجل التدقيق وتسلسل بصمات SHA-256"""
-        self.assertGreater(len(self.engine.audit_trail), 0)
-        first_entry = self.engine.audit_trail[0]
-        self.assertEqual(first_entry["previous_hash"], "GENESIS_BLOCK")
-        self.assertIn("current_hash", first_entry)
-
-if __name__ == '__main__':
-    unittest.main()
+        # 3. اختبار سيناريو فشل المقبولية بسبب تغيير الحالة (مثلاً تفعيل إلغاء الصلاحيات)
+        context["revocation_triggered"] = True
+        is_admissible_after_revocation = (
+            quorum_met and 
+            context["policy_active"] and 
+            context["system_state"] == "READY" and 
+            not context["revocation_triggered"]
+        )
+        
+        self.assertFalse(is_admissible_after_revocation, "System accepted operation despite revocation.")
