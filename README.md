@@ -9,6 +9,18 @@ src/
     └── engine.py
 
 ## 🚀 Quick Duress Simulation
+## Architectural Boundaries & Admissibility Model
+
+To ensure strict separation of concerns, the Turkash ASV-SDP engine enforces the following operational boundaries:
+
+1. **Quorum vs. Admissibility:** 
+   - Reaching the administrative quorum ($|\mathbb{A}| \ge q$) acts strictly as a structural gate. 
+   - Full execution admissibility is evaluated through a broader contextual function: 
+     $$\text{Admissibility}(T, t) = f(\mathbb{A}, \text{Policy}, \text{State}, \text{Revocation}, \dots)$$
+
+2. **Operational Integrity:**
+   - Multi-sample temporal filtering and transient noise suppression are handled upstream.
+   - `verify_chassis_sensors()` functions strictly as an engine-state gate, ensuring clear boundaries between hardware triggers and logical authorization.
 
 To test edge node behavior and observe the deterministic fail-closed and zeroization under duress:
 
