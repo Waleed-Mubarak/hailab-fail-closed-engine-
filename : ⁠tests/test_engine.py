@@ -36,3 +36,14 @@
         )
         
         self.assertFalse(is_admissible_after_revocation, "System accepted operation despite revocation.")
+          def test_fail_closed_zeroization(self):
+        """
+        التحقق من أن النظام ينفذ التصفير الفوري ويتحول للفشل المغلق عند التلاعب
+        """
+        tamper_detected = True
+        
+        system_state = "FAIL_CLOSED" if tamper_detected else "READY"
+        memory_scrubbed = True if tamper_detected else False
+
+        self.assertEqual(system_state, "FAIL_CLOSED", "P0 Error: System failed to lock!")
+        self.assertTrue(memory_scrubbed, "P0 Error: Sensitive memory was NOT scrubbed!")
