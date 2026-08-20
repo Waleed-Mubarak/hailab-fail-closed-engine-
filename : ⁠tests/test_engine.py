@@ -4,23 +4,28 @@ from engine import TurkashEngine
 class TestTurkashEngineRemediationv2(unittest.TestCase):
 
     def test_quorum_satisfied_admissibility_invalid_execution_denied(self):
-        """1. Quorum satisfied + admissibility invalid -> execution denied"""
+        """1. Quorum satisfied + admissibility invalid -> execution denied via admissibility gate"""
         engine = TurkashEngine()
+        # بناء النصاب أولاً بينما المحرك نشط
         engine.add_signature("Admin_A")
         engine.add_signature("Admin_B")
-        # تفعيل حالة التصفير لجعل المقبولية غير صالحة (Admissibility Invalid)
+        
+        # إبطال المقبولية بعد اكتمال النصاب (مثل تفعيل التصفير)
         engine.execute_zeroization()
         
         result = engine.execute_critical_operation_mpa(required_count=2)
+        # التأكد من أن الرفض ناتج عن بطلان القبول/الحالة الطرفية وليس نقص النصاب
         self.assertIn("OPERATION_DENIED", result, "P0-01 Error: Executed despite invalid admissibility!")
 
     def test_quorum_satisfied_terminal_state_execution_denied(self):
         """2. Quorum satisfied + terminal state -> execution denied"""
         engine = TurkashEngine()
-        engine.execute_zeroization() # الدخول في الحالة النهائية Terminal State
-        
+        # بناء النصاب أولاً
         engine.add_signature("Admin_A")
         engine.add_signature("Admin_B")
+        
+        # الدخول في الحالة النهائية Terminal State بعد اكتمال النصاب
+        engine.execute_zeroization() 
         
         result = engine.execute_critical_operation_mpa(required_count=2)
         self.assertIn("OPERATION_DENIED", result, "P0-02 Error: Executed in terminal state!")
@@ -55,9 +60,15 @@ class TestTurkashEngineRemediationv2(unittest.TestCase):
         self.assertTrue(engine.is_zeroized, "P0-03 Error: External state resurrection succeeded!")
 
     def test_every_consequence_bearing_operation_passes_through_admissibility_boundary(self):
-        """6. Every consequence-bearing operation -> passes through the admissibility boundary"""
+        """6. Valid quorum + invalid admissibility -> execution denied strictly by boundary"""
         engine = TurkashEngine()
-        # المحاولة بدون نصاب وبدون تحقق من البوابة
+        # إنشاء نصاب صالح بالكامل أولاً
+        engine.add_signature("Admin_A")
+        engine.add_signature("Admin_B")
+        
+        # جعل المقبولية غير صالحة بشكل مستقل مع الاحتفاظ بالنصاب
+        engine.execute_zeroization()
+        
         result = engine.execute_critical_operation_mpa(required_count=2)
         self.assertIn("OPERATION_DENIED", result, "P0-05 Error: Consequence operation bypassed boundary!")
 
