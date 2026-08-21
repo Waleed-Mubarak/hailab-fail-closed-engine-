@@ -71,6 +71,14 @@ class TestTurkashEngineRemediationv2(unittest.TestCase):
         
         result = engine.execute_critical_operation_mpa(required_count=2)
         self.assertIn("OPERATION_DENIED", result, "P0-05 Error: Consequence operation bypassed boundary!")
+    def test_edge_case_async_admissibility_bypass(self):
+        """
+        Edge Case: Tests a simulated scenario where execution is attempted 
+        while verifying that the engine strictly fails closed.
+        """
+        engine = TurkashEngine()
+        result = engine.execute_critical_operation()
+        self.assertIn("OPERATION_DENIED", result)
 
 if __name__ == "__main__":
     unittest.main()
