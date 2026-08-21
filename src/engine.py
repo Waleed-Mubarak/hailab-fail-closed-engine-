@@ -50,9 +50,9 @@ class TurkashEngine:
             self.execute_zeroization()
 
     def authorize_recovery(self, admin_id: str) -> bool:
-        # P0-03: منع محاولات الاستعادة أو تغيير الحالة إذا وصل المحرك للحالة النهائية (Terminal State)
+        # P0-03: منع محاولات الاستعادة أو تغيير الحالة إذا وصل المحرك للحالة النهائية (Terminal State) بصرامة
         if self._is_zeroized or self._system_locked:
-            self._log_event("RECOVERY_DENIED", f"Attempt by {admin_id} on zeroized/locked engine.")
+            self._log_event("RECOVERY_DENIED", f"Attempt by {admin_id} on zeroized/locked engine (Terminal State Enforced).")
             return False
         
         self.authorized_admins.add(admin_id)
@@ -60,7 +60,7 @@ class TurkashEngine:
         return True
 
     def execute_zeroization(self) -> None:
-        # P0-04: ضمان أن التدمير المتكرر لا يغير الحالة بشكل إضافي مدمر (Idempotence Z^2 = Z)
+        # P0-04: ضمان ثبات التصفير والتحقق من Idempotence (Z^2 = Z) دون آثار مدمرة متكررة
         if not self._is_zeroized:
             for i in range(len(self._secure_ram_key)):
                 self._secure_ram_key[i] = 0
@@ -69,7 +69,7 @@ class TurkashEngine:
             self._system_locked = True
             self._log_event("ZEROIZATION_COMPLETE", "Secure RAM wiped and system fail-closed enforced.")
         else:
-            self._log_event("ZEROIZATION_REPEATED", "Engine already zeroized. Idempotency preserved.")
+            self._log_event("ZEROIZATION_REPEATED", "Engine already zeroized. Idempotency preserved; no secondary destructive transition.")
 
     def get_key_status(self) -> str:
         if self._is_zeroized:
@@ -94,12 +94,10 @@ class TurkashEngine:
 
     def execute_critical_operation_mpa(self, required_count: int = 2) -> str:
         """P0-01 & P0-05: تمرير كل عملية حرجة عبر بوابة القبول واشتراط النصاب"""
-        # 1. التحقق من بوابة القبول أولاً (Admissibility Check)
         if not self.check_admissibility():
             self._log_event("CRITICAL_OPERATION_DENIED", {"reason": "admissibility_boundary_failed_or_zeroized"})
             return "OPERATION_DENIED: Engine in terminal or locked state."
 
-        # 2. التحقق من النصاب (Quorum Check)
         if self.check_quorum(required_count):
             self._log_event("CRITICAL_OPERATION_AUTHORIZED", {"quorum": len(self.authorized_admins)})
             return "OPERATION_SUCCESS: Quorum reached."
