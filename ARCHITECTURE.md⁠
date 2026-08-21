@@ -1,1 +1,30 @@
+# Architecture & Security Design: TurkashEngine
+
+## Overview
+`TurkashEngine` is a high-assurance, fail-closed security and zeroization engine designed for mission-critical systems requiring strict multi-party authorization (MPA) and deterministic volatile memory destruction.
+
+---
+
+## Core Security Invariants
+
+1. **Fail-Closed by Default**: Any ambiguity, invalid state transition, or boundary violation immediately defaults to a secure, locked, or denied execution state (`OPERATION_DENIED`).
+2. **Multi-Party Authorization (MPA)**: Critical operations require a validated quorum of administrative signatures before admissibility is granted.
+3. **Terminal State Enforcement**: Once a zeroization event (`execute_zeroization`) occurs, the engine transitions to a permanent terminal state, blocking any subsequent recovery attempts or state resurrection.
+4. **Idempotence ($Z^2 = Z$)**: Repeated execution of destructive procedures maintains state stability without secondary faults or unintended side effects.
+
+---
+
+## System Structure
+
+* `src/engine.py`: Core state machine, cryptographic boundary checks, and signature quorum management.
+* `tests/test_engine.py`: Comprehensive edge-case and state-transition test suite verifying fail-closed invariants and boundary defenses.
+* `.github/workflows/ci.yaml`: Automated CI pipeline utilizing `pytest` and `pytest-cov` to enforce continuous quality and code coverage metrics.
+
+---
+
+## Continuous Integration & Quality Assurance
+The CI pipeline runs automated checks on every push and pull request, ensuring:
+* Complete dependency isolation via GitHub Actions.
+* Execution of full unit and edge-case test vectors under Python 3.10.
+* Code coverage tracking to prevent security regression.
 
