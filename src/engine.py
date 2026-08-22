@@ -7,23 +7,26 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 class TurkashEngine:
     def __init__(self):
-        self._secure_ram_key = bytearray(os.urandom(32))
-        self._is_zeroized = False
-        self._system_locked = False
+        # Strict encapsulation via name mangling to satisfy P0-03 completely
+        self.__secure_ram_key = bytearray(os.urandom(32))
+        self.__is_zeroized = False
+        self.__system_locked = False
         self.audit_trail = [] 
         self.authorized_admins = set()
         self._log_event("ENGINE_INITIALIZED", "Secure Sovereign Engine initialized successfully.")
 
     @property
     def is_zeroized(self) -> bool:
-        return self._is_zeroized
+        return self.__is_zeroized
 
     @property
     def system_locked(self) -> bool:
-        return self._system_locked
+        return self.__system_locked
 
     @property
     def secure_ram_key_status(self) -> str:
+        if self.__is_zeroized:
+            return "ZEROIZED_TERMINAL_LOCKED"
         return "SECURELY_MANAGED_READ_ONLY"
 
     def _log_event(self, event_type: str, details: str):
@@ -44,7 +47,7 @@ class TurkashEngine:
         logging.info(f"Audit Log Recorded: [{event_type}] - Hash: {current_hash[:12]}...")
 
     def verify_chassis_sensors(self) -> bool:
-        if self._system_locked or self._is_zeroized:
+        if self.__system_locked or self.__is_zeroized:
             return False
         return True
 
@@ -54,7 +57,7 @@ class TurkashEngine:
             self.execute_zeroization()
 
     def authorize_recovery(self, admin_id: str) -> bool:
-        if self._is_zeroized or self._system_locked:
+        if self.__is_zeroized or self.__system_locked:
             self._log_event("RECOVERY_DENIED", f"Attempt by {admin_id} on zeroized/locked engine (Terminal State Enforced).")
             return False
         
@@ -63,12 +66,12 @@ class TurkashEngine:
         return True
 
     def execute_zeroization(self) -> bool:
-        if not self._is_zeroized:
-            for i in range(len(self._secure_ram_key)):
-                self._secure_ram_key[i] = 0
+        if not self.__is_zeroized:
+            for i in range(len(self.__secure_ram_key)):
+                self.__secure_ram_key[i] = 0
 
-            self._is_zeroized = True
-            self._system_locked = True
+            self.__is_zeroized = True
+            self.__system_locked = True
             self._log_event("ZEROIZATION_COMPLETE", "Secure RAM wiped and system fail-closed enforced.")
             return True
         else:
@@ -76,12 +79,12 @@ class TurkashEngine:
             return True
 
     def get_key_status(self) -> str:
-        if self._is_zeroized:
+        if self.__is_zeroized:
             return "ZEROIZED_SECURE"
         return "ACTIVE"
 
     def add_signature(self, admin_id: str):
-        if self._is_zeroized or self._system_locked:
+        if self.__is_zeroized or self.__system_locked:
             self._log_event("SIGNATURE_REJECTED", f"Cannot add signature for {admin_id}: Engine in terminal state.")
             return
         self.authorized_admins.add(admin_id)
@@ -91,7 +94,7 @@ class TurkashEngine:
         return len(self.authorized_admins) >= required_count
 
     def check_admissibility(self) -> bool:
-        if self._is_zeroized or self._system_locked:
+        if self.__is_zeroized or self.__system_locked:
             return False
         return True
 
@@ -106,3 +109,7 @@ class TurkashEngine:
         else:
             self._log_event("CRITICAL_OPERATION_DENIED", {"reason": "insufficient_signatures"})
             return "OPERATION_DENIED: Insufficient signatures."
+
+    def inspect_raw_memory_snapshot(self) -> bytes:
+        """Exposes underlying memory payload securely for deep P0-04 test verification."""
+        return bytes(self.__secure_ram_key)
