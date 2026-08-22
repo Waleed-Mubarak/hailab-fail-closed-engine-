@@ -3,41 +3,51 @@ from engine import TurkashEngine
 
 class TestTurkashEngineHardening(unittest.TestCase):
     
-    def test_p0_03_encapsulation_and_terminal_state(self):
+    def test_p0_03_state_encapsulation_and_no_resurrection(self):
         engine = TurkashEngine()
-        # Verify initial active state
+        # التأكد من أن الحالة الابتدائية نشطة والمفتاح غير مسفر
         self.assertFalse(engine.is_zeroized)
+        self.assertFalse(all(b == 0 for b in engine._secure_ram_key))
         
-        # Verify read-only status property interface matches exact engine output
-        status = engine.secure_ram_key_status
-        self.assertEqual(status, "SECURELY_MANAGED_READ_ONLY")
+        # تنفيذ التصفير المدمر
+        engine.execute_zeroization()
         
-        # P0-03 Hardening Check: Ensure terminal state interface 
-        # behaves predictably and maintains state consistency.
-        self.assertTrue(hasattr(engine, 'secure_ram_key_status'))
+        # P0-03 Evidence: التحقق من أن الحالة النهائية تفرض إغلاق النظام ومسح المفتاح بالكامل وعدم قابليته للاسترجاع
+        self.assertTrue(engine.is_zeroized)
+        self.assertTrue(engine.system_locked)
+        self.assertTrue(all(b == 0 for b in engine._secure_ram_key))
 
-    def test_p0_04_zeroization_idempotence_and_invariance(self):
+    def test_p0_04_zeroization_idempotence_and_destructive_invariance(self):
         engine = TurkashEngine()
         
-        # Execute first zeroization (Destructive Transition)
+        # التنفيذ الأول للتصفير (Destructive Transition)
         res_first = engine.execute_zeroization()
         self.assertTrue(res_first)
-        self.assertTrue(engine.is_zeroized)
         
-        # Capture the terminal state snapshot after first zeroization
-        first_terminal_snapshot = (engine.is_zeroized, engine.secure_ram_key_status)
+        # التقاط لقطة للحالة الفعلية تشمل الذاكرة الداخلية المدمرة وحالة القفل
+        first_terminal_snapshot = (
+            engine.is_zeroized, 
+            bytes(engine._secure_ram_key), 
+            engine.system_locked
+        )
         
-        # Subsequent zeroization calls must be strictly idempotent: Z^2 = Z
+        # الاستدعاء الثاني للتصفير لتأكيد الـ Idempotence ($Z^2 = Z$)
         res_second = engine.execute_zeroization()
         self.assertTrue(res_second)
-        self.assertTrue(engine.is_zeroized)
         
-        # Capture the terminal state snapshot after second zeroization
-        second_terminal_snapshot = (engine.is_zeroized, engine.secure_ram_key_status)
+        # التقاط لقطة ثانية للمقارنة
+        second_terminal_snapshot = (
+            engine.is_zeroized, 
+            bytes(engine._secure_ram_key), 
+            engine.system_locked
+        )
         
-        # Strong invariant assertion: State/destructive-transition invariance holds perfectly
-        self.assertEqual(first_terminal_snapshot, second_terminal_snapshot, 
-                         "Zeroization transition is not strictly invariant (Idempotence failure Z^2 != Z)")
+        # تأكيد قوي يثبت أن التحول المدمر ثابت تماماً ولا ينتج أي تغيير إضافي
+        self.assertEqual(
+            first_terminal_snapshot, 
+            second_terminal_snapshot, 
+            "Zeroization transition is not strictly invariant (Idempotence failure Z^2 != Z)"
+        )
 
 if __name__ == "__main__":
     unittest.main()
