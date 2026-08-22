@@ -1,30 +1,30 @@
 # Architecture & Security Design: TurkashEngine
 
 ## Overview
-`TurkashEngine` is a high-assurance, fail-closed security and zeroization engine designed for mission-critical systems requiring strict multi-party authorization (MPA) and deterministic volatile memory destruction.
+`TurkashEngine` is a high-assurance, fail-closed system engine designed to enforce strict state encapsulation, deterministic failure handling, and absolute transition invariance under critical security constraints.
 
 ---
 
 ## Core Security Invariants
 
-1. **Fail-Closed by Default**: Any ambiguity, invalid state transition, or boundary violation immediately defaults to a secure, locked, or denied execution state (`OPERATION_DENIED`).
-2. **Multi-Party Authorization (MPA)**: Critical operations require a validated quorum of administrative signatures before admissibility is granted.
-3. **Terminal State Enforcement**: Once a zeroization event (`execute_zeroization`) occurs, the engine transitions to a permanent terminal state, blocking any subsequent recovery attempts or state resurrection.
-4. **Idempotence ($Z^2 = Z$)**: Repeated execution of destructive procedures maintains state stability without secondary faults or unintended side effects.
+1. **Fail-Closed by Default:** Any ambiguity, exception, or boundary violation immediately forces the system into a locked, safe terminal state.
+2. **Multi-Party Authorization (MPA):** Critical destructive transitions and security-sensitive states require verified authorization pathways.
+3. **Terminal State Enforcement & Encapsulation:** Internal state variables are protected via advanced name mangling (`__is_zeroized`, `__system_locked`) and exposed exclusively through secure read-only property interfaces (`secure_ram_key_status`) to prevent unauthorized internal mutation.
+4. **Idempotence ($Z^2 = Z$):** Once zeroization is executed, subsequent execution paths remain strictly invariant and idempotent, preventing state drift or rollback vulnerabilities across repeated calls.
 
 ---
 
 ## System Structure
 
-* `src/engine.py`: Core state machine, cryptographic boundary checks, and signature quorum management.
-* `tests/test_engine.py`: Comprehensive edge-case and state-transition test suite verifying fail-closed invariants and boundary defenses.
-* `.github/workflows/ci.yaml`: Automated CI pipeline utilizing `pytest` and `pytest-cov` to enforce continuous quality and code coverage metrics.
+* `src/engine.py`: Core state machine, strict state encapsulation, and deterministic zeroization execution logic.
+* `tests/test_engine.py`: Comprehensive edge-case regression and state-invariance snapshot tests verifying $Z^2 = Z$.
+* `.github/workflows/ci.yml`: Automated CI pipeline executing validation checks on every commit.
 
 ---
 
 ## Continuous Integration & Quality Assurance
-The CI pipeline runs automated checks on every push and pull request, ensuring:
-* Complete dependency isolation via GitHub Actions.
-* Execution of full unit and edge-case test vectors under Python 3.10.
-* Code coverage tracking to prevent security regression.
 
+The CI pipeline runs automated checks on every commit to enforce:
+* Complete dependency isolation via GitHub Actions.
+* Execution of full unit and edge-case test suites via `python -m unittest`.
+* Code coverage and state-integrity tracking to prevent security regressions.
