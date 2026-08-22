@@ -1,5 +1,5 @@
 import unittest
-from src.engine import TurkashEngine
+from engine import TurkashEngine
 
 class TestTurkashEngineHardening(unittest.TestCase):
     def test_p0_03_encapsulation_and_terminal_state(self):
