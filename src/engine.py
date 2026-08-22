@@ -17,15 +17,17 @@ class TurkashEngine:
 
     @property
     def is_zeroized(self) -> bool:
-        return self.__is_zeroized
+        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key)
+        return self.__is_zeroized or memory_is_wiped
 
     @property
     def system_locked(self) -> bool:
-        return self.__system_locked
+        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key)
+        return self.__system_locked or memory_is_wiped
 
     @property
     def secure_ram_key_status(self) -> str:
-        if self.__is_zeroized:
+        if self.is_zeroized:
             return "ZEROIZED_TERMINAL_LOCKED"
         return "SECURELY_MANAGED_READ_ONLY"
 
@@ -47,7 +49,7 @@ class TurkashEngine:
         logging.info(f"Audit Log Recorded: [{event_type}] - Hash: {current_hash[:12]}...")
 
     def verify_chassis_sensors(self) -> bool:
-        if self.__system_locked or self.__is_zeroized:
+        if self.system_locked or self.is_zeroized:
             return False
         return True
 
@@ -57,7 +59,7 @@ class TurkashEngine:
             self.execute_zeroization()
 
     def authorize_recovery(self, admin_id: str) -> bool:
-        if self.__is_zeroized or self.__system_locked:
+        if self.is_zeroized or self.system_locked:
             self._log_event("RECOVERY_DENIED", f"Attempt by {admin_id} on zeroized/locked engine (Terminal State Enforced).")
             return False
         
@@ -66,7 +68,8 @@ class TurkashEngine:
         return True
 
     def execute_zeroization(self) -> bool:
-        if not self.__is_zeroized:
+        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key)
+        if not self.__is_zeroized and not memory_is_wiped:
             for i in range(len(self.__secure_ram_key)):
                 self.__secure_ram_key[i] = 0
 
@@ -75,16 +78,19 @@ class TurkashEngine:
             self._log_event("ZEROIZATION_COMPLETE", "Secure RAM wiped and system fail-closed enforced.")
             return True
         else:
+            # Ensure flags are synchronized even on idempotent calls
+            self.__is_zeroized = True
+            self.__system_locked = True
             self._log_event("ZEROIZATION_REPEATED", "Engine already zeroized. Idempotency preserved (Z^2 = Z); state is invariant.")
             return True
 
     def get_key_status(self) -> str:
-        if self.__is_zeroized:
+        if self.is_zeroized:
             return "ZEROIZED_SECURE"
         return "ACTIVE"
 
     def add_signature(self, admin_id: str):
-        if self.__is_zeroized or self.__system_locked:
+        if self.is_zeroized or self.system_locked:
             self._log_event("SIGNATURE_REJECTED", f"Cannot add signature for {admin_id}: Engine in terminal state.")
             return
         self.authorized_admins.add(admin_id)
@@ -94,7 +100,8 @@ class TurkashEngine:
         return len(self.authorized_admins) >= required_count
 
     def check_admissibility(self) -> bool:
-        if self.__is_zeroized or self.__system_locked:
+        # Absolute Fail-Closed: Bound directly to physical memory state and terminal flags
+        if self.is_zeroized or self.system_locked:
             return False
         return True
 
