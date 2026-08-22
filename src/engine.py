@@ -1,113 +1,53 @@
-import time
-import os
-import hashlib
-import logging
+import unittest
+from engine import TurkashEngine
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-class TurkashEngine:
-    def __init__(self):
-        self._secure_ram_key = bytearray(os.urandom(32))
-        self._is_zeroized = False
-        self._system_locked = False
-        self.audit_trail = [] 
-        self.authorized_admins = set()
-        self._log_event("ENGINE_INITIALIZED", "Secure Sovereign Engine initialized successfully.")
-
-    @property
-    def is_zeroized(self) -> bool:
-        return self._is_zeroized
-
-    @property
-    def system_locked(self) -> bool:
-        return self._system_locked
-
-    @property
-    def secure_ram_key_status(self) -> str:
-        # P0-03 Hardening: Expose state securely to prevent direct internal variable mutation while maintaining visibility
-        return "SECURELY_MANAGED_READ_ONLY"
-
-    def _log_event(self, event_type: str, details: str):
-        timestamp = time.time()
-        previous_hash = "GENESIS_BLOCK" if not self.audit_trail else self.audit_trail[-1]["current_hash"]
+class TestTurkashEngineHardening(unittest.TestCase):
+    
+    def test_p0_03_state_encapsulation_and_no_resurrection(self):
+        engine = TurkashEngine()
+        # التأكد من أن الحالة الابتدائية نشطة والمفتاح غير مسفر
+        self.assertFalse(engine.is_zeroized)
+        self.assertFalse(all(b == 0 for b in engine._secure_ram_key))
         
-        raw_data = f"{timestamp}:{event_type}:{details}:{previous_hash}"
-        current_hash = hashlib.sha256(raw_data.encode('utf-8')).hexdigest()
-
-        log_entry = {
-            "timestamp": timestamp,
-            "event": event_type,
-            "details": details,
-            "previous_hash": previous_hash,
-            "current_hash": current_hash
-        }
-        self.audit_trail.append(log_entry)
-        logging.info(f"Audit Log Recorded: [{event_type}] - Hash: {current_hash[:12]}...")
-
-    def verify_chassis_sensors(self) -> bool:
-        if self._system_locked or self._is_zeroized:
-            return False
-        return True
-
-    def check_duress_trigger(self, duress_signal: bool):
-        if duress_signal:
-            self._log_event("DURESS_DETECTED", "Duress signal received. Executing emergency protocol.")
-            self.execute_zeroization()
-
-    def authorize_recovery(self, admin_id: str) -> bool:
-        # P0-03: منع محاولات الاستعادة أو تغيير الحالة إذا وصل المحرك للحالة النهائية (Terminal State) بصرامة
-        if self._is_zeroized or self._system_locked:
-            self._log_event("RECOVERY_DENIED", f"Attempt by {admin_id} on zeroized/locked engine (Terminal State Enforced).")
-            return False
+        # تنفيذ التصفير المدمر
+        engine.execute_zeroization()
         
-        self.authorized_admins.add(admin_id)
-        self._log_event("ADMIN_AUTHORIZED", f"Recovery authorization granted by {admin_id}.")
-        return True
+        # P0-03 Evidence: التحقق من أن الحالة النهائية تفرض إغلاق النظام ومسح المفتاح بالكامل وعدم قابليته للاسترجاع
+        self.assertTrue(engine.is_zeroized)
+        self.assertTrue(engine.system_locked)
+        self.assertTrue(all(b == 0 for b in engine._secure_ram_key))
 
-    def execute_zeroization(self) -> bool:
-        # P0-04 Hardening (Z^2 = Z): ضمان ثبات التصفير والتحقق من Idempotence بشكل قاطع ودون أي آثار مدمرة إضافية
-        if not self._is_zeroized:
-            for i in range(len(self._secure_ram_key)):
-                self._secure_ram_key[i] = 0
+    def test_p0_04_zeroization_idempotence_and_destructive_invariance(self):
+        engine = TurkashEngine()
+        
+        # التنفيذ الأول للتصفير (Destructive Transition)
+        res_first = engine.execute_zeroization()
+        self.assertTrue(res_first)
+        
+        # التقاط لقطة للحالة الفعلية تشمل الذاكرة الداخلية المدمرة وحالة القفل
+        first_terminal_snapshot = (
+            engine.is_zeroized, 
+            bytes(engine._secure_ram_key), 
+            engine.system_locked
+        )
+        
+        # الاستدعاء الثاني للتصفير لتأكيد الـ Idempotence ($Z^2 = Z$)
+        res_second = engine.execute_zeroization()
+        self.assertTrue(res_second)
+        
+        # التقاط لقطة ثانية للمقارنة
+        second_terminal_snapshot = (
+            engine.is_zeroized, 
+            bytes(engine._secure_ram_key), 
+            engine.system_locked
+        )
+        
+        # تأكيد قوي يثبت أن التحول المدمر ثابت تماماً ولا ينتج أي تغيير إضافي
+        self.assertEqual(
+            first_terminal_snapshot, 
+            second_terminal_snapshot, 
+            "Zeroization transition is not strictly invariant (Idempotence failure Z^2 != Z)"
+        )
 
-            self._is_zeroized = True
-            self._system_locked = True
-            self._log_event("ZEROIZATION_COMPLETE", "Secure RAM wiped and system fail-closed enforced.")
-            return True
-        else:
-            self._log_event("ZEROIZATION_REPEATED", "Engine already zeroized. Idempotency preserved (Z^2 = Z); state is invariant.")
-            return True
-
-    def get_key_status(self) -> str:
-        if self._is_zeroized:
-            return "ZEROIZED_SECURE"
-        return "ACTIVE"
-
-    def add_signature(self, admin_id: str):
-        if self._is_zeroized or self._system_locked:
-            self._log_event("SIGNATURE_REJECTED", f"Cannot add signature for {admin_id}: Engine in terminal state.")
-            return
-        self.authorized_admins.add(admin_id)
-        self._log_event("ADMIN_SIGNATURE_ADDED", f"Admin {admin_id} added.")
-
-    def check_quorum(self, required_count: int = 2) -> bool:
-        return len(self.authorized_admins) >= required_count
-
-    def check_admissibility(self) -> bool:
-        """P0-01 & P0-05: بوابة القبول الرسمية (Admissibility Boundary)"""
-        if self._is_zeroized or self._system_locked:
-            return False
-        return True
-
-    def execute_critical_operation_mpa(self, required_count: int = 2) -> str:
-        """P0-01 & P0-05: تمرير كل عملية حرجة عبر بوابة القبول واشتراط النصاب"""
-        if not self.check_admissibility():
-            self._log_event("CRITICAL_OPERATION_DENIED", {"reason": "admissibility_boundary_failed_or_zeroized"})
-            return "OPERATION_DENIED: Engine in terminal or locked state."
-
-        if self.check_quorum(required_count):
-            self._log_event("CRITICAL_OPERATION_AUTHORIZED", {"quorum": len(self.authorized_admins)})
-            return "OPERATION_SUCCESS: Quorum reached."
-        else:
-            self._log_event("CRITICAL_OPERATION_DENIED", {"reason": "insufficient_signatures"})
-            return "OPERATION_DENIED: Insufficient signatures."
+if __name__ == "__main__":
+    unittest.main()
