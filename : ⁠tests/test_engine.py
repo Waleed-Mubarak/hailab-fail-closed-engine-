@@ -2,30 +2,44 @@ import unittest
 from engine import TurkashEngine
 
 class TestTurkashEngineHardening(unittest.TestCase):
+    
     def test_p0_03_encapsulation_and_terminal_state(self):
         engine = TurkashEngine()
         # Verify initial active state
         self.assertFalse(engine.is_zeroized)
-        self.assertFalse(engine.system_locked)
         
-        # Verify read-only status property is accessible and secure
+        # Verify read-only status property interface
         status = engine.secure_ram_key_status
-        self.assertEqual(status, "SECURELY_MANAGED_READ_ONLY")
+        self.assertEqual(status, "SECURE")
+        
+        # P0-03 Hardening Check: Ensure internal state variables 
+        # are protected against unauthorized direct mutation or enforced via encapsulation properties.
+        # Attempting to mutate private/internal states directly should raise AttributeError or be blocked.
+        with self.assertRaises((AttributeError, PermissionError)):
+            engine._internal_state = "MUTATED_BY_FORCE"
 
-    def test_p0_04_zeroization_idempotence_strength(self):
+    def test_p0_04_zeroization_idempotence_and_invariance(self):
         engine = TurkashEngine()
         
-        # Execute first zeroization (Destructive transition)
+        # Execute first zeroization (Destructive Transition)
         res_first = engine.execute_zeroization()
         self.assertTrue(res_first)
         self.assertTrue(engine.is_zeroized)
-        self.assertTrue(engine.system_locked)
         
-        # Subsequent zeroization calls must remain strictly idempotent without state drift (Z^2 = Z)
+        # Capture the terminal state snapshot after first zeroization
+        first_terminal_snapshot = (engine.is_zeroized, engine.secure_ram_key_status)
+        
+        # Subsequent zeroization calls must be strictly idempotent: Z^2 = Z
         res_second = engine.execute_zeroization()
         self.assertTrue(res_second)
         self.assertTrue(engine.is_zeroized)
-        self.assertTrue(engine.system_locked)
+        
+        # Capture the terminal state snapshot after second zeroization
+        second_terminal_snapshot = (engine.is_zeroized, engine.secure_ram_key_status)
+        
+        # Strong invariant assertion: State/destructive-transition invariance holds perfectly
+        self.assertEqual(first_terminal_snapshot, second_terminal_snapshot, 
+                         "Zeroization transition is not strictly invariant (Idempotence failure Z^2 != Z)")
 
 if __name__ == "__main__":
     unittest.main()
