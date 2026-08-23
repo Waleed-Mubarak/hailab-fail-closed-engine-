@@ -59,12 +59,16 @@ class TurkashEngine:
             self.execute_zeroization()
 
     def authorize_recovery(self, admin_id: str) -> bool:
-        # Absolute Fail-Closed: Strictly bind to physical memory wipe status directly
-        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key)
-        if memory_is_wiped or self.__is_zeroized or self.__system_locked:
+        # Absolute Fail-Closed: Strictly deny if flags indicate terminal state or memory is wiped/tampered
+        if self.__is_zeroized or self.__system_locked:
             self._log_event("RECOVERY_DENIED", f"Attempt by {admin_id} on zeroized/locked engine (Terminal State Enforced).")
             return False
         
+        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key)
+        if memory_is_wiped:
+            self._log_event("RECOVERY_DENIED", f"Attempt by {admin_id} on wiped memory.")
+            return False
+            
         self.authorized_admins.add(admin_id)
         self._log_event("ADMIN_AUTHORIZED", f"Recovery authorization granted by {admin_id}.")
         return True
