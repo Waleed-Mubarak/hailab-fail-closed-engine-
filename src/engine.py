@@ -8,13 +8,30 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 class TurkashEngine:
     def __init__(self):
         # Strict encapsulation with double underscore (Name Mangling) for all critical terminal states
-        self.__secure_ram_key = bytearray(os.urandom(32))
-        self.__is_zeroized = False
-        self.__system_locked = False
-        self.__terminal_state_locked = False  # Completely private and immutable from outside tampering
+        super().__setattr__('_TurkashEngine__secure_ram_key', bytearray(os.urandom(32)))
+        super().__setattr__('_TurkashEngine__is_zeroized', False)
+        super().__setattr__('_TurkashEngine__system_locked', False)
+        super().__setattr__('_TurkashEngine__terminal_state_locked', False)  # Completely private and immutable from outside tampering
         self.audit_trail = [] 
         self.authorized_admins = set()
         self._log_event("ENGINE_INITIALIZED", "Secure Sovereign Engine initialized successfully.")
+
+    def __setattr__(self, key, value):
+        # Fail-Closed Hardening: Once terminal state or zeroization is active, block any external attribute mutation completely
+        protected_attributes = {
+            '_TurkashEngine__terminal_state_locked', 
+            '_TurkashEngine__is_zeroized', 
+            '_TurkashEngine__system_locked',
+            '_TurkashEngine__secure_ram_key'
+        }
+        
+        if key in protected_attributes:
+            current_terminal = self.__dict__.get('_TurkashEngine__terminal_state_locked', False)
+            current_zeroized = self.__dict__.get('_TurkashEngine__is_zeroized', False)
+            if current_terminal or current_zeroized:
+                raise PermissionError("CRITICAL SECURITY VIOLATION: Attempted state mutation on a terminal/zeroized engine is strictly prohibited.")
+        
+        super().__setattr__(key, value)
 
     @property
     def is_zeroized(self) -> bool:
@@ -60,7 +77,6 @@ class TurkashEngine:
             self.execute_zeroization()
 
     def authorize_recovery(self, admin_id: str) -> bool:
-        # Absolute Fail-Closed: Once terminal state is locked, recovery is permanently denied
         if self.__terminal_state_locked or self.__is_zeroized or self.__system_locked:
             self._log_event("RECOVERY_DENIED", f"Attempt by {admin_id} on zeroized/locked engine (Terminal State Enforced).")
             return False
@@ -78,9 +94,9 @@ class TurkashEngine:
         for i in range(len(self.__secure_ram_key)):
             self.__secure_ram_key[i] = 0
 
-        self.__is_zeroized = True
-        self.__system_locked = True
-        self.__terminal_state_locked = True  # Irrevocably lock the terminal state (Once True, stays True forever)
+        super().__setattr__('_TurkashEngine__is_zeroized', True)
+        super().__setattr__('_TurkashEngine__system_locked', True)
+        super().__setattr__('_TurkashEngine__terminal_state_locked', True)
         
         if not any(log["event"] == "ZEROIZATION_COMPLETE" for log in self.audit_trail):
             self._log_event("ZEROIZATION_COMPLETE", "Secure RAM wiped and system fail-closed enforced.")
@@ -124,5 +140,4 @@ class TurkashEngine:
             return "OPERATION_DENIED: Insufficient signatures."
 
     def inspect_raw_memory_snapshot(self) -> bytes:
-        """Exposes underlying memory payload securely for deep P0-04 test verification."""
         return bytes(self.__secure_ram_key)
