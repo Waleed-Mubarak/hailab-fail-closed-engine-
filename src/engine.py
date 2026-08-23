@@ -35,12 +35,12 @@ class TurkashEngine:
 
     @property
     def is_zeroized(self) -> bool:
-        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key)
+        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key) if self.__secure_ram_key else True
         return self.__is_zeroized or memory_is_wiped or self.__terminal_state_locked
 
     @property
     def system_locked(self) -> bool:
-        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key)
+        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key) if self.__secure_ram_key else True
         return self.__system_locked or memory_is_wiped or self.__terminal_state_locked
 
     @property
@@ -81,7 +81,7 @@ class TurkashEngine:
             self._log_event("RECOVERY_DENIED", f"Attempt by {admin_id} on zeroized/locked engine (Terminal State Enforced).")
             return False
         
-        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key)
+        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key) if self.__secure_ram_key else True
         if memory_is_wiped:
             self._log_event("RECOVERY_DENIED", f"Attempt by {admin_id} on wiped memory.")
             return False
@@ -91,15 +91,30 @@ class TurkashEngine:
         return True
 
     def execute_zeroization(self) -> bool:
-        for i in range(len(self.__secure_ram_key)):
-            self.__secure_ram_key[i] = 0
+        # 1. Zero out the memory byte array
+        if self.__secure_ram_key:
+            for i in range(len(self.__secure_ram_key)):
+                self.__secure_ram_key[i] = 0
 
+        # 2. Set internal flags via object level to enforce locks
         super().__setattr__('_TurkashEngine__is_zeroized', True)
         super().__setattr__('_TurkashEngine__system_locked', True)
         super().__setattr__('_TurkashEngine__terminal_state_locked', True)
         
+        # 3. Clear raw memory reference permanently
+        super().__setattr__('_TurkashEngine__secure_ram_key', None)
+
+        # 4. SELF-DESTRUCT / IRREVERSIBLE METHOD INVALIDATION (Stub-Replacement)
+        def _permanent_deny(*args, **kwargs):
+            raise PermissionError("CRITICAL_BLOCK: Engine is permanently zeroized and cannot execute operations.")
+
+        # Overwrite critical methods directly on the instance dictionary
+        self.execute_critical_operation_mpa = _permanent_deny
+        self.check_admissibility = lambda *args, **kwargs: False
+        self.authorize_recovery = _permanent_deny
+
         if not any(log["event"] == "ZEROIZATION_COMPLETE" for log in self.audit_trail):
-            self._log_event("ZEROIZATION_COMPLETE", "Secure RAM wiped and system fail-closed enforced.")
+            self._log_event("ZEROIZATION_COMPLETE", "Secure RAM wiped and system fail-closed enforced with structural method invalidation.")
         else:
             self._log_event("ZEROIZATION_REPEATED", "Engine already zeroized. Idempotency preserved (Z^2 = Z); state is invariant.")
         return True
@@ -122,6 +137,8 @@ class TurkashEngine:
     def check_admissibility(self) -> bool:
         if self.__terminal_state_locked or self.__is_zeroized or self.__system_locked:
             return False
+        if self.__secure_ram_key is None:
+            return False
         memory_is_wiped = all(b == 0 for b in self.__secure_ram_key)
         if memory_is_wiped:
             return False
@@ -140,4 +157,6 @@ class TurkashEngine:
             return "OPERATION_DENIED: Insufficient signatures."
 
     def inspect_raw_memory_snapshot(self) -> bytes:
+        if self.__secure_ram_key is None:
+            return b'\x00' * 32
         return bytes(self.__secure_ram_key)
