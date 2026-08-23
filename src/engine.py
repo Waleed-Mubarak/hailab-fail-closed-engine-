@@ -7,11 +7,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 class TurkashEngine:
     def __init__(self):
-        # Strict encapsulation and permanent terminal state flag
+        # Strict encapsulation with double underscore (Name Mangling) for all critical terminal states
         self.__secure_ram_key = bytearray(os.urandom(32))
         self.__is_zeroized = False
         self.__system_locked = False
-        self._terminal_state_locked = False  # Flag that cannot be reset by tampering
+        self.__terminal_state_locked = False  # Completely private and immutable from outside tampering
         self.audit_trail = [] 
         self.authorized_admins = set()
         self._log_event("ENGINE_INITIALIZED", "Secure Sovereign Engine initialized successfully.")
@@ -19,12 +19,12 @@ class TurkashEngine:
     @property
     def is_zeroized(self) -> bool:
         memory_is_wiped = all(b == 0 for b in self.__secure_ram_key)
-        return self.__is_zeroized or memory_is_wiped or self._terminal_state_locked
+        return self.__is_zeroized or memory_is_wiped or self.__terminal_state_locked
 
     @property
     def system_locked(self) -> bool:
         memory_is_wiped = all(b == 0 for b in self.__secure_ram_key)
-        return self.__system_locked or memory_is_wiped or self._terminal_state_locked
+        return self.__system_locked or memory_is_wiped or self.__terminal_state_locked
 
     @property
     def secure_ram_key_status(self) -> str:
@@ -61,7 +61,7 @@ class TurkashEngine:
 
     def authorize_recovery(self, admin_id: str) -> bool:
         # Absolute Fail-Closed: Once terminal state is locked, recovery is permanently denied
-        if self._terminal_state_locked or self.__is_zeroized or self.__system_locked:
+        if self.__terminal_state_locked or self.__is_zeroized or self.__system_locked:
             self._log_event("RECOVERY_DENIED", f"Attempt by {admin_id} on zeroized/locked engine (Terminal State Enforced).")
             return False
         
@@ -80,7 +80,7 @@ class TurkashEngine:
 
         self.__is_zeroized = True
         self.__system_locked = True
-        self._terminal_state_locked = True  # Permanently lock the terminal state
+        self.__terminal_state_locked = True  # Irrevocably lock the terminal state (Once True, stays True forever)
         
         if not any(log["event"] == "ZEROIZATION_COMPLETE" for log in self.audit_trail):
             self._log_event("ZEROIZATION_COMPLETE", "Secure RAM wiped and system fail-closed enforced.")
@@ -104,7 +104,7 @@ class TurkashEngine:
         return len(self.authorized_admins) >= required_count
 
     def check_admissibility(self) -> bool:
-        if self._terminal_state_locked or self.__is_zeroized or self.__system_locked:
+        if self.__terminal_state_locked or self.__is_zeroized or self.__system_locked:
             return False
         memory_is_wiped = all(b == 0 for b in self.__secure_ram_key)
         if memory_is_wiped:
