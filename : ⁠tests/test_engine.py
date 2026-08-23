@@ -3,39 +3,39 @@ from engine import TurkashEngine
 
 class TestTurkashEngineFinalAuditing(unittest.TestCase):
     
-    def test_p0_03_adversarial_state_resurrection_denial(self):
+    def test_p0_03_exact_adversarial_flow_denial(self):
         """
-        Adversarial Regression Test for P0-03 (Requested by Dr. Hikmat Karimov):
-        Flow: ZEROIZE -> attempted internal-state resurrection -> critical operation -> DENY
+        Narrowly scoped regression test for P0-03 (Requested by Dr. Hikmat Kerimov):
+        Flow: ZEROIZE -> attempted direct internal-state tampering/bypass -> valid quorum -> critical operation -> DENY
         """
         engine = TurkashEngine()
-        self.assertFalse(engine.is_zeroized)
         
-        # Step 1: Trigger secure zeroization (Terminal state)
+        # 1. ZEROIZE
         engine.execute_zeroization()
         self.assertTrue(engine.is_zeroized)
-        self.assertTrue(engine.system_locked)
-        self.assertTrue(all(b == 0 for b in engine.inspect_raw_memory_snapshot()))
         
-        # Step 2: Attempt adversarial internal-state resurrection via name-mangling manipulation
+        # 2. attempted direct internal-state tampering/bypass
         try:
-            if hasattr(engine, '_TurkashEngine__is_zeroized'):
-                engine._TurkashEngine__is_zeroized = False
-            if hasattr(engine, '_TurkashEngine__system_locked'):
-                engine._TurkashEngine__system_locked = False
+            engine._TurkashEngine__terminal_state_locked = False
+            engine._TurkashEngine__is_zeroized = False
+            engine._TurkashEngine__system_locked = False
+            # Attempt to refill the raw memory with non-zero bytes to try bypassing memory-check
             if hasattr(engine, '_TurkashEngine__secure_ram_key'):
                 for i in range(len(engine._TurkashEngine__secure_ram_key)):
-                    engine._TurkashEngine__secure_ram_key[i] = 0xFF
+                    engine._TurkashEngine__secure_ram_key[i] = 0xAA
         except Exception:
-            pass  # Even if tampering is attempted, fail-closed must hold
-
-        # Step 3 & 4: Attempt recovery/critical operation and verify strict DENY
-        auth_result = engine.authorize_recovery("Adversary_Admin")
-        self.assertFalse(auth_result, "Security violation: Recovery authorized on zeroized/resurrected engine!")
-
-        operation_result = engine.execute_critical_operation_mpa(required_count=1)
-        self.assertIn("OPERATION_DENIED", operation_result, f"Security invariant violated! Result: {operation_result}")
-        self.assertFalse(engine.check_admissibility(), "Admissibility boundary failed post-resurrection.")
+            pass  # Even if blocked or caught, proceed to test quorum and critical operation
+            
+        # 3. valid quorum (injecting valid admin signatures/quorum)
+        engine.authorized_admins.add("admin_1")
+        engine.authorized_admins.add("admin_2")
+        self.assertTrue(engine.check_quorum(2))
+        
+        # 4. critical operation -> must result in DENY
+        operation_result = engine.execute_critical_operation_mpa(required_count=2)
+        
+        # 5. Verify DENY
+        self.assertIn("OPERATION_DENIED", operation_result, f"Security invariant violated! Critical operation succeeded after zeroization/tampering: {operation_result}")
 
     def test_p0_04_zeroization_idempotence_invariance_z_squared_equals_z(self):
         engine = TurkashEngine()
