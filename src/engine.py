@@ -59,7 +59,9 @@ class TurkashEngine:
             self.execute_zeroization()
 
     def authorize_recovery(self, admin_id: str) -> bool:
-        if self.is_zeroized or self.system_locked:
+        # Absolute Fail-Closed: Strictly bind to physical memory wipe status directly
+        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key)
+        if memory_is_wiped or self.__is_zeroized or self.__system_locked:
             self._log_event("RECOVERY_DENIED", f"Attempt by {admin_id} on zeroized/locked engine (Terminal State Enforced).")
             return False
         
@@ -78,7 +80,6 @@ class TurkashEngine:
             self._log_event("ZEROIZATION_COMPLETE", "Secure RAM wiped and system fail-closed enforced.")
             return True
         else:
-            # Ensure flags are synchronized even on idempotent calls
             self.__is_zeroized = True
             self.__system_locked = True
             self._log_event("ZEROIZATION_REPEATED", "Engine already zeroized. Idempotency preserved (Z^2 = Z); state is invariant.")
@@ -100,8 +101,9 @@ class TurkashEngine:
         return len(self.authorized_admins) >= required_count
 
     def check_admissibility(self) -> bool:
-        # Absolute Fail-Closed: Bound directly to physical memory state and terminal flags
-        if self.is_zeroized or self.system_locked:
+        # Absolute Fail-Closed: Bound strictly to physical memory state and terminal flags
+        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key)
+        if memory_is_wiped or self.__is_zeroized or self.__system_locked:
             return False
         return True
 
