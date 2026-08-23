@@ -1,124 +1,70 @@
-import time
-import os
-import hashlib
-import logging
+import unittest
+from engine import TurkashEngine
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-class TurkashEngine:
-    def __init__(self):
-        # Strict encapsulation via name mangling to satisfy P0-03 completely
-        self.__secure_ram_key = bytearray(os.urandom(32))
-        self.__is_zeroized = False
-        self.__system_locked = False
-        self.audit_trail = [] 
-        self.authorized_admins = set()
-        self._log_event("ENGINE_INITIALIZED", "Secure Sovereign Engine initialized successfully.")
-
-    @property
-    def is_zeroized(self) -> bool:
-        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key)
-        return self.__is_zeroized or memory_is_wiped
-
-    @property
-    def system_locked(self) -> bool:
-        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key)
-        return self.__system_locked or memory_is_wiped
-
-    @property
-    def secure_ram_key_status(self) -> str:
-        if self.is_zeroized:
-            return "ZEROIZED_TERMINAL_LOCKED"
-        return "SECURELY_MANAGED_READ_ONLY"
-
-    def _log_event(self, event_type: str, details: str):
-        timestamp = time.time()
-        previous_hash = "GENESIS_BLOCK" if not self.audit_trail else self.audit_trail[-1]["current_hash"]
+class TestTurkashEngineFinalAuditing(unittest.TestCase):
+    
+    def test_p0_03_adversarial_state_resurrection_denial(self):
+        """
+        Adversarial Regression Test for P0-03 (Requested by Dr. Hikmat Karimov):
+        Flow: ZEROIZE -> attempted internal-state resurrection -> critical operation -> DENY
+        """
+        engine = TurkashEngine()
+        self.assertFalse(engine.is_zeroized)
         
-        raw_data = f"{timestamp}:{event_type}:{details}:{previous_hash}"
-        current_hash = hashlib.sha256(raw_data.encode('utf-8')).hexdigest()
-
-        log_entry = {
-            "timestamp": timestamp,
-            "event": event_type,
-            "details": details,
-            "previous_hash": previous_hash,
-            "current_hash": current_hash
-        }
-        self.audit_trail.append(log_entry)
-        logging.info(f"Audit Log Recorded: [{event_type}] - Hash: {current_hash[:12]}...")
-
-    def verify_chassis_sensors(self) -> bool:
-        if self.system_locked or self.is_zeroized:
-            return False
-        return True
-
-    def check_duress_trigger(self, duress_signal: bool):
-        if duress_signal:
-            self._log_event("DURESS_DETECTED", "Duress signal received. Executing emergency protocol.")
-            self.execute_zeroization()
-
-    def authorize_recovery(self, admin_id: str) -> bool:
-        # Absolute Fail-Closed: Strictly deny if memory is wiped or flags indicate terminal state
-        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key)
-        if memory_is_wiped or self.__is_zeroized or self.__system_locked:
-            self._log_event("RECOVERY_DENIED", f"Attempt by {admin_id} on zeroized/locked engine (Terminal State Enforced).")
-            return False
+        # Step 1: Trigger secure zeroization (Terminal state)
+        engine.execute_zeroization()
+        self.assertTrue(engine.is_zeroized)
+        self.assertTrue(engine.system_locked)
+        self.assertTrue(all(b == 0 for b in engine.inspect_raw_memory_snapshot()))
         
-        self.authorized_admins.add(admin_id)
-        self._log_event("ADMIN_AUTHORIZED", f"Recovery authorization granted by {admin_id}.")
-        return True
+        # Step 2: Attempt adversarial internal-state resurrection via name-mangling manipulation
+        try:
+            if hasattr(engine, '_TurkashEngine__is_zeroized'):
+                engine._TurkashEngine__is_zeroized = False
+            if hasattr(engine, '_TurkashEngine__system_locked'):
+                engine._TurkashEngine__system_locked = False
+            if hasattr(engine, '_TurkashEngine__secure_ram_key'):
+                for i in range(len(engine._TurkashEngine__secure_ram_key)):
+                    engine._TurkashEngine__secure_ram_key[i] = 0xFF
+        except Exception:
+            pass  # Even if tampering is attempted, fail-closed must hold
 
-    def execute_zeroization(self) -> bool:
-        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key)
-        if not self.__is_zeroized and not memory_is_wiped:
-            for i in range(len(self.__secure_ram_key)):
-                self.__secure_ram_key[i] = 0
+        # Step 3 & 4: Attempt recovery/critical operation and verify strict DENY
+        auth_result = engine.authorize_recovery("Adversary_Admin")
+        self.assertFalse(auth_result, "Security violation: Recovery authorized on zeroized/resurrected engine!")
 
-            self.__is_zeroized = True
-            self.__system_locked = True
-            self._log_event("ZEROIZATION_COMPLETE", "Secure RAM wiped and system fail-closed enforced.")
-            return True
-        else:
-            self.__is_zeroized = True
-            self.__system_locked = True
-            self._log_event("ZEROIZATION_REPEATED", "Engine already zeroized. Idempotency preserved (Z^2 = Z); state is invariant.")
-            return True
+        operation_result = engine.execute_critical_operation_mpa(required_count=1)
+        self.assertIn("OPERATION_DENIED", operation_result, f"Security invariant violated! Result: {operation_result}")
+        self.assertFalse(engine.check_admissibility(), "Admissibility boundary failed post-resurrection.")
 
-    def get_key_status(self) -> str:
-        if self.is_zeroized:
-            return "ZEROIZED_SECURE"
-        return "ACTIVE"
+    def test_p0_04_zeroization_idempotence_invariance_z_squared_equals_z(self):
+        engine = TurkashEngine()
+        
+        # First destructive transition
+        engine.execute_zeroization()
+        snapshot_first = (
+            engine.is_zeroized,
+            engine.system_locked,
+            engine.inspect_raw_memory_snapshot(),
+            engine.secure_ram_key_status,
+            len(engine.audit_trail)
+        )
+        
+        # Second destructive transition (Z^2 = Z)
+        engine.execute_zeroization()
+        snapshot_second = (
+            engine.is_zeroized,
+            engine.system_locked,
+            engine.inspect_raw_memory_snapshot(),
+            engine.secure_ram_key_status,
+            len(engine.audit_trail)
+        )
+        
+        # P0-04 Evidence: Strict state invariance on core memory and terminal flags
+        self.assertEqual(snapshot_first[0], snapshot_second[0])
+        self.assertEqual(snapshot_first[1], snapshot_second[1])
+        self.assertEqual(snapshot_first[2], snapshot_second[2])  # Raw memory bytes remain identically zeroed
+        self.assertEqual(snapshot_first[3], snapshot_second[3])
 
-    def add_signature(self, admin_id: str):
-        if self.is_zeroized or self.system_locked:
-            self._log_event("SIGNATURE_REJECTED", f"Cannot add signature for {admin_id}: Engine in terminal state.")
-            return
-        self.authorized_admins.add(admin_id)
-        self._log_event("ADMIN_SIGNATURE_ADDED", f"Admin {admin_id} added.")
-
-    def check_quorum(self, required_count: int = 2) -> bool:
-        return len(self.authorized_admins) >= required_count
-
-    def check_admissibility(self) -> bool:
-        # Absolute Fail-Closed: Bound strictly to physical memory state and terminal flags
-        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key)
-        if memory_is_wiped or self.__is_zeroized or self.__system_locked:
-            return False
-        return True
-
-    def execute_critical_operation_mpa(self, required_count: int = 2) -> str:
-        if not self.check_admissibility():
-            self._log_event("CRITICAL_OPERATION_DENIED", {"reason": "admissibility_boundary_failed_or_zeroized"})
-            return "OPERATION_DENIED: Engine in terminal or locked state."
-
-        if self.check_quorum(required_count):
-            self._log_event("CRITICAL_OPERATION_AUTHORIZED", {"quorum": len(self.authorized_admins)})
-            return "OPERATION_SUCCESS: Quorum reached."
-        else:
-            self._log_event("CRITICAL_OPERATION_DENIED", {"reason": "insufficient_signatures"})
-            return "OPERATION_DENIED: Insufficient signatures."
-
-    def inspect_raw_memory_snapshot(self) -> bytes:
-        """Exposes underlying memory payload securely for deep P0-04 test verification."""
-        return bytes(self.__secure_ram_key)
+if __name__ == "__main__":
+    unittest.main()
