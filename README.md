@@ -15,7 +15,7 @@ To run the live interactive demonstrator script showcasing the fail-closed defen
 ```bash
 python demo.py
 
-⁠```⁠
+⁠```
 To ensure strict separation of concerns, the Turkash ASV-SDP engine enforces the following operational boundaries:
 
 1. **Quorum vs. Admissibility:** 
