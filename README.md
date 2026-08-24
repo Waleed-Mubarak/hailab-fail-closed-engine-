@@ -10,7 +10,12 @@ src/
 
 ## 🚀 Quick Duress Simulation
 ## Architectural Boundaries & Admissibility Model
+To run the live interactive demonstrator script showcasing the fail-closed defense against advanced class-level resurrection and state spoofing attacks, execute:
 
+```bash
+python demo.py
+
+⁠```⁠
 To ensure strict separation of concerns, the Turkash ASV-SDP engine enforces the following operational boundaries:
 
 1. **Quorum vs. Admissibility:** 
