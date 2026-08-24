@@ -6,7 +6,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class LockedFlag:
-    """Descriptor آمن يمنع التراجع فقط (True -> False)، ويسمح بتكرار القيمة لدعم Idempotency (Z^2 = Z)."""
+    """Descriptor آمن يمنع التراجع فقط (True -> False)، ويسمح بتكرار أي قيمة مطابقة للحالية لدعم Idempotency (Z^2 = Z)."""
     def __init__(self, name, default=False):
         self.name = name
         self.default = default
@@ -20,8 +20,15 @@ class LockedFlag:
     def __set__(self, instance, value):
         inst_id = id(instance)
         current = self._values.get(inst_id, self.default)
+        
+        # السماح الفوري إذا كانت القيمة الجديدة مطابقة للقيمة الحالية تماماً (Idempotency)
+        if current == value:
+            return
+            
+        # منع التراجع فقط (إذا كانت الحالة True وحاول شخص جعلها False)
         if current and not value:
             raise PermissionError("CRITICAL SECURITY VIOLATION: Terminal state is irreversible.")
+            
         self._values[inst_id] = value
 
 
