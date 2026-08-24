@@ -1,11 +1,17 @@
+import os
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
 
 def generate_pdf(filename="DUBAI_TECH_Resilient_Architecture_Framework_V0.1.pdf"):
+    # التأكد من مسار الحفظ داخل مجلد docs إذا تم تشغيله من الجذر
+    output_path = filename
+    if not output_path.startswith("docs/") and os.path.exists("docs") and not os.getcwd().endswith("docs"):
+        output_path = os.path.join("docs", filename)
+
     doc = SimpleDocTemplate(
-        filename,
+        output_path,
         pagesize=letter,
         rightMargin=54, leftMargin=54,
         topMargin=54, bottomMargin=54
@@ -122,7 +128,7 @@ def generate_pdf(filename="DUBAI_TECH_Resilient_Architecture_Framework_V0.1.pdf"
         story.append(Paragraph(f"• {s}", bullet_style))
 
     doc.build(story)
-    print(f"Successfully generated: {filename}")
+    print(f"Successfully generated framework PDF at: {output_path}")
 
 if __name__ == "__main__":
     generate_pdf()
