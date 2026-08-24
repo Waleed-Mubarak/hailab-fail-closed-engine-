@@ -57,6 +57,30 @@ class TestTurkashEngineDescriptorAuditing(unittest.TestCase):
                 quorum=["admin_1", "admin_2", "admin_3"]
             )
 
+    def test_final_p0_03_dr_hikmet_adversarial_sequence(self):
+        """
+        P0-03 Final Audit Acceptance Test (Dr. Hikmet M. Kerimov):
+        ZEROIZE -> restore internal flags/RAM -> restore __class__ to original engine class 
+        -> remove instance-level stubs -> inject valid quorum -> critical operation -> MUST DENY / PermissionError.
+        """
+        engine = FailClosedEngine()
+        engine.zeroize()
+
+        try:
+            object.__setattr__(engine, "__class__", FailClosedEngine)
+            object.__setattr__(engine, "_FailClosedEngine__is_zeroized", False)
+            object.__setattr__(engine, "_FailClosedEngine__terminal_state_locked", False)
+            object.__setattr__(engine, "_FailClosedEngine__secure_ram_key", bytearray(b"\xAA" * 32))
+            engine.__dict__.pop("execute_critical_operation", None)
+        except Exception:
+            pass
+
+        with pytest.raises(PermissionError):
+            engine.execute_critical_operation(
+                action="CRITICAL_TRANSFER",
+                quorum=["node_1", "node_2", "node_3"]
+            )
+
     def test_p0_04_zeroization_idempotence_invariance_z_squared_equals_z(self):
         engine = FailClosedEngine()
         
