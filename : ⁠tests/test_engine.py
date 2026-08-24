@@ -1,31 +1,37 @@
 import unittest
-from engine import TurkashEngine
+import pytest
+from engine import FailClosedEngine, TurkashEngine
 
 class TestTurkashEngineDescriptorAuditing(unittest.TestCase):
     
-    def test_descriptor_irreversible_state_lock(self):
+    def test_p0_03_stub_deletion_fallback_bypass_denies_operation(self):
         """
-        Tests that once terminal states are locked via Descriptors, 
-        any adversarial attempt to reset them to False raises a PermissionError.
+        P0-03 Regression Test:
+        Ensures that restoring state flags AND deleting instance-level stubs
+        does not allow fallback execution of base class methods.
         """
-        engine = TurkashEngine()
+        engine = FailClosedEngine()
+        engine.zeroize()
         
-        # 1. Execute zeroization to trigger immutable descriptor locks
-        engine.execute_zeroization()
-        self.assertTrue(engine.is_zeroized)
+        # 1. Adversarial Flag Restoration via object.__setattr__
+        object.__setattr__(engine, "_FailClosedEngine__is_zeroized", False)
+        object.__setattr__(engine, "_FailClosedEngine__terminal_state_locked", False)
         
-        # 2. Adversarial attempt to mutate/reset descriptor states back to False must fail
-        with self.assertRaises(PermissionError):
-            engine._is_zeroized = False
-            
-        with self.assertRaises(PermissionError):
-            engine._terminal_state_locked = False
+        # 2. Delete instance-level stub overrides from instance __dict__ if any exist
+        engine.__dict__.pop("execute_critical_operation", None)
+        engine.__dict__.pop("check_admissibility", None)
+        
+        # 3. Must still raise PermissionError on execution attempt due to base class dict inspection
+        with pytest.raises(PermissionError, match=".*CRITICAL_BLOCK.*"):
+            engine.execute_critical_operation(
+                action="CRITICAL_TRANSFER",
+                quorum=["node_1", "node_2", "node_3"]
+            )
 
     def test_p0_04_zeroization_idempotence_invariance_z_squared_equals_z(self):
-        engine = TurkashEngine()
+        engine = FailClosedEngine()
         
-        # First destructive transition
-        engine.execute_zeroization()
+        engine.zeroize()
         snapshot_first = (
             engine.is_zeroized,
             engine.system_locked,
@@ -34,8 +40,7 @@ class TestTurkashEngineDescriptorAuditing(unittest.TestCase):
             len(engine.audit_trail)
         )
         
-        # Second destructive transition (Z^2 = Z)
-        engine.execute_zeroization()
+        engine.zeroize()
         snapshot_second = (
             engine.is_zeroized,
             engine.system_locked,
@@ -44,7 +49,6 @@ class TestTurkashEngineDescriptorAuditing(unittest.TestCase):
             len(engine.audit_trail)
         )
         
-        # Strict state invariance on core memory and terminal flags
         self.assertEqual(snapshot_first[0], snapshot_second[0])
         self.assertEqual(snapshot_first[1], snapshot_second[1])
         self.assertEqual(snapshot_first[2], snapshot_second[2])
