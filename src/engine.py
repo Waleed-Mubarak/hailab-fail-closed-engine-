@@ -104,6 +104,11 @@ class TurkashEngine:
         return True
 
     def execute_zeroization(self) -> bool:
+        # Idempotency Guard: Z^2 = Z preservation without raising unexpected Descriptor locks
+        if self._terminal_state_locked:
+            self._log_event("ZEROIZATION_REPEATED", "Engine already zeroized. Idempotency preserved; state is invariant.")
+            return True
+
         if self.__secure_ram_key:
             for i in range(len(self.__secure_ram_key)):
                 self.__secure_ram_key[i] = 0
@@ -121,10 +126,7 @@ class TurkashEngine:
         self.check_admissibility = lambda *args, **kwargs: False
         self.authorize_recovery = _permanent_deny
 
-        if not any(log["event"] == "ZEROIZATION_COMPLETE" for log in self.audit_trail):
-            self._log_event("ZEROIZATION_COMPLETE", "Secure RAM wiped and enforced via Immutable Descriptors.")
-        else:
-            self._log_event("ZEROIZATION_REPEATED", "Engine already zeroized. Idempotency preserved (Z^2 = Z).")
+        self._log_event("ZEROIZATION_COMPLETE", "Secure RAM wiped and enforced via Immutable Descriptors.")
         return True
 
     def get_key_status(self) -> str:
