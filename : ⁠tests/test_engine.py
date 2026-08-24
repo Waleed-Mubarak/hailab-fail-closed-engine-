@@ -28,6 +28,35 @@ class TestTurkashEngineDescriptorAuditing(unittest.TestCase):
                 quorum=["node_1", "node_2", "node_3"]
             )
 
+    def test_p0_03_full_sentinel_reconstruction_and_stub_deletion_denies(self):
+        """
+        P0-03 Final Acceptance Test (Dr. Hikmet M. Kerimov Audit):
+        Demonstrates that reconstructing flags AND the secure_ram_key bytearray,
+        combined with instance-stub deletion, STILL fails closed (PermissionError)
+        via class-level mutation lockdown (ZeroizedEngineProxy).
+        """
+        engine = FailClosedEngine()
+        engine.zeroize()
+
+        # 1. Full adversarial reconstruction attempt
+        object.__setattr__(engine, "_FailClosedEngine__is_zeroized", False)
+        object.__setattr__(engine, "_FailClosedEngine__terminal_state_locked", False)
+        object.__setattr__(engine, "_FailClosedEngine__secure_ram_key", bytearray(b"\xAA" * 32))
+
+        # 2. Stub deletion attempt
+        try:
+            engine.__dict__.pop("execute_critical_operation", None)
+            engine.__dict__.pop("check_admissibility", None)
+        except AttributeError:
+            pass
+
+        # 3. Must trigger PermissionError via fail-closed architecture / proxy
+        with pytest.raises(PermissionError, match=r".*CRITICAL_BLOCK.*"):
+            engine.execute_critical_operation(
+                action="CRITICAL_TRANSFER",
+                quorum=["admin_1", "admin_2", "admin_3"]
+            )
+
     def test_p0_04_zeroization_idempotence_invariance_z_squared_equals_z(self):
         engine = FailClosedEngine()
         
@@ -53,6 +82,8 @@ class TestTurkashEngineDescriptorAuditing(unittest.TestCase):
         self.assertEqual(snapshot_first[1], snapshot_second[1])
         self.assertEqual(snapshot_first[2], snapshot_second[2])
         self.assertEqual(snapshot_first[3], snapshot_second[3])
+        # التحقق من أن طول سجل التدقيق لم يتغير عند التصفير المتكرر (Z^2 = Z)
+        self.assertEqual(snapshot_first[4], snapshot_second[4])
 
 if __name__ == "__main__":
     unittest.main()
