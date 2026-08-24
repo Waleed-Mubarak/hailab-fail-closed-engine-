@@ -6,7 +6,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class LockedFlag:
-    """Descriptor آمن يمنع العكس فقط، ويسمح بتكرار القيمة الحالية لضمان دعم Idempotency (Z^2 = Z)."""
+    """Descriptor آمن يمنع التراجع فقط (True -> False)، ويسمح بتكرار القيمة لدعم Idempotency (Z^2 = Z)."""
     def __init__(self, name, default=False):
         self.name = name
         self.default = default
@@ -171,5 +171,4 @@ class TurkashEngine:
             return b'\x00' * 32
         return bytes(self.__secure_ram_key)
 
-# توفير مرجع متوافق لكي ينجح الاستيراد بغض النظر عن الاسم المطلوب في الاختبارات
 FailClosedEngine = TurkashEngine
