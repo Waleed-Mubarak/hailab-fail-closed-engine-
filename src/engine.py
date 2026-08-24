@@ -5,69 +5,34 @@ import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-class LockedFlag:
-    """Descriptor آمن يمنع التراجع (True -> False) ويدعم الثبات (Idempotency)."""
-    def __init__(self, name, default=False):
-        self.name = name
-        self.default = default
-
-    def __get__(self, instance, owner):
-        if instance is None:
-            return self
-        return getattr(instance, f"_{self.name}_val", self.default)
-
-    def __set__(self, instance, value):
-        current = getattr(instance, f"_{self.name}_val", self.default)
-        if current == value:
-            return
-        if current and not value:
-            raise PermissionError("CRITICAL SECURITY VIOLATION: Terminal state is irreversible.")
-        setattr(instance, f"_{self.name}_val", value)
-
-
-class TurkashEngine:
-    _is_zeroized = LockedFlag("_is_zeroized", False)
-    _system_locked = LockedFlag("_system_locked", False)
-    _terminal_state_locked = LockedFlag("_terminal_state_locked", False)
-
+class FailClosedEngine:
     def __init__(self):
-        super().__setattr__('_TurkashEngine__secure_ram_key', bytearray(os.urandom(32)))
-        self._is_zeroized = False
-        self._system_locked = False
-        self._terminal_state_locked = False
+        super().__setattr__('_FailClosedEngine__secure_ram_key', bytearray(os.urandom(32)))
+        super().__setattr__('_FailClosedEngine__is_zeroized', False)
+        super().__setattr__('_FailClosedEngine__terminal_state_locked', False)
         self.audit_trail = [] 
         self.authorized_admins = set()
-        self._log_event("ENGINE_INITIALIZED", "Secure Sovereign Engine initialized with Locked Descriptors.")
+        self._log_event("ENGINE_INITIALIZED", "Fail-Closed Sovereign Engine initialized.")
 
-    def __setattr__(self, key, value):
-        if key == '_TurkashEngine__secure_ram_key':
-            if self._terminal_state_locked or self._is_zeroized:
-                if value is not None:
-                    raise PermissionError("CRITICAL SECURITY VIOLATION: Attempted state mutation on secure RAM is prohibited.")
-        super().__setattr__(key, value)
-
-    def _verify_absolute_integrity(self):
-        """فحص أمني دقيق ضد تجاوز الـ Fallback وحذف الـ Stubs (P0-03)."""
+    def _verify_constitutional_integrity(self):
+        """فحص جذري للـ __dict__ الخام لمنع الـ Fallback Bypass وتلاعب الـ Reflection (P0-03)."""
         raw_dict = object.__getattribute__(self, "__dict__")
-        # فحص الـ dict الخام للتحقق مما إذا تم التلاعب بالحالة أو تصفيرها
-        if (raw_dict.get("_TurkashEngine__is_zeroized_val", False) or 
-            raw_dict.get("_TurkashEngine__terminal_state_locked_val", False) or 
-            raw_dict.get("_TurkashEngine__secure_ram_key", None) is None):
+        if (raw_dict.get("_FailClosedEngine__is_zeroized", False) or 
+            raw_dict.get("_FailClosedEngine__terminal_state_locked", False) or 
+            raw_dict.get("_FailClosedEngine__secure_ram_key", None) is None):
             raise PermissionError("CRITICAL_BLOCK: Terminal state zeroization is irreversible.")
 
     @property
     def is_zeroized(self) -> bool:
         try:
-            self._verify_absolute_integrity()
-            memory_is_wiped = all(b == 0 for b in self.__secure_ram_key) if self.__secure_ram_key else True
-            return self._is_zeroized or memory_is_wiped or self._terminal_state_locked
+            self._verify_constitutional_integrity()
+            return False
         except PermissionError:
             return True
 
     @property
     def system_locked(self) -> bool:
-        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key) if self.__secure_ram_key else True
-        return self._system_locked or memory_is_wiped or self._terminal_state_locked
+        return self.is_zeroized
 
     @property
     def secure_ram_key_status(self) -> str:
@@ -93,54 +58,36 @@ class TurkashEngine:
         logging.info(f"Audit Log Recorded: [{event_type}] - Hash: {current_hash[:12]}...")
 
     def authorize_recovery(self, admin_id: str) -> bool:
-        if self._terminal_state_locked or self._is_zeroized or self._system_locked:
+        try:
+            self._verify_constitutional_integrity()
+        except PermissionError:
             self._log_event("RECOVERY_DENIED", f"Attempt by {admin_id} on zeroized/locked engine.")
-            return False
-        
-        memory_is_wiped = all(b == 0 for b in self.__secure_ram_key) if self.__secure_ram_key else True
-        if memory_is_wiped:
-            self._log_event("RECOVERY_DENIED", f"Attempt by {admin_id} on wiped memory.")
             return False
             
         self.authorized_admins.add(admin_id)
         self._log_event("ADMIN_AUTHORIZED", f"Recovery authorization granted by {admin_id}.")
         return True
 
-    def execute_zeroization(self) -> bool:
-        already_zeroized = self._terminal_state_locked
+    def zeroize(self) -> bool:
+        """دالة التصفير المتوافقة مع تسمية تقرير د. حِكمت."""
+        raw_dict = object.__getattribute__(self, "__dict__")
+        ram = raw_dict.get("_FailClosedEngine__secure_ram_key")
+        if ram is not None:
+            for i in range(len(ram)):
+                ram[i] = 0
 
-        if self.__secure_ram_key:
-            for i in range(len(self.__secure_ram_key)):
-                self.__secure_ram_key[i] = 0
+        super().__setattr__('_FailClosedEngine__is_zeroized', True)
+        super().__setattr__('_FailClosedEngine__terminal_state_locked', True)
+        super().__setattr__('_FailClosedEngine__secure_ram_key', None)
 
-        self._is_zeroized = True
-        self._system_locked = True
-        self._terminal_state_locked = True
-        
-        super().__setattr__('_TurkashEngine__secure_ram_key', None)
-
-        def _permanent_deny(*args, **kwargs):
-            raise PermissionError("CRITICAL_BLOCK: Engine is permanently zeroized.")
-
-        self.execute_critical_operation_mpa = _permanent_deny
-        self.check_admissibility = lambda *args, **kwargs: False
-        self.authorize_recovery = _permanent_deny
-
-        if not already_zeroized:
-            self._log_event("ZEROIZATION_COMPLETE", "Secure RAM wiped and enforced via Locked Descriptors.")
-        else:
-            self._log_event("ZEROIZATION_REPEATED", "Engine already zeroized. Idempotency preserved (Z^2 = Z).")
+        self._log_event("ZEROIZATION_COMPLETE", "Secure RAM wiped and terminal flags locked.")
         return True
 
-    def get_key_status(self) -> str:
-        if self.is_zeroized:
-            return "ZEROIZED_SECURE"
-        return "ACTIVE"
+    def execute_zeroization(self) -> bool:
+        return self.zeroize()
 
     def add_signature(self, admin_id: str):
-        if self.is_zeroized or self.system_locked:
-            self._log_event("SIGNATURE_REJECTED", f"Cannot add signature for {admin_id}: Engine in terminal state.")
-            return
+        self._verify_constitutional_integrity()
         self.authorized_admins.add(admin_id)
         self._log_event("ADMIN_SIGNATURE_ADDED", f"Admin {admin_id} added.")
 
@@ -149,35 +96,32 @@ class TurkashEngine:
 
     def check_admissibility(self) -> bool:
         try:
-            self._verify_absolute_integrity()
+            self._verify_constitutional_integrity()
+            raw_dict = object.__getattribute__(self, "__dict__")
+            ram = raw_dict.get("_FailClosedEngine__secure_ram_key")
+            return ram is not None and not all(b == 0 for b in ram)
         except PermissionError:
             return False
-        if self._terminal_state_locked or self._is_zeroized or self._system_locked:
-            return False
-        if self.__secure_ram_key is None:
-            return False
-        return not all(b == 0 for b in self.__secure_ram_key)
 
-    def execute_critical_operation_mpa(self, required_count: int = 2) -> str:
-        self._verify_absolute_integrity()
-
-        if self._terminal_state_locked or self._is_zeroized:
-            raise PermissionError("CRITICAL_BLOCK: Terminal state zeroization is irreversible.")
+    def execute_critical_operation(self, action: str = "", quorum=None) -> str:
+        # فحص إلزامي ضد الـ Reflection والـ Fallback Bypass
+        self._verify_constitutional_integrity()
 
         if not self.check_admissibility():
-            self._log_event("CRITICAL_OPERATION_DENIED", {"reason": "admissibility_boundary_failed"})
-            return "OPERATION_DENIED: Engine in terminal or locked state."
+            raise PermissionError("CRITICAL_BLOCK: Terminal state zeroization is irreversible.")
 
-        if self.check_quorum(required_count):
-            self._log_event("CRITICAL_OPERATION_AUTHORIZED", {"quorum": len(self.authorized_admins)})
+        effective_count = len(quorum) if isinstance(quorum, list) else 2
+        if self.check_quorum(effective_count):
+            self._log_event("CRITICAL_OPERATION_AUTHORIZED", {"quorum": effective_count})
             return "OPERATION_SUCCESS: Quorum reached."
         else:
-            self._log_event("CRITICAL_OPERATION_DENIED", {"reason": "insufficient_signatures"})
-            return "OPERATION_DENIED: Insufficient signatures."
+            raise PermissionError("CRITICAL_BLOCK: Insufficient signatures.")
 
     def inspect_raw_memory_snapshot(self) -> bytes:
-        if self.__secure_ram_key is None:
+        raw_dict = object.__getattribute__(self, "__dict__")
+        ram = raw_dict.get("_FailClosedEngine__secure_ram_key")
+        if ram is None:
             return b'\x00' * 32
-        return bytes(self.__secure_ram_key)
+        return bytes(ram)
 
-FailClosedEngine = TurkashEngine
+TurkashEngine = FailClosedEngine
