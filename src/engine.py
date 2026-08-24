@@ -104,9 +104,9 @@ class TurkashEngine:
         return True
 
     def execute_zeroization(self) -> bool:
-        # Idempotency Guard: Z^2 = Z preservation without raising unexpected Descriptor locks
-        if self._terminal_state_locked:
-            self._log_event("ZEROIZATION_REPEATED", "Engine already zeroized. Idempotency preserved; state is invariant.")
+        # فحص مباشر وآمن للـ Descriptor لمنع التكرار دون إثارة استثناء القفل
+        if TurkashEngine._terminal_state_locked.__get__(self, TurkashEngine):
+            self._log_event("ZEROIZATION_REPEATED", "Engine already zeroized. Idempotency preserved (Z^2 = Z).")
             return True
 
         if self.__secure_ram_key:
