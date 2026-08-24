@@ -6,7 +6,6 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class ImmutableSentinel:
-    """حارس ذاكرة غير قابل للتلاعب بالانعكاس أو التعديل المباشر."""
     def __init__(self, value=False):
         self._val = value
         self._locked = False
@@ -24,7 +23,6 @@ class ImmutableSentinel:
 
 class TurkashEngine:
     def __init__(self):
-        # استخدام ذاكرة مؤمنة بالكامل غير قابلة للاختراق القياسي
         super().__setattr__('_secure_ram_key', bytearray(os.urandom(32)))
         super().__setattr__('_is_zeroized_sentinel', ImmutableSentinel(False))
         super().__setattr__('_terminal_locked_sentinel', ImmutableSentinel(False))
@@ -40,7 +38,6 @@ class TurkashEngine:
         super().__setattr__(key, value)
 
     def _verify_absolute_integrity(self):
-        """فحص جذري لا يمكن تجاوزه بالـ Reflection أو حذف الـ Stubs."""
         ram = object.__getattribute__(self, '_secure_ram_key')
         is_zero_ram = all(b == 0 for b in ram) if ram is not None else True
         
@@ -61,6 +58,12 @@ class TurkashEngine:
     @property
     def system_locked(self) -> bool:
         return self.is_zeroized
+
+    @property
+    def secure_ram_key_status(self) -> str:
+        if self.is_zeroized:
+            return "ZEROIZED_TERMINAL_LOCKED"
+        return "SECURELY_MANAGED_READ_ONLY"
 
     def _log_event(self, event_type: str, details: str):
         timestamp = time.time()
@@ -111,6 +114,11 @@ class TurkashEngine:
         self._log_event("ZEROIZATION_COMPLETE", "Secure RAM wiped and enforced via Immutable Sentinels.")
         return True
 
+    def get_key_status(self) -> str:
+        if self.is_zeroized:
+            return "ZEROIZED_SECURE"
+        return "ACTIVE"
+
     def add_signature(self, admin_id: str):
         try:
             self._verify_absolute_integrity()
@@ -132,14 +140,12 @@ class TurkashEngine:
             return False
 
     def execute_critical_operation_mpa(self, required_count: int = 2, action: str = "", quorum=None) -> str:
-        # فحص إلزامي لا يمكن تجاوزه حتى لو تم حذف الـ Stubs أو التلاعب بالـ dict
         self._verify_absolute_integrity()
 
         if not self.check_admissibility():
             self._log_event("CRITICAL_OPERATION_DENIED", {"reason": "admissibility_boundary_failed"})
             return "OPERATION_DENIED: Engine in terminal or locked state."
 
-        # التعامل مع شكل الـ quorum سواء كان عدداً أو قائمة
         effective_count = len(quorum) if isinstance(quorum, list) else required_count
         if self.check_quorum(effective_count):
             self._log_event("CRITICAL_OPERATION_AUTHORIZED", {"quorum": effective_count})
