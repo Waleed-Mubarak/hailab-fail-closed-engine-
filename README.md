@@ -11,8 +11,8 @@ src/
 ## 🚀 Quick Duress Simulation
 ## Architectural Boundaries & Admissibility Model
 To run the live interactive demonstrator script showcasing the fail-closed defense against advanced class-level resurrection and state spoofing attacks, execute:
-
 ```bash
+
 python demo.py
 
 ⁠```
