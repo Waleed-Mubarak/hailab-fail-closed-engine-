@@ -1,4 +1,4 @@
-    import time
+import time
 import os
 import hashlib
 import logging
@@ -180,3 +180,4 @@ class TurkashEngine:
         if self.__secure_ram_key is None:
             return b'\x00' * 32
         return bytes(self.__secure_ram_key)
+    
