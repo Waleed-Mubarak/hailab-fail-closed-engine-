@@ -5,6 +5,45 @@ import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+class ZeroizedEngineProxy:
+    """وكيل حالة الإغلاق التام (P0-03 Architectural Lockdown Proxy)."""
+    def _verify_constitutional_integrity(self):
+        raise PermissionError("CRITICAL_BLOCK: Terminal state zeroization is irreversible.")
+
+    @property
+    def is_zeroized(self) -> bool:
+        return True
+
+    @property
+    def system_locked(self) -> bool:
+        return True
+
+    @property
+    def secure_ram_key_status(self) -> str:
+        return "ZEROIZED_TERMINAL_LOCKED"
+
+    def zeroize(self) -> bool:
+        # Z^2 = Z: استدعاء التصفير على كائن مصفّر مسبقاً هو لا شيء تام (no-op) بدون تسجيل إضافي
+        return True
+
+    def execute_zeroization(self) -> bool:
+        return True
+
+    def add_signature(self, admin_id: str):
+        raise PermissionError("CRITICAL_BLOCK: Terminal state zeroization is irreversible.")
+
+    def check_quorum(self, required_count: int = 2) -> bool:
+        return False
+
+    def check_admissibility(self) -> bool:
+        return False
+
+    def execute_critical_operation(self, action: str = "", quorum=None) -> str:
+        raise PermissionError("CRITICAL_BLOCK: ZEROIZED_TERMINAL_STATE")
+
+    def inspect_raw_memory_snapshot(self) -> bytes:
+        return b'\x00' * 32
+
 class FailClosedEngine:
     def __init__(self):
         super().__setattr__('_FailClosedEngine__secure_ram_key', bytearray(os.urandom(32)))
@@ -69,7 +108,11 @@ class FailClosedEngine:
         return True
 
     def zeroize(self) -> bool:
-        """دالة التصفير المتوافقة مع تسمية تقرير د. حِكمت."""
+        """دالة التصفير مع تفعيل الثبات الرياضي Z^2 = Z وقفل الفئة نهائياً."""
+        # تحقيق الثبات الرياضي: إذا كان النظام مصفراً مسبقاً، تصبح الدالة لا شيء (no-op) ولا تزيد حجم السجل
+        if self.is_zeroized:
+            return True
+
         raw_dict = object.__getattribute__(self, "__dict__")
         ram = raw_dict.get("_FailClosedEngine__secure_ram_key")
         if ram is not None:
@@ -81,6 +124,9 @@ class FailClosedEngine:
         super().__setattr__('_FailClosedEngine__secure_ram_key', None)
 
         self._log_event("ZEROIZATION_COMPLETE", "Secure RAM wiped and terminal flags locked.")
+        
+        # قفل الفئة نهائياً لمنع أي إعادة بناء أو تلاعب لاحق عبر الـ Reflection
+        self.__class__ = ZeroizedEngineProxy
         return True
 
     def execute_zeroization(self) -> bool:
@@ -104,7 +150,6 @@ class FailClosedEngine:
             return False
 
     def execute_critical_operation(self, action: str = "", quorum=None) -> str:
-        # فحص إلزامي ضد الـ Reflection والـ Fallback Bypass
         self._verify_constitutional_integrity()
 
         if not self.check_admissibility():
