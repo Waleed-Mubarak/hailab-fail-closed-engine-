@@ -104,8 +104,9 @@ class TurkashEngine:
         return True
 
     def execute_zeroization(self) -> bool:
-        # فحص مباشر وآمن للـ Descriptor لمنع التكرار دون إثارة استثناء القفل
-        if TurkashEngine._terminal_state_locked.__get__(self, TurkashEngine):
+        # فحص مباشر لحالة القفل الحالية دون إثارة استثناء
+        inst_id = id(self)
+        if TurkashEngine._terminal_state_locked._values.get(inst_id, False):
             self._log_event("ZEROIZATION_REPEATED", "Engine already zeroized. Idempotency preserved (Z^2 = Z).")
             return True
 
@@ -113,6 +114,7 @@ class TurkashEngine:
             for i in range(len(self.__secure_ram_key)):
                 self.__secure_ram_key[i] = 0
 
+        # تعيين الحالة لأول مرة عبر الـ Descriptors بشكل نظامي
         self._is_zeroized = True
         self._system_locked = True
         self._terminal_state_locked = True
