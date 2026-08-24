@@ -3,33 +3,34 @@ from engine import TurkashEngine
 
 class TestTurkashEngineFinalAuditing(unittest.TestCase):
     
-    def test_p0_03_exact_adversarial_flow_denial(self):
+    def test_p0_03_stub_deletion_fallback_bypass_denies_operation(self):
         """
-        Narrowly scoped regression test for P0-03 (Requested by Dr. Hikmat Kerimov):
-        Flow: ZEROIZE -> attempted direct internal-state tampering/bypass -> valid quorum -> critical operation -> DENY/PermissionError
+        P0-03 Regression Test (Requested by Dr. Hikmat Kerimov):
+        Ensures that restoring state flags AND explicitly deleting instance-level stubs 
+        from __dict__ does not allow fallback execution of base class methods.
         """
         engine = TurkashEngine()
         
-        # 1. ZEROIZE
+        # 1. Execute zeroization to trigger initial stub-replacement and terminal locks
         engine.execute_zeroization()
         self.assertTrue(engine.is_zeroized)
         
-        # 2. attempted direct internal-state tampering/bypass via object level and __dict__
-        try:
-            object.__setattr__(engine, "_TurkashEngine__terminal_state_locked", False)
-            object.__setattr__(engine, "_TurkashEngine__is_zeroized", False)
-            object.__setattr__(engine, "_TurkashEngine__system_locked", False)
-            if hasattr(engine, '_TurkashEngine__secure_ram_key') and engine._TurkashEngine__secure_ram_key is not None:
-                for i in range(len(engine._TurkashEngine__secure_ram_key)):
-                    engine._TurkashEngine__secure_ram_key[i] = 0xAA
-        except Exception:
-            pass  # Even if blocked or caught, proceed to test structural invalidation
-            
-        # 3. valid quorum (injecting valid admin signatures/quorum)
-        engine.authorized_admins.add("admin_1")
-        engine.authorized_admins.add("admin_2")
+        # 2. Adversarial State Mutation & Flag Restoration attempt
+        object.__setattr__(engine, "_TurkashEngine__is_zeroized", False)
+        object.__setattr__(engine, "_TurkashEngine__terminal_state_locked", False)
+        object.__setattr__(engine, "_TurkashEngine__system_locked", False)
         
-        # 4. critical operation -> must result in PermissionError due to irreversible method invalidation (stub-replacement)
+        # 3. Explicitly delete instance-level stub overrides from instance __dict__ to test fallback vector
+        raw_dict = object.__getattribute__(engine, "__dict__")
+        raw_dict.pop("execute_critical_operation_mpa", None)
+        raw_dict.pop("check_admissibility", None)
+        
+        # 4. Provide valid quorum to simulate a sophisticated bypass attempt
+        engine.authorized_admins.add("node_1")
+        engine.authorized_admins.add("node_2")
+        engine.authorized_admins.add("node_3")
+        
+        # 5. Execution attempt must still raise PermissionError via base-class dictionary inspection
         with self.assertRaises(PermissionError):
             engine.execute_critical_operation_mpa(required_count=2)
 
