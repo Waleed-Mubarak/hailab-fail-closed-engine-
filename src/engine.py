@@ -6,30 +6,26 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class LockedFlag:
-    """Descriptor آمن يمنع التراجع فقط (True -> False)، ويسمح بتكرار أي قيمة مطابقة للحالية لدعم Idempotency (Z^2 = Z)."""
+    """Descriptor أبسط وأكثر قوة يمنع التراجع فقط ويسمح بتكرار الحالة بسلاسة مطلقة."""
     def __init__(self, name, default=False):
         self.name = name
         self.default = default
-        self._values = {}
 
     def __get__(self, instance, owner):
         if instance is None:
             return self
-        return self._values.get(id(instance), self.default)
+        return getattr(instance, f"_{self.name}_val", self.default)
 
     def __set__(self, instance, value):
-        inst_id = id(instance)
-        current = self._values.get(inst_id, self.default)
+        current = getattr(instance, f"_{self.name}_val", self.default)
         
-        # السماح الفوري إذا كانت القيمة الجديدة مطابقة للقيمة الحالية تماماً (Idempotency)
         if current == value:
             return
             
-        # منع التراجع فقط (إذا كانت الحالة True وحاول شخص جعلها False)
         if current and not value:
             raise PermissionError("CRITICAL SECURITY VIOLATION: Terminal state is irreversible.")
             
-        self._values[inst_id] = value
+        setattr(instance, f"_{self.name}_val", value)
 
 
 class TurkashEngine:
