@@ -1,10 +1,4 @@
 import unittest
-import sys
-import os
-
-# إضافة مجلد src يدوياً لمسار بايثون
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
-
 from security_kernel import ZeroizationKernel, verify_and_integrate, FailClosedEnforcementError
 
 class TestSecurityKernel(unittest.TestCase):
@@ -20,7 +14,7 @@ class TestSecurityKernel(unittest.TestCase):
             pass
 
     def test_secure_payload_and_scrub(self):
-        """اختبار كتابة البيانات وتطهيرها"""
+        """اختبار كتابة البيانات الحساسة وتطهيرها بنجاح (Zeroization)"""
         test_data = b"Secret_Deterministic_Payload_2026"
         self.kernel.write_payload(test_data)
         
@@ -35,16 +29,16 @@ class TestSecurityKernel(unittest.TestCase):
         self.assertEqual(zeroed_data, b'\x00' * len(test_data))
 
     def test_verify_and_integrate_success(self):
-        """اختبار نجاح التكامل عند تطابق البصمة"""
+        """اختبار نجاح التكامل عند تطابق الرمز التعريفي Commit SHA"""
         expected_sha = "3be0185"
         current_sha = "3be0185"
         try:
             verify_and_integrate(current_sha, expected_sha, self.kernel)
         except FailClosedEnforcementError:
-            self.fail("خطأ في تطابق البصمة!")
+            self.fail("تم تفعيل الإغلاق الخاطئ رغم تطابق البصمة!")
 
     def test_fail_closed_trigger_on_mismatch(self):
-        """اختبار تفعيل قفل الأمان عند اختلاف البصمة"""
+        """اختبار تفعيل القفل عند الفشل (Fail-Closed) عند اختلاف الرمز التعريفي"""
         expected_sha = "3be0185"
         tampered_sha = "deadbeef"
         
