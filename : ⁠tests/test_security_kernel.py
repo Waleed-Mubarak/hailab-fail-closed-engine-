@@ -2,10 +2,10 @@ import unittest
 import sys
 import os
 
-# إضافة مجلد src إلى مسار النظام لاستيراد النواة الأمنية بدقة
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+# إضافة مجلد الجذر إلى مسار النظام لضمان توافق الاستيراد تماماً مع الـ CI
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from security_kernel import ZeroizationKernel, verify_and_integrate, FailClosedEnforcementError
+from src.security_kernel import ZeroizationKernel, verify_and_integrate, FailClosedEnforcementError
 
 class TestSecurityKernel(unittest.TestCase):
     
@@ -58,4 +58,3 @@ class TestSecurityKernel(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-
