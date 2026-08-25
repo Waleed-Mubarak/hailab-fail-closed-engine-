@@ -1,8 +1,4 @@
 import unittest
-import sys
-import os
-
-sys.path.insert(0, os.path.abspath("../src"))
 from security_kernel import ZeroizationKernel, verify_and_integrate, FailClosedEnforcementError
 
 class TestSecurityKernel(unittest.TestCase):
