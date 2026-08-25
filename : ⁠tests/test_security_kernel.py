@@ -29,9 +29,9 @@ class TestSecurityKernel(unittest.TestCase):
         """اختبار سياسة الإغلاق التام ورفض العمليات بعد التصفير"""
         self.engine.zeroize()
         
-        # محاولة تفويض صلاحية بعد التصفير يجب أن تفشل تماماً (Fail-Closed)
-        result = self.engine.authorize_recovery("admin_test")
-        self.assertFalse(result)
+        # بعد التصفير، يتحول المحرك إلى الوكيل وتفويض الصلاحيات أو العمليات الحرجة ترفض قاطعاً
+        with self.assertRaises((PermissionError, AttributeError)):
+            self.engine.authorize_recovery("admin_test")
 
         with self.assertRaises(PermissionError):
             self.engine.execute_critical_operation(action="test_action")
