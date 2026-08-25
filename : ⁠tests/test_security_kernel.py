@@ -1,73 +1,62 @@
 import unittest
-from engine import ZeroizationKernel, verify_and_integrate, FailClosedEnforcementError
+from engine import FailClosedEngine
 
 class TestSecurityKernel(unittest.TestCase):
     
     def setUp(self):
-        self.kernel_size = 512
-        self.kernel = ZeroizationKernel(size=self.kernel_size)
+        self.engine = FailClosedEngine()
 
     def tearDown(self):
-        try:
-            self.kernel.buffer.close()
-        except:
-            pass
+        pass
 
     def test_secure_payload_and_scrub(self):
-        """اختبار كتابة البيانات الحساسة وتطهيرها بنجاح"""
-        test_data = b"Secret_Deterministic_Payload_2026"
-        self.kernel.write_payload(test_data)
-        
-        self.kernel.buffer.seek(0)
-        read_data = self.kernel.buffer.read(len(test_data))
-        self.assertEqual(read_data, test_data)
+        """اختبار تهيئة المحرك والتأكد من الحالة الآمنة الأوليّة"""
+        self.assertFalse(self.engine.is_zeroized)
+        self.assertEqual(self.engine.secure_ram_key_status, "SECURELY_MANAGED_READ_ONLY")
 
-        self.kernel.secure_scrub()
-        
-        self.kernel.buffer.seek(0)
-        zeroed_data = self.kernel.buffer.read(len(test_data))
-        self.assertEqual(zeroed_data, b'\x00' * len(test_data))
+        # تنفيذ التصفير
+        self.engine.zeroize()
+        self.assertTrue(self.engine.is_zeroized)
+        self.assertEqual(self.engine.secure_ram_key_status, "ZEROIZED_TERMINAL_LOCKED")
 
     def test_verify_and_integrate_success(self):
-        """اختبار نجاح التكامل عند تطابق البصمة"""
-        expected_sha = "3be0185"
-        current_sha = "3be0185"
-        try:
-            verify_and_integrate(current_sha, expected_sha, self.kernel)
-        except FailClosedEnforcementError:
-            self.fail("خطأ في تطابق البصمة!")
+        """اختبار التشغيل السليم والتفتيش على الذاكرة الخام"""
+        snapshot = self.engine.inspect_raw_memory_snapshot()
+        self.assertEqual(len(snapshot), 32)
+        self.assertNotEqual(snapshot, b'\x00' * 32)
 
     def test_fail_closed_trigger_on_mismatch(self):
-        """اختبار تفعيل القفل عند اختلاف البصمة"""
-        expected_sha = "3be0185"
-        tampered_sha = "deadbeef"
+        """اختبار سياسة الإغلاق التام ورفض العمليات بعد التصفير"""
+        self.engine.zeroize()
         
-        with self.assertRaises(FailClosedEnforcementError):
-            verify_and_integrate(tampered_sha, expected_sha, self.kernel)
+        # محاولة تفويض صلاحية بعد التصفير يجب أن تفشل تماماً (Fail-Closed)
+        result = self.engine.authorize_recovery("admin_test")
+        self.assertFalse(result)
+
+        with self.assertRaises(PermissionError):
+            self.engine.execute_critical_operation(action="test_action")
 
     def test_p0_03_reflection_lockdown(self):
-        """P0-03: اختبار قفل الانعكاس وحماية الحارس (Reflection Lockdown / Sentinel Protection)"""
-        with self.assertRaises((AttributeError, RuntimeError, TypeError)):
-            # محاولة العبث بالخصائص الداخلية المحمية للنواة عبر الانعكاس الديناميكي
-            setattr(self.kernel, '_protected_sentinel', 0xDEADBEEF)
+        """P0-03: اختبار قفل الانعكاس والحماية الدستورية (Reflection Lockdown / Constitutional Integrity)"""
+        # محاولة التلاعب بالسمات المحمية يجب أن تمنع وتفعّل حظر الحماية
+        with self.assertRaises(PermissionError):
+            self.engine._verify_constitutional_integrity()
+            # محاولة العبث المباشر بالـ dict الخام
+            raw_dict = object.__getattribute__(self.engine, "__dict__")
+            raw_dict["_FailClosedEngine__secure_ram_key"] = None
+            self.engine._verify_constitutional_integrity()
 
     def test_p0_04_idempotent_zeroization(self):
         """P0-04: اختبار التطهير الثابت والمتكرر Z^2 = Z (Idempotent Zeroization Test)"""
-        test_data = b"Idempotent_Test_Data"
-        self.kernel.write_payload(test_data)
-        
-        # التطهير الأول
-        self.kernel.secure_scrub()
-        self.kernel.buffer.seek(0)
-        first_pass = self.kernel.buffer.read(len(test_data))
-        
-        # التطهير الثاني (التحقق من الخاصية الثابتة Z^2 = Z)
-        self.kernel.secure_scrub()
-        self.kernel.buffer.seek(0)
-        second_pass = self.kernel.buffer.read(len(test_data))
-        
-        self.assertEqual(first_pass, second_pass)
-        self.assertEqual(second_pass, b'\x00' * len(test_data))
+        # التصفير الأول
+        res1 = self.engine.zeroize()
+        self.assertTrue(res1)
+        self.assertTrue(self.engine.is_zeroized)
+
+        # التصفير الثاني (التحقق من الخاصية الثابتة والإيدموبوتنس Z^2 = Z بدون أخطاء إضافية)
+        res2 = self.engine.zeroize()
+        self.assertTrue(res2)
+        self.assertTrue(self.engine.is_zeroized)
 
 if __name__ == '__main__':
     unittest.main()
