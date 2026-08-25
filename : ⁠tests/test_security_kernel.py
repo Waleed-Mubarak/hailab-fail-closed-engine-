@@ -38,22 +38,18 @@ class TestSecurityKernel(unittest.TestCase):
 
     def test_p0_03_reflection_lockdown(self):
         """P0-03: اختبار قفل الانعكاس والحماية الدستورية (Reflection Lockdown / Constitutional Integrity)"""
-        # محاولة التلاعب بالسمات المحمية يجب أن تمنع وتفعّل حظر الحماية
         with self.assertRaises(PermissionError):
             self.engine._verify_constitutional_integrity()
-            # محاولة العبث المباشر بالـ dict الخام
             raw_dict = object.__getattribute__(self.engine, "__dict__")
             raw_dict["_FailClosedEngine__secure_ram_key"] = None
             self.engine._verify_constitutional_integrity()
 
     def test_p0_04_idempotent_zeroization(self):
         """P0-04: اختبار التطهير الثابت والمتكرر Z^2 = Z (Idempotent Zeroization Test)"""
-        # التصفير الأول
         res1 = self.engine.zeroize()
         self.assertTrue(res1)
         self.assertTrue(self.engine.is_zeroized)
 
-        # التصفير الثاني (التحقق من الخاصية الثابتة والإيدموبوتنس Z^2 = Z بدون أخطاء إضافية)
         res2 = self.engine.zeroize()
         self.assertTrue(res2)
         self.assertTrue(self.engine.is_zeroized)
