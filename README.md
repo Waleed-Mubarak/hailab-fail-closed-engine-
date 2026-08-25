@@ -36,7 +36,7 @@ python3 simulate_duress.py
 ## 🚀 Quick Start & Installation
 
 
-git clonehttps://github.com/Waleed-Mubarak/hailab-fail-closed-engine-
+git clone https://github.com/Waleed-Mubarak/hailab-fail-closed-engine-
 
 
 To test the fail-closed engine, hysteresis suppression, and Multi-Party Authorization (MPA):
