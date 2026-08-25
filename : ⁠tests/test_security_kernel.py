@@ -1,5 +1,5 @@
 import unittest
-from security_kernel import ZeroizationKernel, verify_and_integrate, FailClosedEnforcementError
+from engine import ZeroizationKernel, verify_and_integrate, FailClosedEnforcementError
 
 class TestSecurityKernel(unittest.TestCase):
     
@@ -14,7 +14,7 @@ class TestSecurityKernel(unittest.TestCase):
             pass
 
     def test_secure_payload_and_scrub(self):
-        """اختبار كتابة البيانات الحساسة وتطهيرها بنجاح (Zeroization)"""
+        """اختبار كتابة البيانات الحساسة وتطهيرها بنجاح"""
         test_data = b"Secret_Deterministic_Payload_2026"
         self.kernel.write_payload(test_data)
         
@@ -29,16 +29,16 @@ class TestSecurityKernel(unittest.TestCase):
         self.assertEqual(zeroed_data, b'\x00' * len(test_data))
 
     def test_verify_and_integrate_success(self):
-        """اختبار نجاح التكامل عند تطابق الرمز التعريفي Commit SHA"""
+        """اختبار نجاح التكامل عند تطابق البصمة"""
         expected_sha = "3be0185"
         current_sha = "3be0185"
         try:
             verify_and_integrate(current_sha, expected_sha, self.kernel)
         except FailClosedEnforcementError:
-            self.fail("تم تفعيل الإغلاق الخاطئ رغم تطابق البصمة!")
+            self.fail("خطأ في تطابق البصمة!")
 
     def test_fail_closed_trigger_on_mismatch(self):
-        """اختبار تفعيل القفل عند الفشل (Fail-Closed) عند اختلاف الرمز التعريفي"""
+        """اختبار تفعيل القفل عند اختلاف البصمة"""
         expected_sha = "3be0185"
         tampered_sha = "deadbeef"
         
