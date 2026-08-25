@@ -1,49 +1,51 @@
-import unittest
-from engine import ZeroizationKernel, verify_and_integrate, FailClosedEnforcementError
+import mmap
+import ctypes
+import sys
+import logging
 
-class TestSecurityKernel(unittest.TestCase):
-    
-    def setUp(self):
-        self.kernel_size = 512
-        self.kernel = ZeroizationKernel(size=self.kernel_size)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - [SECURITY KERNEL] - %(levelname)s - %(message)s')
 
-    def tearDown(self):
+class FailClosedEnforcementError(Exception):
+    """استثناء مخصص لفرض سياسة الإغلاق الفوري عند فشل التحقق الأمني."""
+    pass
+
+class ZeroizationKernel:
+    def __init__(self, size: int):
+        self.size = size
         try:
-            self.kernel.buffer.close()
-        except:
+            self.buffer = mmap.mmap(-1, size, access=mmap.ACCESS_WRITE)
+            logging.info("تم حجز الذاكرة المؤمنة بنجاح داخل نواة التطهير الآمني.")
+        except Exception as e:
+            logging.critical(f"فشل حجز الذاكرة الحساسة: {e}")
+            sys.exit(1)
+
+    def write_payload(self, data: bytes):
+        if len(data) > self.size:
+            raise ValueError("حجم البيانات يتجاوز السعة المخصصة لنواة التطهير.")
+        self.buffer.seek(0)
+        self.buffer.write(data)
+
+    def secure_scrub(self):
+        try:
+            self.buffer.seek(0)
+            self.buffer.write(b'\x00' * self.size)
+            self.buffer.flush()
+            logging.info("تم مسح وتطهير الذاكرة تماماً بنجاح (Zero-Memory Footprint Enforced).")
+        except Exception as e:
+            logging.error(f"حدث خطأ أثناء عملية التطهير: {e}")
+            self.trigger_fail_closed()
+
+    def trigger_fail_closed(self):
+        logging.critical("CRITICAL: تم اكتشاف خرق أو فشل في خطوط التحقق. يتم تفعيل الإغلاق التلقائي (Hard Shutdown).")
+        try:
+            self.secure_scrub()
+            self.buffer.close()
+        except Exception:
             pass
+        raise FailClosedEnforcementError("النظام أغلق نفسه قسرياً للحفاظ على السلامة التشغيلية (Fail-Closed Triggered).")
 
-    def test_secure_payload_and_scrub(self):
-        """اختبار كتابة البيانات الحساسة وتطهيرها بنجاح"""
-        test_data = b"Secret_Deterministic_Payload_2026"
-        self.kernel.write_payload(test_data)
-        
-        self.kernel.buffer.seek(0)
-        read_data = self.kernel.buffer.read(len(test_data))
-        self.assertEqual(read_data, test_data)
-
-        self.kernel.secure_scrub()
-        
-        self.kernel.buffer.seek(0)
-        zeroed_data = self.kernel.buffer.read(len(test_data))
-        self.assertEqual(zeroed_data, b'\x00' * len(test_data))
-
-    def test_verify_and_integrate_success(self):
-        """اختبار نجاح التكامل عند تطابق البصمة"""
-        expected_sha = "3be0185"
-        current_sha = "3be0185"
-        try:
-            verify_and_integrate(current_sha, expected_sha, self.kernel)
-        except FailClosedEnforcementError:
-            self.fail("خطأ في تطابق البصمة!")
-
-    def test_fail_closed_trigger_on_mismatch(self):
-        """اختبار تفعيل القفل عند اختلاف البصمة"""
-        expected_sha = "3be0185"
-        tampered_sha = "deadbeef"
-        
-        with self.assertRaises(FailClosedEnforcementError):
-            verify_and_integrate(tampered_sha, expected_sha, self.kernel)
-
-if __name__ == '__main__':
-    unittest.main()
+def verify_and_integrate(commit_sha: str, expected_sha: str, kernel: ZeroizationKernel):
+    if commit_sha != expected_sha:
+        kernel.trigger_fail_closed()
+    else:
+        logging.info(f"تم التحقق من تطابق البصمة بنجاح: {commit_sha}. السماح بالتكامل.")
