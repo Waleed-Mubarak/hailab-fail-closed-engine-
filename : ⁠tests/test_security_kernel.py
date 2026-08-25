@@ -2,15 +2,14 @@ import unittest
 import sys
 import os
 
-# إضافة مجلد الجذر إلى مسار النظام لضمان توافق الاستيراد تماماً مع الـ CI
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# إضافة مسار المشروع لضمان توافق الوحدات
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
-from src.security_kernel import ZeroizationKernel, verify_and_integrate, FailClosedEnforcementError
+from security_kernel import ZeroizationKernel, verify_and_integrate, FailClosedEnforcementError
 
 class TestSecurityKernel(unittest.TestCase):
     
     def setUp(self):
-        # تهيئة نواة بذاكرة بحجم 512 بايت للاختبار
         self.kernel_size = 512
         self.kernel = ZeroizationKernel(size=self.kernel_size)
 
@@ -25,15 +24,12 @@ class TestSecurityKernel(unittest.TestCase):
         test_data = b"Secret_Deterministic_Payload_2026"
         self.kernel.write_payload(test_data)
         
-        # التأكد من كتابة البيانات في الذاكرة
         self.kernel.buffer.seek(0)
         read_data = self.kernel.buffer.read(len(test_data))
         self.assertEqual(read_data, test_data)
 
-        # تنفيذ التطهير الجذري
         self.kernel.secure_scrub()
         
-        # التأكد من أن الذاكرة أصبحت مملوءة بالأصفار تماماً (Zero Memory Footprint)
         self.kernel.buffer.seek(0)
         zeroed_data = self.kernel.buffer.read(len(test_data))
         self.assertEqual(zeroed_data, b'\x00' * len(test_data))
@@ -42,7 +38,6 @@ class TestSecurityKernel(unittest.TestCase):
         """اختبار نجاح التكامل عند تطابق الرمز التعريفي Commit SHA"""
         expected_sha = "3be0185"
         current_sha = "3be0185"
-        # يجب أن ينفذ دون إطلاق أي استثناء
         try:
             verify_and_integrate(current_sha, expected_sha, self.kernel)
         except FailClosedEnforcementError:
@@ -51,7 +46,7 @@ class TestSecurityKernel(unittest.TestCase):
     def test_fail_closed_trigger_on_mismatch(self):
         """اختبار تفعيل القفل عند الفشل (Fail-Closed) عند اختلاف الرمز التعريفي"""
         expected_sha = "3be0185"
-        tampered_sha = "deadbeef" # بصمة غير مطابقة
+        tampered_sha = "deadbeef"
         
         with self.assertRaises(FailClosedEnforcementError):
             verify_and_integrate(tampered_sha, expected_sha, self.kernel)
