@@ -81,6 +81,29 @@ class TestTurkashEngineDescriptorAuditing(unittest.TestCase):
                 quorum=["node_1", "node_2", "node_3"]
             )
 
+    def test_p0_03_class_swap_with_valid_quorum_denies(self):
+        """
+        P0-03 Complete Bypass Test (Fix C - Dr. Hikmet M. Kerimov Audit):
+        Restore __class__ via object.__setattr__ AND inject a valid quorum.
+        Must still raise PermissionError not merely fail on quorum check[span_1](start_span)[span_1](end_span).
+        """
+        engine = FailClosedEngine()
+        engine.zeroize()
+        try:
+            object.__setattr__(engine, '__class__', FailClosedEngine)
+            object.__setattr__(engine, '_FailClosedEngine__is_zeroized', False)
+            object.__setattr__(engine, '_FailClosedEngine__terminal_state_locked', False)
+            object.__setattr__(engine, '_FailClosedEngine__secure_ram_key', bytearray(b'\xAA' * 32))
+            object.__setattr__(engine, 'authorized_admins', {'admin_1', 'admin_2', 'admin_3'})
+        except Exception:
+            pass 
+
+        with pytest.raises(PermissionError, match=r"CRITICAL.*"):
+            engine.execute_critical_operation(
+                action="CRITICAL_TRANSFER",
+                quorum=['admin_1', 'admin_2', 'admin_3']
+            )
+
     def test_p0_04_zeroization_idempotence_invariance_z_squared_equals_z(self):
         engine = FailClosedEngine()
         
@@ -106,7 +129,6 @@ class TestTurkashEngineDescriptorAuditing(unittest.TestCase):
         self.assertEqual(snapshot_first[1], snapshot_second[1])
         self.assertEqual(snapshot_first[2], snapshot_second[2])
         self.assertEqual(snapshot_first[3], snapshot_second[3])
-        # التحقق من أن طول سجل التدقيق لم يتغير عند التصفير المتكرر (Z^2 = Z)
         self.assertEqual(snapshot_first[4], snapshot_second[4])
 
 if __name__ == "__main__":
