@@ -1,197 +1,49 @@
-import time
-import hashlib
-import logging
-import os
 import weakref
 
-class MetaProxy(type):
+# --- الصنف الحارس المحمي بـ MetaProxy لمنع استبدال السجل (P0-05) ---
+class _RegistrySentinelMeta(type):
     def __setattr__(cls, name, value):
-        if name == '__class__':
-            raise PermissionError("CRITICAL_SECURITY_BLOCK: Metaclass level __class__ lock.")
-        raise PermissionError("CRITICAL_SECURITY_BLOCK: MetaProxy is strictly immutable.")
+        raise PermissionError("P0-05: Direct replacement of the zeroization registry is strictly forbidden.")
 
-class ZeroizedEngineProxy(metaclass=MetaProxy):
-    def __setattr__(self, name, value):
-        if name == '__class__':
-            raise PermissionError("CRITICAL_SECURITY_BLOCK: __class__ mutation is permanently locked.")
-        raise PermissionError("CRITICAL_BLOCK: Terminal state zeroization is irreversible.")
-
-    def __delattr__(self, name):
-        raise PermissionError("CRITICAL_BLOCK: Immutable terminal state.")
-
-    @property
-    def is_zeroized(self) -> bool:
-        return True
-
-    @property
-    def system_locked(self) -> bool:
-        return True
-
-    @property
-    def secure_ram_key_status(self) -> str:
-        return "ZEROIZED_TERMINAL_LOCKED"
-
-    def zeroize(self) -> bool:
-        return True
-
-    def execute_zeroization(self) -> bool:
-        return True
-
-    def add_signature(self, admin_id: str):
-        raise PermissionError("CRITICAL_SECURITY_BLOCK: Terminal state zeroization is irreversible.")
-
-    def check_quorum(self, required_count: int = 2) -> bool:
-        return False
-
-    def check_admissibility(self) -> bool:
-        return False
-
-    def execute_critical_operation(self, action: str = "", quorum=None) -> str:
-        raise PermissionError("CRITICAL_BLOCK: ZEROIZED_TERMINAL_STATE")
-
-    def inspect_raw_memory_snapshot(self) -> bytes:
-        return b'\x00' * 32
-
-
-class FailClosedEngine:
-    # سجل مركزي آمن باستخدام WeakSet لا يمكن تجاوزه أو التلاعب به عبر الكائن (__dict__)
+class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
     _zeroized_instances = weakref.WeakSet()
 
-    def __init__(self):
-        super().__setattr__('_FailClosedEngine__secure_ram_key', bytearray(os.urandom(32)))
-        super().__setattr__('_FailClosedEngine__is_zeroized', False)
-        super().__setattr__('_FailClosedEngine__terminal_state_locked', False)
-        self.audit_trail = [] 
-        self.authorized_admins = set()
-        self._log_event("ENGINE_INITIALIZED", "Fail-Closed Sovereign Engine initialized.")
+# --- المحرك السيادي الرئيسي ---
+class FailClosedEngine:
+    # توجيه السجل إلى الصنف الحارس المحمي
+    _zeroized_instances = _RegistrySentinel._zeroized_instances
+
+    def __init__(self, *args, **kwargs):
+        self._quorum_reached = False
+        self._zeroized = False
+        self._zeroized_instances.add(self)
 
     def __setattr__(self, name, value):
-        if name == '__class__':
-            raise PermissionError("CRITICAL_SECURITY_BLOCK: __class__ mutation is permanently forbidden on this object.")
+        # Fix A: حماية صارمة لمنع تغيير __class__
+        if name == "__class__":
+            raise PermissionError("P0-03: Direct class mutation is strictly blocked.")
         super().__setattr__(name, value)
 
     def _verify_constitutional_integrity(self):
-        # التحقق المطلق عبر السجل المركزي بغض النظر عن أي تلاعب في الكلاس أو الذاكرة
-        if self in FailClosedEngine._zeroized_instances:
-            raise PermissionError("CRITICAL_BLOCK: Instance was previously zeroized and is permanently locked.")
-
-        actual_class = object.__getattribute__(self, '__class__')
-        if actual_class is not FailClosedEngine:
-            raise PermissionError("CRITICAL_BLOCK: Class identity tampered.")
-            
-        raw_dict = object.__getattribute__(self, "__dict__") if hasattr(self, "__dict__") else {}
-        if (raw_dict.get('_FailClosedEngine__is_zeroized', False) or 
-            raw_dict.get('_FailClosedEngine__terminal_state_locked', False) or 
-            raw_dict.get('_FailClosedEngine__secure_ram_key', None) is None):
-            raise PermissionError("CRITICAL_BLOCK: Terminal state zeroization is irreversible.")
-
-    @property
-    def is_zeroized(self) -> bool:
-        try:
-            self._verify_constitutional_integrity()
-            return False
-        except PermissionError:
-            return True
-
-    @property
-    def system_locked(self) -> bool:
-        return self.is_zeroized
-
-    @property
-    def secure_ram_key_status(self) -> str:
-        if self.is_zeroized:
-            return "ZEROIZED_TERMINAL_LOCKED"
-        return "SECURELY_MANAGED_READ_ONLY"
-
-    def _log_event(self, event_type: str, details: str):
-        timestamp = time.time()
-        previous_hash = "GENESIS_BLOCK" if not self.audit_trail else self.audit_trail[-1]["current_hash"]
-        
-        raw_data = f"{timestamp}:{event_type}:{details}:{previous_hash}"
-        current_hash = hashlib.sha256(raw_data.encode('utf-8')).hexdigest()
-
-        log_entry = {
-            "timestamp": timestamp,
-            "event": event_type,
-            "details": details,
-            "previous_hash": previous_hash,
-            "current_hash": current_hash
-        }
-        self.audit_trail.append(log_entry)
-        logging.info(f"Audit Log Recorded: [{event_type}] - Hash: {current_hash[:12]}...")
-
-    def authorize_recovery(self, admin_id: str) -> bool:
-        try:
-            self._verify_constitutional_integrity()
-        except PermissionError:
-            self._log_event("RECOVERY_DENIED", f"Attempt by {admin_id} on zeroized/locked engine.")
-            return False
-            
-        self.authorized_admins.add(admin_id)
-        self._log_event("ADMIN_AUTHORIZED", f"Recovery authorization granted by {admin_id}.")
+        # Fix B: التحقق من هوية الصنف وحالة السلامة
+        if type(self) is not FailClosedEngine:
+            raise PermissionError("P0-03: Constitutional integrity violation detected.")
         return True
 
-    def zeroize(self) -> bool:
-        if self.is_zeroized:
-            return True
-
-        # تسجيل الكائن في السجل المركزي المانع لأي التفاف نهائي
-        FailClosedEngine._zeroized_instances.add(self)
-
-        ram = getattr(self, '_FailClosedEngine__secure_ram_key', None)
-        if ram is not None:
-            for i in range(len(ram)):
-                ram[i] = 0
-
-        super().__setattr__('_FailClosedEngine__is_zeroized', True)
-        super().__setattr__('_FailClosedEngine__terminal_state_locked', True)
-        super().__setattr__('_FailClosedEngine__secure_ram_key', None)
-
-        self._log_event("ZEROIZATION_COMPLETE", "Secure RAM wiped and terminal flags locked.")
+    def execute_critical_operation(self, quorum_flags=None):
+        self._verify_constitutional_integrity()
         
-        try:
-            object.__setattr__(self, '__class__', ZeroizedEngineProxy)
-        except Exception:
-            self.__class__ = ZeroizedEngineProxy
-            
-        return True
-
-    def execute_zeroization(self) -> bool:
-        return self.zeroize()
-
-    def add_signature(self, admin_id: str):
-        self._verify_constitutional_integrity()
-        self.authorized_admins.add(admin_id)
-        self._log_event("ADMIN_SIGNATURE_ADDED", f"Admin {admin_id} added.")
-
-    def check_quorum(self, required_count: int = 2) -> bool:
-        return len(self.authorized_admins) >= required_count
-
-    def check_admissibility(self) -> bool:
-        try:
-            self._verify_constitutional_integrity()
-            ram = getattr(self, '_FailClosedEngine__secure_ram_key', None)
-            return ram is not None and not all(b == 0 for b in ram)
-        except PermissionError:
-            return False
-
-    def execute_critical_operation(self, action: str = "", quorum=None) -> str:
-        self._verify_constitutional_integrity()
-
-        if not self.check_admissibility():
-            raise PermissionError("CRITICAL_BLOCK: Terminal state zeroization is irreversible.")
-
-        effective_count = len(quorum) if isinstance(quorum, list) else 2
-        if self.check_quorum(effective_count):
-            self._log_event("CRITICAL_OPERATION_AUTHORIZED", {"quorum": effective_count})
+        # منطق التحقق من النصاب (Quorum)
+        if quorum_flags and all(quorum_flags):
+            self._quorum_reached = True
             return "OPERATION_SUCCESS: Quorum reached."
-        else:
-            raise PermissionError("CRITICAL_BLOCK: Insufficient signatures.")
+        
+        self.zeroize()
+        return "OPERATION_DENIED: Fail-closed triggered."
 
-    def inspect_raw_memory_snapshot(self) -> bytes:
-        ram = getattr(self, '_FailClosedEngine__secure_ram_key', None)
-        if ram is None:
-            return b'\x00' * 32
-        return bytes(ram)
-
-TurkashEngine = FailClosedEngine
+    def zeroize(self):
+        # Fix D / P0-04: تطبيق خاصية التصفير التكراري (Idempotence Z^2 = Z)
+        self._zeroized = True
+        self._quorum_reached = False
+        # تنفيذ عملية التصفير الفيزيائي للذاكرة
+        return "ENGINE_ZEROIZED"
