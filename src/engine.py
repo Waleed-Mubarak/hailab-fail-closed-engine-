@@ -13,6 +13,14 @@ class FailClosedEngineMeta(type):
             raise PermissionError("P0-05: Direct replacement of the zeroization registry is strictly forbidden.")
         super().__setattr__(name, value)
 
+    @property
+    def __class__(cls):
+        return cls
+    
+    @__class__.setter
+    def __class__(cls, value):
+        raise PermissionError("P0-03: Direct class mutation is strictly blocked.")
+
 class FailClosedEngine(metaclass=FailClosedEngineMeta):
     
     @classmethod
@@ -33,6 +41,14 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
     @property
     def is_zeroized(self):
         return self.__is_zeroized
+
+    @property
+    def __class__(self):
+        return type(self)
+
+    @__class__.setter
+    def __class__(self, value):
+        raise PermissionError("P0-03: Direct class mutation is strictly blocked.")
 
     def __setattr__(self, name, value):
         if name == "__class__":
