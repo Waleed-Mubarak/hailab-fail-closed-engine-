@@ -14,7 +14,7 @@ class FailClosedEngineMeta(type):
         super().__setattr__(name, value)
 
 class FailClosedEngine(metaclass=FailClosedEngineMeta):
-    __slots__ = ('_quorum_reached', '__is_zeroized', '__terminal_state_locked', 'system_locked', 'secure_ram_key_status', '__secure_ram_key', 'audit_trail')
+    __slots__ = ('_quorum_reached', '__is_zeroized', '__terminal_state_locked', 'system_locked', 'secure_ram_key_status', '__secure_ram_key', 'audit_trail', '__weakref__')
 
     @classmethod
     @property
