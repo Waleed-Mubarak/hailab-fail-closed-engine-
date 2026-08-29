@@ -41,10 +41,8 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         self.secure_ram_key_status = "ACTIVE"
         self.__secure_ram_key = bytearray(b"\x00" * 32)
         self.audit_trail = []
+        self._constitutional_stub = True
         _RegistrySentinel._zeroized_instances.add(self)
-        
-        # Bind stubs to instance dictionary to allow stub deletion testing
-        self._verify_constitutional_integrity_stub = self._real_verify_constitutional_integrity
 
     @property
     def is_zeroized(self):
@@ -68,23 +66,20 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
     def __delattr__(self, name):
         raise PermissionError("P0-03/P0-05: Deletion of constitutional attributes and stubs is strictly blocked.")
 
-    def _real_verify_constitutional_integrity(self):
+    def _verify_constitutional_integrity(self):
+        if '_constitutional_stub' not in self.__dict__:
+            raise PermissionError("P0-03: Constitutional integrity stub deleted.")
         if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
             raise PermissionError("P0-03: Constitutional integrity violation detected.")
         if self.__is_zeroized:
             raise PermissionError("P0-03: CRITICAL_BLOCK - Engine is zeroized.")
         return True
 
-    def _verify_constitutional_integrity(self):
-        # Check if the stub was deleted or bypassed from instance dictionary
-        if '_verify_constitutional_integrity_stub' not in self.__dict__:
-            raise PermissionError("P0-03: Stub deletion fallback bypass detected - operation denied.")
-        return self._verify_constitutional_integrity_stub()
-
     def execute_critical_operation(self, *args, **kwargs):
+        if '_constitutional_stub' not in self.__dict__:
+            raise PermissionError("P0-03: Constitutional integrity stub missing or bypassed.")
+
         try:
-            if '_verify_constitutional_integrity_stub' not in self.__dict__:
-                raise PermissionError("P0-03: Stub deletion fallback bypass detected - operation denied.")
             self._verify_constitutional_integrity()
         except (AttributeError, TypeError, KeyError):
             raise PermissionError("P0-03: Constitutional integrity stub missing or bypassed.")
