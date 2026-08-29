@@ -41,6 +41,11 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         self.secure_ram_key_status = "ACTIVE"
         self.__secure_ram_key = bytearray(b"\x00" * 32)
         self.audit_trail = []
+        
+        # Bind methods directly to instance __dict__ so .pop() removes them completely
+        self.execute_critical_operation = self._execute_critical_operation_impl.__get__(self, FailClosedEngine)
+        self._verify_constitutional_integrity = self._verify_constitutional_integrity_impl.__get__(self, FailClosedEngine)
+        
         try:
             _RegistrySentinel._zeroized_instances.add(self)
         except Exception:
@@ -69,26 +74,25 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         raise PermissionError("CRITICAL: Deletion of instance attributes and stubs is strictly blocked.")
 
     def __getattribute__(self, name):
-        val = super().__getattribute__(name)
         if name in ("execute_critical_operation", "_verify_constitutional_integrity"):
-            # If popped or tampered with
-            pass
-        return val
+            dict_val = super().__getattribute__("__dict__")
+            if name not in dict_val:
+                raise PermissionError(f"CRITICAL: Constitutional stub '{name}' missing or bypassed.")
+        return super().__getattribute__(name)
 
-    def _verify_constitutional_integrity(self):
+    def _verify_constitutional_integrity_impl(self):
         if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
             raise PermissionError("CRITICAL: Constitutional integrity violation detected.")
         if self.__is_zeroized:
             raise PermissionError("CRITICAL: Engine is zeroized.")
         return True
 
-    def execute_critical_operation(self, *args, **kwargs):
-        # Enforce strict verification even if instance dict was popped
+    def _execute_critical_operation_impl(self, *args, **kwargs):
+        if 'execute_critical_operation' not in self.__dict__:
+            raise PermissionError("CRITICAL: Constitutional integrity stub missing or bypassed.")
+
         try:
-            if '_verify_constitutional_integrity' in self.__dict__ or hasattr(self, '_verify_constitutional_integrity'):
-                self._verify_constitutional_integrity()
-            else:
-                raise PermissionError("CRITICAL: Constitutional integrity stub missing or bypassed.")
+            self._verify_constitutional_integrity()
         except PermissionError:
             raise
         except Exception:
