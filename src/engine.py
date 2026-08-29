@@ -18,50 +18,22 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
 
     def __init__(self, *args, **kwargs):
         self._quorum_reached = False
-        self._is_zeroized_flag = False
-        self._terminal_state_locked_flag = False
+        self._FailClosedEngine__is_zeroized = False
+        self._FailClosedEngine__terminal_state_locked = False
         self.system_locked = False
         self.secure_ram_key_status = "ACTIVE"
-        self._secure_ram_key_data = bytearray(b"\x00" * 32)
+        self._FailClosedEngine__secure_ram_key = bytearray(b"\x00" * 32)
         self.audit_trail = []
         self._zeroized_instances.add(self)
 
     @property
-    def _FailClosedEngine__is_zeroized(self):
-        return self._is_zeroized_flag
-
-    @_FailClosedEngine__is_zeroized.setter
-    def _FailClosedEngine__is_zeroized(self, value):
-        if self._is_zeroized_flag:
-            raise PermissionError("P0-03: CRITICAL_BLOCK - Modification blocked on zeroized engine.")
-        self._is_zeroized_flag = value
-
-    @property
-    def _FailClosedEngine__terminal_state_locked(self):
-        return self._terminal_state_locked_flag
-
-    @_FailClosedEngine__terminal_state_locked.setter
-    def _FailClosedEngine__terminal_state_locked(self, value):
-        self._terminal_state_locked_flag = value
-
-    @property
-    def _FailClosedEngine__secure_ram_key(self):
-        return self._secure_ram_key_data
-
-    @_FailClosedEngine__secure_ram_key.setter
-    def _FailClosedEngine__secure_ram_key(self, value):
-        if self._is_zeroized_flag:
-            raise PermissionError("P0-03: CRITICAL_BLOCK - RAM key modification blocked.")
-        self._secure_ram_key_data = value
-
-    @property
     def is_zeroized(self):
-        return self._is_zeroized_flag
+        return self._FailClosedEngine__is_zeroized
 
     def __setattr__(self, name, value):
         if name == "__class__":
             raise PermissionError("P0-03: Direct class mutation is strictly blocked.")
-        if self._is_zeroized_flag and name in ("_is_zeroized_flag", "_terminal_state_locked_flag", "system_locked"):
+        if self._FailClosedEngine__is_zeroized and name in ("_FailClosedEngine__is_zeroized", "_FailClosedEngine__terminal_state_locked", "system_locked"):
             raise PermissionError("P0-03: CRITICAL_BLOCK - State mutation denied.")
         super().__setattr__(name, value)
 
@@ -73,14 +45,14 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
     def _verify_constitutional_integrity(self):
         if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
             raise PermissionError("P0-03: Constitutional integrity violation detected.")
-        if self._is_zeroized_flag:
+        if self._FailClosedEngine__is_zeroized:
             raise PermissionError("P0-03: CRITICAL_BLOCK - Engine is zeroized.")
         return True
 
     def execute_critical_operation(self, *args, **kwargs):
         self._verify_constitutional_integrity()
         
-        if self._is_zeroized_flag:
+        if self._FailClosedEngine__is_zeroized:
             raise PermissionError("P0-03: CRITICAL_BLOCK - Operation denied on zeroized engine.")
 
         quorum_flags = kwargs.get('quorum_flags') or kwargs.get('quorum') or (args[0] if args else None)
@@ -94,18 +66,18 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return "OPERATION_DENIED: Fail-closed triggered."
 
     def zeroize(self):
-        if not self._is_zeroized_flag:
-            self._is_zeroized_flag = True
-            self._terminal_state_locked_flag = True
+        if not self._FailClosedEngine__is_zeroized:
+            self._FailClosedEngine__is_zeroized = True
+            self._FailClosedEngine__terminal_state_locked = True
             self.system_locked = True
             self.secure_ram_key_status = "ZEROIZED"
-            self._secure_ram_key_data = bytearray(b"\xFF" * 32)
+            self._FailClosedEngine__secure_ram_key = bytearray(b"\xFF" * 32)
             self.audit_trail.append("ZEROIZED")
         return "ENGINE_ZEROIZED"
 
     def inspect_raw_memory_snapshot(self):
         return {
-            "zeroized": self._is_zeroized_flag,
+            "zeroized": self._FailClosedEngine__is_zeroized,
             "system_locked": self.system_locked,
             "quorum_reached": self._quorum_reached,
             "secure_ram_key_status": self.secure_ram_key_status,
