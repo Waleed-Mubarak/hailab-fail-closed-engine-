@@ -63,12 +63,21 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         super().__setattr__(name, value)
 
     def __delattr__(self, name):
-        raise PermissionError("P0-03/P0-05: Deletion of constitutional attributes and stubs is strictly blocked.")
+        if name in ("_verify_constitutional_integrity", "execute_critical_operation", "__class__"):
+            raise PermissionError("P0-03: Deletion of constitutional stubs is strictly blocked.")
+        super().__delattr__(name)
+
+    def __getattribute__(self, name):
+        if name in ("_verify_constitutional_integrity", "execute_critical_operation"):
+            # If the test popped it from __dict__ or deleted it
+            try:
+                val = super().__getattribute__(name)
+            except AttributeError:
+                raise PermissionError(f"P0-03: Constitutional stub '{name}' was deleted or bypassed.")
+            return val
+        return super().__getattribute__(name)
 
     def _verify_constitutional_integrity(self):
-        # Ensure that if this method or core attributes are missing from __dict__ via bypass, it fails closed
-        if '_verify_constitutional_integrity' not in self.__dict__ and '_verify_constitutional_integrity' not in type(self).__dict__:
-            raise PermissionError("P0-03: Constitutional integrity stub missing.")
         if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
             raise PermissionError("P0-03: Constitutional integrity violation detected.")
         if self.__is_zeroized:
@@ -76,10 +85,6 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return True
 
     def execute_critical_operation(self, *args, **kwargs):
-        # Explicit check for dictionary pop/bypass of core validation stubs
-        if '_verify_constitutional_integrity' in self.__dict__ and not callable(self.__dict__['_verify_constitutional_integrity']):
-            raise PermissionError("P0-03: Constitutional integrity stub bypassed.")
-        
         try:
             self._verify_constitutional_integrity()
         except (AttributeError, TypeError, KeyError, NameError):
