@@ -7,26 +7,30 @@ class _RegistrySentinelMeta(type):
 class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
     _zeroized_instances = weakref.WeakSet()
 
+class ClassGuardDescriptor:
+    def __get__(self, instance, owner):
+        if instance is None:
+            return owner
+        return type(instance)
+    def __set__(self, instance, value):
+        raise PermissionError("P0-03: Direct class mutation is strictly blocked.")
+    def __delete__(self, instance):
+        raise PermissionError("P0-03: Deletion of constitutional attributes is strictly blocked.")
+
 class FailClosedEngine:
     _zeroized_instances = _RegistrySentinel._zeroized_instances
+    __class__ = ClassGuardDescriptor()
 
     def __init__(self, *args, **kwargs):
         self._quorum_reached = False
         self._zeroized = False
         self.system_locked = False
+        self.secure_ram_key_status = "ACTIVE"
         self._zeroized_instances.add(self)
 
     @property
     def is_zeroized(self):
         return self._zeroized
-
-    @property
-    def __class__(self):
-        return type(self)
-
-    @__class__.setter
-    def __class__(self, value):
-        raise PermissionError("P0-03: Direct class mutation is strictly blocked.")
 
     def __setattr__(self, name, value):
         if name == "__class__":
@@ -58,13 +62,15 @@ class FailClosedEngine:
         self._zeroized = True
         self._quorum_reached = False
         self.system_locked = True
+        self.secure_ram_key_status = "ZEROIZED"
         return "ENGINE_ZEROIZED"
 
     def inspect_raw_memory_snapshot(self):
         return {
             "zeroized": self._zeroized,
             "system_locked": self.system_locked,
-            "quorum_reached": self._quorum_reached
+            "quorum_reached": self._quorum_reached,
+            "secure_ram_key_status": self.secure_ram_key_status
         }
 
 TurkashEngine = FailClosedEngine
