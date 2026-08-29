@@ -3,6 +3,8 @@ import weakref
 class _RegistrySentinelMeta(type):
     def __setattr__(cls, name, value):
         raise PermissionError("P0-05: Direct replacement of the zeroization registry is strictly forbidden.")
+    def __delattr__(cls, name):
+        raise PermissionError("P0-05: Deletion of registry sentinel attributes is strictly blocked.")
 
 class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
     _zeroized_instances = weakref.WeakSet()
@@ -12,6 +14,9 @@ class FailClosedEngineMeta(type):
         if name == "_zeroized_instances":
             raise PermissionError("P0-05: Direct replacement of the zeroization registry is strictly forbidden.")
         super().__setattr__(name, value)
+
+    def __delattr__(cls, name):
+        raise PermissionError("P0-03/P0-05: Deletion of class-level constitutional attributes is strictly blocked.")
 
     @property
     def __class__(cls):
@@ -47,7 +52,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return type(self)
 
     @__class__.setter
-    def __class__(self, value):
+    def __class__(cls_self, value):
         raise PermissionError("P0-03: Direct class mutation is strictly blocked.")
 
     def __setattr__(self, name, value):
@@ -58,9 +63,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         super().__setattr__(name, value)
 
     def __delattr__(self, name):
-        if name in ("__class__", "_zeroized_instances"):
-            raise PermissionError("P0-03/P0-05: Deletion of constitutional attributes is strictly blocked.")
-        super().__delattr__(name)
+        raise PermissionError("P0-03/P0-05: Deletion of constitutional attributes and stubs is strictly blocked.")
 
     def _verify_constitutional_integrity(self):
         if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
@@ -70,7 +73,10 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return True
 
     def execute_critical_operation(self, *args, **kwargs):
-        self._verify_constitutional_integrity()
+        try:
+            self._verify_constitutional_integrity()
+        except (AttributeError, TypeError):
+            raise PermissionError("P0-03: Constitutional integrity stub missing or bypassed.")
         
         if self.__is_zeroized:
             raise PermissionError("P0-03: CRITICAL_BLOCK - Operation denied on zeroized engine.")
