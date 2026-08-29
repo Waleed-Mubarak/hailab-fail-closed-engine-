@@ -4,15 +4,12 @@ import logging
 import os
 
 class MetaProxy(type):
-    """متاكلاس لمنع أي تلاعب بمستوى النوع أو تجاوز عبر دوال المستوى الأدنى."""
     def __setattr__(cls, name, value):
         if name == '__class__':
             raise PermissionError("CRITICAL_SECURITY_BLOCK: Metaclass level __class__ lock.")
         raise PermissionError("CRITICAL_SECURITY_BLOCK: MetaProxy is strictly immutable.")
 
 class ZeroizedEngineProxy(metaclass=MetaProxy):
-    """وكيل مصفّر نهائي محصن بمتاكلاس لمنع أي تلاعب عبر object.__setattr__ أو الانعكاس."""
-    
     def __setattr__(self, name, value):
         if name == '__class__':
             raise PermissionError("CRITICAL_SECURITY_BLOCK: __class__ mutation is permanently locked.")
@@ -65,16 +62,21 @@ class FailClosedEngine:
         self._log_event("ENGINE_INITIALIZED", "Fail-Closed Sovereign Engine initialized.")
 
     def __setattr__(self, name, value):
+        # Fix A: حظر تعديل __class__ قاطعاً ودون استثناءات لجميع المستويات[span_1](start_span)[span_1](end_span)
         if name == '__class__':
-            if getattr(self, '_FailClosedEngine__is_zeroized', False) and value is not ZeroizedEngineProxy:
-                raise PermissionError("CRITICAL_SECURITY_BLOCK: __class__ modification blocked on zeroized state.")
+            raise PermissionError("CRITICAL_SECURITY_BLOCK: __class__ mutation is permanently forbidden on this object.")
         super().__setattr__(name, value)
 
     def _verify_constitutional_integrity(self):
+        # Fix B: التحقق من هوية الصنف كخط دفاع أول مطلق[span_2](start_span)[span_2](end_span)
+        actual_class = object.__getattribute__(self, '__class__')
+        if actual_class is not FailClosedEngine:
+            raise PermissionError("CRITICAL_BLOCK: Class identity tampered.")
+            
         raw_dict = object.__getattribute__(self, "__dict__") if hasattr(self, "__dict__") else {}
-        if (getattr(self, '_FailClosedEngine__is_zeroized', False) or 
-            getattr(self, '_FailClosedEngine__terminal_state_locked', False) or 
-            getattr(self, '_FailClosedEngine__secure_ram_key', None) is None):
+        if (raw_dict.get('_FailClosedEngine__is_zeroized', False) or 
+            raw_dict.get('_FailClosedEngine__terminal_state_locked', False) or 
+            raw_dict.get('_FailClosedEngine__secure_ram_key', None) is None):
             raise PermissionError("CRITICAL_BLOCK: Terminal state zeroization is irreversible.")
 
     @property
