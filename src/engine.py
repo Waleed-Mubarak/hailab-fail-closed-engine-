@@ -1,6 +1,15 @@
 import weakref
 
+class ProtectedDict(dict):
+    def __delitem__(self, key):
+        raise PermissionError(f"CRITICAL: Deletion of constitutional attribute '{key}' is strictly blocked.")
+    def pop(self, key, *args):
+        raise PermissionError(f"CRITICAL: Deletion of constitutional attribute '{key}' is strictly blocked.")
+
 class _RegistrySentinelMeta(type):
+    def __new__(mcs, name, bases, attrs):
+        new_attrs = ProtectedDict(attrs)
+        return super().__new__(mcs, name, bases, new_attrs)
     def __setattr__(cls, name, value):
         raise PermissionError("CRITICAL: Direct replacement of the zeroization registry is strictly forbidden.")
     def __delattr__(cls, name):
@@ -10,6 +19,10 @@ class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
     _zeroized_instances = weakref.WeakSet()
 
 class FailClosedEngineMeta(type):
+    def __new__(mcs, name, bases, attrs):
+        new_attrs = ProtectedDict(attrs)
+        return super().__new__(mcs, name, bases, new_attrs)
+
     def __setattr__(cls, name, value):
         if name == "_zeroized_instances":
             raise PermissionError("CRITICAL: Direct replacement of registry is strictly forbidden.")
@@ -34,18 +47,21 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return _RegistrySentinel._zeroized_instances
 
     def __init__(self, *args, **kwargs):
-        self._quorum_reached = False
-        self.__is_zeroized = False
-        self.__terminal_state_locked = False
-        self.system_locked = False
-        self.secure_ram_key_status = "ACTIVE"
-        self.__secure_ram_key = bytearray(b"\x00" * 32)
-        self.audit_trail = []
+        # Protect instance dictionary from .pop() or direct deletion attacks
+        self.__dict__ = ProtectedDict({
+            "_quorum_reached": False,
+            "_FailClosedEngine__is_zeroized": False,
+            "_FailClosedEngine__terminal_state_locked": False,
+            "system_locked": False,
+            "secure_ram_key_status": "ACTIVE",
+            "_FailClosedEngine__secure_ram_key": bytearray(b"\x00" * 32),
+            "audit_trail": []
+        })
         _RegistrySentinel._zeroized_instances.add(self)
 
     @property
     def is_zeroized(self):
-        return self.__is_zeroized
+        return self._FailClosedEngine__is_zeroized
 
     @property
     def __class__(self):
@@ -62,17 +78,16 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
             raise PermissionError("CRITICAL: Direct replacement is strictly forbidden.")
         super().__setattr__(name, value)
 
-    def __delattr__(cls_self, name):
+    def __delattr__(self, name):
         raise PermissionError("CRITICAL_BLOCK: Deletion of instance attributes and stubs is strictly blocked.")
 
     def __getattr__(self, name):
-        # Catch any missing or popped constitutional stubs or fallback checks
         raise PermissionError(f"CRITICAL: Constitutional stub '{name}' missing or bypassed.")
 
     def _verify_constitutional_integrity(self):
         if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
             raise PermissionError("CRITICAL: Constitutional integrity violation detected.")
-        if self.__is_zeroized:
+        if self._FailClosedEngine__is_zeroized:
             raise PermissionError("CRITICAL: Engine is zeroized.")
         return True
 
@@ -82,7 +97,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         except Exception:
             raise PermissionError("CRITICAL: Constitutional integrity stub missing or bypassed.")
 
-        if self.__is_zeroized:
+        if self._FailClosedEngine__is_zeroized:
             raise PermissionError("CRITICAL: Operation denied on zeroized engine.")
 
         quorum_flags = kwargs.get('quorum_flags') or kwargs.get('quorum') or (args[0] if args else None)
@@ -96,18 +111,18 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return "OPERATION_DENIED: Fail-closed triggered."
 
     def zeroize(self):
-        if not self.__is_zeroized:
-            self.__is_zeroized = True
-            self.__terminal_state_locked = True
+        if not self._FailClosedEngine__is_zeroized:
+            self._FailClosedEngine__is_zeroized = True
+            self._FailClosedEngine__terminal_state_locked = True
             self.system_locked = True
             self.secure_ram_key_status = "ZEROIZED"
-            self.__secure_ram_key = bytearray(b"\xFF" * 32)
+            self._FailClosedEngine__secure_ram_key = bytearray(b"\xFF" * 32)
             self.audit_trail.append("ZEROIZED")
         return "ENGINE_ZEROIZED"
 
     def inspect_raw_memory_snapshot(self):
         return {
-            "zeroized": self.__is_zeroized,
+            "zeroized": self._FailClosedEngine__is_zeroized,
             "system_locked": self.system_locked,
             "quorum_reached": self._quorum_reached,
             "secure_ram_key_status": self.secure_ram_key_status,
