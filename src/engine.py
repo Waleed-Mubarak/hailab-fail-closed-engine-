@@ -7,21 +7,27 @@ class _RegistrySentinelMeta(type):
 class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
     _zeroized_instances = weakref.WeakSet()
 
-class FailClosedEngineMeta(type):
-    def __setattr__(cls, name, value):
-        if name in ("__class__", "_zeroized_instances"):
-            raise PermissionError("P0-03/P0-05: Direct modification of constitutional attributes is strictly blocked.")
-        super().__setattr__(name, value)
+class ClassGuardDescriptor:
+    def __get__(self, instance, owner):
+        if instance is None:
+            return owner
+        return type(instance)
+    def __set__(self, instance, value):
+        raise PermissionError("P0-03: Direct class mutation is strictly blocked.")
+    def __delete__(self, instance):
+        raise PermissionError("P0-03: Deletion of constitutional attributes is strictly blocked.")
 
-class FailClosedEngine(metaclass=FailClosedEngineMeta):
-    @property
-    def _zeroized_instances(self):
+class RegistryDescriptor:
+    def __get__(self, instance, owner):
         return _RegistrySentinel._zeroized_instances
+    def __set__(self, instance, value):
+        raise PermissionError("P0-05: Direct replacement of the zeroization registry is strictly forbidden.")
+    def __delete__(self, instance):
+        raise PermissionError("P0-05: Deletion of the zeroization registry is strictly forbidden.")
 
-    @classmethod
-    @property
-    def _zeroized_instances(cls):
-        return _RegistrySentinel._zeroized_instances
+class FailClosedEngine:
+    __class__ = ClassGuardDescriptor()
+    _zeroized_instances = RegistryDescriptor()
 
     def __init__(self, *args, **kwargs):
         self._quorum_reached = False
@@ -31,7 +37,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         self.secure_ram_key_status = "ACTIVE"
         self.__secure_ram_key = bytearray(b"\x00" * 32)
         self.audit_trail = []
-        _RegistrySentinel._zeroized_instances.add(self)
+        self._zeroized_instances.add(self)
 
     @property
     def is_zeroized(self):
@@ -40,6 +46,8 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
     def __setattr__(self, name, value):
         if name == "__class__":
             raise PermissionError("P0-03: Direct class mutation is strictly blocked.")
+        if name == "_zeroized_instances":
+            raise PermissionError("P0-05: Direct replacement of the zeroization registry is strictly forbidden.")
         super().__setattr__(name, value)
 
     def __delattr__(self, name):
