@@ -15,6 +15,10 @@ class FailClosedEngine:
         self._zeroized = False
         self._zeroized_instances.add(self)
 
+    @property
+    def is_zeroized(self):
+        return self._zeroized
+
     def __setattr__(self, name, value):
         if name == "__class__":
             raise PermissionError("P0-03: Direct class mutation is strictly blocked.")
@@ -25,7 +29,7 @@ class FailClosedEngine:
             raise PermissionError("P0-03: Constitutional integrity violation detected.")
         return True
 
-    def execute_critical_operation(self, quorum_flags=None):
+    def execute_critical_operation(self, quorum_flags=None, action=None):
         self._verify_constitutional_integrity()
         if quorum_flags and all(quorum_flags):
             self._quorum_reached = True
@@ -38,5 +42,4 @@ class FailClosedEngine:
         self._quorum_reached = False
         return "ENGINE_ZEROIZED"
 
-# توفير اسم TurkashEngine ليتوافق مع استيراد ملفات الاختبار (tests/test_engine.py)
 TurkashEngine = FailClosedEngine
