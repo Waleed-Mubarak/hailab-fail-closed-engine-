@@ -41,10 +41,16 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
     def _verify_constitutional_integrity(self):
         if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
             raise PermissionError("P0-03: Constitutional integrity violation detected.")
+        if self._zeroized:
+            raise PermissionError("P0-03: CRITICAL_BLOCK - Engine is zeroized.")
         return True
 
     def execute_critical_operation(self, *args, **kwargs):
         self._verify_constitutional_integrity()
+        
+        if self._zeroized:
+            raise PermissionError("P0-03: CRITICAL_BLOCK - Operation denied on zeroized engine.")
+
         quorum_flags = kwargs.get('quorum_flags') or kwargs.get('quorum') or (args[0] if args else None)
         
         if quorum_flags and all(quorum_flags):
@@ -56,11 +62,12 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return "OPERATION_DENIED: Fail-closed triggered."
 
     def zeroize(self):
-        self._zeroized = True
-        self._quorum_reached = False
-        self.system_locked = True
-        self.secure_ram_key_status = "ZEROIZED"
-        self.audit_trail.append("ZEROIZED")
+        if not self._zeroized:
+            self._zeroized = True
+            self._quorum_reached = False
+            self.system_locked = True
+            self.secure_ram_key_status = "ZEROIZED"
+            self.audit_trail.append("ZEROIZED")
         return "ENGINE_ZEROIZED"
 
     def inspect_raw_memory_snapshot(self):
