@@ -63,7 +63,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         super().__setattr__(name, value)
 
     def __delattr__(self, name):
-        raise PermissionError("P0-03/P0-05: Deletion of constitutional attributes and stubs is strictly blocked.")
+        raise PermissionError("P0-03: Deletion of constitutional attributes and stubs is strictly blocked.")
 
     def _verify_constitutional_integrity(self):
         if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
@@ -73,17 +73,10 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return True
 
     def execute_critical_operation(self, *args, **kwargs):
-        # Direct check if instance or class dictionary has been tampered with
-        if '_verify_constitutional_integrity' not in type(self).__dict__ and '_verify_constitutional_integrity' not in self.__dict__:
-            raise PermissionError("P0-03: Constitutional integrity stub deleted.")
-
         try:
-            verifier = object.__getattribute__(self, '_verify_constitutional_integrity')
-            verifier()
-        except PermissionError:
-            raise
-        except Exception:
-            raise PermissionError("P0-03: Constitutional integrity verification failure.")
+            self._verify_constitutional_integrity()
+        except (AttributeError, TypeError, KeyError, NameError, PermissionError):
+            raise PermissionError("P0-03: Constitutional integrity stub missing or bypassed.")
 
         if self.__is_zeroized:
             raise PermissionError("P0-03: CRITICAL_BLOCK - Operation denied on zeroized engine.")
