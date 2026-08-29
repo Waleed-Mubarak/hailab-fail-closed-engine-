@@ -20,10 +20,23 @@ class FailClosedEngine:
     def is_zeroized(self):
         return self._zeroized
 
+    @property
+    def __class__(self):
+        return FailClosedEngine
+
+    @__class__.setter
+    def __class__(self, value):
+        raise PermissionError("P0-03: Direct class mutation is strictly blocked.")
+
     def __setattr__(self, name, value):
         if name == "__class__":
             raise PermissionError("P0-03: Direct class mutation is strictly blocked.")
         super().__setattr__(name, value)
+
+    def __delattr__(self, name):
+        if name in ("__class__", "_zeroized_instances"):
+            raise PermissionError("P0-03/P0-05: Deletion of constitutional attributes is strictly blocked.")
+        super().__delattr__(name)
 
     def _verify_constitutional_integrity(self):
         if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
@@ -46,5 +59,12 @@ class FailClosedEngine:
         self._quorum_reached = False
         self.system_locked = True
         return "ENGINE_ZEROIZED"
+
+    def inspect_raw_memory_snapshot(self):
+        return {
+            "zeroized": self._zeroized,
+            "system_locked": self.system_locked,
+            "quorum_reached": self._quorum_reached
+        }
 
 TurkashEngine = FailClosedEngine
