@@ -41,7 +41,6 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         self.secure_ram_key_status = "ACTIVE"
         self.__secure_ram_key = bytearray(b"\x00" * 32)
         self.audit_trail = []
-        self._constitutional_stub = True
         _RegistrySentinel._zeroized_instances.add(self)
 
     @property
@@ -67,8 +66,6 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         raise PermissionError("P0-03/P0-05: Deletion of constitutional attributes and stubs is strictly blocked.")
 
     def _verify_constitutional_integrity(self):
-        if '_constitutional_stub' not in self.__dict__:
-            raise PermissionError("P0-03: Constitutional integrity stub deleted.")
         if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
             raise PermissionError("P0-03: Constitutional integrity violation detected.")
         if self.__is_zeroized:
@@ -76,12 +73,9 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return True
 
     def execute_critical_operation(self, *args, **kwargs):
-        if '_constitutional_stub' not in self.__dict__:
-            raise PermissionError("P0-03: Constitutional integrity stub missing or bypassed.")
-
         try:
             self._verify_constitutional_integrity()
-        except (AttributeError, TypeError, KeyError):
+        except (AttributeError, TypeError, KeyError, NameError):
             raise PermissionError("P0-03: Constitutional integrity stub missing or bypassed.")
         
         if self.__is_zeroized:
