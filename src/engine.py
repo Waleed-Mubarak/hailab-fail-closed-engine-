@@ -13,6 +13,7 @@ class FailClosedEngine:
     def __init__(self, *args, **kwargs):
         self._quorum_reached = False
         self._zeroized = False
+        self.system_locked = False
         self._zeroized_instances.add(self)
 
     @property
@@ -29,17 +30,21 @@ class FailClosedEngine:
             raise PermissionError("P0-03: Constitutional integrity violation detected.")
         return True
 
-    def execute_critical_operation(self, quorum_flags=None, action=None):
+    def execute_critical_operation(self, *args, **kwargs):
         self._verify_constitutional_integrity()
+        quorum_flags = kwargs.get('quorum_flags') or kwargs.get('quorum') or (args[0] if args else None)
+        
         if quorum_flags and all(quorum_flags):
             self._quorum_reached = True
             return "OPERATION_SUCCESS: Quorum reached."
+        
         self.zeroize()
         return "OPERATION_DENIED: Fail-closed triggered."
 
     def zeroize(self):
         self._zeroized = True
         self._quorum_reached = False
+        self.system_locked = True
         return "ENGINE_ZEROIZED"
 
 TurkashEngine = FailClosedEngine
