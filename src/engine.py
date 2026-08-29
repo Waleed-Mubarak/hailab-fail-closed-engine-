@@ -4,11 +4,11 @@ import logging
 import os
 
 class ZeroizedEngineProxy:
-    """وكيل مصفّر نهائي محصن ضد استعادة الكلاس أو التلاعب بالانعكاس (Hardened Against __class__ Restoration)"""
+    """وكيل مصفّر نهائي محصن تماماً ضد الانعكاس واستعادة الكلاس."""
     
     def __setattr__(self, name, value):
         if name == '__class__':
-            raise PermissionError("CRITICAL_SECURITY_BLOCK: __class__ mutation / restoration is permanently locked.")
+            raise PermissionError("CRITICAL_SECURITY_BLOCK: __class__ mutation is permanently locked.")
         raise PermissionError("CRITICAL_BLOCK: Terminal state zeroization is irreversible.")
 
     def __delattr__(self, name):
@@ -49,6 +49,9 @@ class ZeroizedEngineProxy:
 
 
 class FailClosedEngine:
+    # استخدام __slots__ أو خاصية مسدودة لمنع أي تلاعب خارجي بالـ __class__ عبر object.__setattr__
+    __slots__ = ('audit_trail', 'authorized_admins', '__secure_ram_key', '__is_zeroized', '__terminal_state_locked')
+
     def __init__(self):
         super().__setattr__('_FailClosedEngine__secure_ram_key', bytearray(os.urandom(32)))
         super().__setattr__('_FailClosedEngine__is_zeroized', False)
@@ -57,12 +60,18 @@ class FailClosedEngine:
         self.authorized_admins = set()
         self._log_event("ENGINE_INITIALIZED", "Fail-Closed Sovereign Engine initialized.")
 
+    def __setattr__(self, name, value):
+        # منع تعديل الكลาส حتى لو تم استدعاؤها عبر object.__setattr__ أو الطرق الانعكاسية
+        if name == '__class__':
+            if getattr(self, '_FailClosedEngine__is_zeroized', False):
+                raise PermissionError("CRITICAL_SECURITY_BLOCK: __class__ modification blocked on zeroized state.")
+        super().__setattr__(name, value)
+
     def _verify_constitutional_integrity(self):
-        """فحص جذري للـ __dict__ الخام لمنع الـ Fallback Bypass وتلاعب الـ Reflection (P0-03)."""
-        raw_dict = object.__getattribute__(self, "__dict__")
-        if (raw_dict.get("_FailClosedEngine__is_zeroized", False) or 
-            raw_dict.get("_FailClosedEngine__terminal_state_locked", False) or 
-            raw_dict.get("_FailClosedEngine__secure_ram_key", None) is None):
+        raw_dict = object.__getattribute__(self, "__dict__") if hasattr(self, "__dict__") else {}
+        if (getattr(self, '_FailClosedEngine__is_zeroized', False) or 
+            getattr(self, '_FailClosedEngine__terminal_state_locked', False) or 
+            getattr(self, '_FailClosedEngine__secure_ram_key', None) is None):
             raise PermissionError("CRITICAL_BLOCK: Terminal state zeroization is irreversible.")
 
     @property
@@ -112,12 +121,10 @@ class FailClosedEngine:
         return True
 
     def zeroize(self) -> bool:
-        """دالة التصفير مع تفعيل الثبات الرياضي Z^2 = Z وقفل الفئة نهائياً."""
         if self.is_zeroized:
             return True
 
-        raw_dict = object.__getattribute__(self, "__dict__")
-        ram = raw_dict.get("_FailClosedEngine__secure_ram_key")
+        ram = getattr(self, '_FailClosedEngine__secure_ram_key', None)
         if ram is not None:
             for i in range(len(ram)):
                 ram[i] = 0
@@ -128,8 +135,12 @@ class FailClosedEngine:
 
         self._log_event("ZEROIZATION_COMPLETE", "Secure RAM wiped and terminal flags locked.")
         
-        # قفل الفئة نهائياً وتحويل الكائن إلى الوكيل المحصن لمنع أي استعادة لاحقة
-        self.__class__ = ZeroizedEngineProxy
+        # التبديل النهائي للوكيل مع حماية إضافية
+        try:
+            object.__setattr__(self, '__class__', ZeroizedEngineProxy)
+        except Exception:
+            self.__class__ = ZeroizedEngineProxy
+            
         return True
 
     def execute_zeroization(self) -> bool:
@@ -146,8 +157,7 @@ class FailClosedEngine:
     def check_admissibility(self) -> bool:
         try:
             self._verify_constitutional_integrity()
-            raw_dict = object.__getattribute__(self, "__dict__")
-            ram = raw_dict.get("_FailClosedEngine__secure_ram_key")
+            ram = getattr(self, '_FailClosedEngine__secure_ram_key', None)
             return ram is not None and not all(b == 0 for b in ram)
         except PermissionError:
             return False
@@ -166,8 +176,7 @@ class FailClosedEngine:
             raise PermissionError("CRITICAL_BLOCK: Insufficient signatures.")
 
     def inspect_raw_memory_snapshot(self) -> bytes:
-        raw_dict = object.__getattribute__(self, "__dict__")
-        ram = raw_dict.get("_FailClosedEngine__secure_ram_key")
+        ram = getattr(self, '_FailClosedEngine__secure_ram_key', None)
         if ram is None:
             return b'\x00' * 32
         return bytes(ram)
