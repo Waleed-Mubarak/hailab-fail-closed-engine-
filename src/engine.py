@@ -7,13 +7,7 @@ class _RegistrySentinelMeta(type):
 class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
     _zeroized_instances = weakref.WeakSet()
 
-class FailClosedEngineMeta(type):
-    def __setattr__(cls, name, value):
-        if name == "__class__":
-            raise PermissionError("P0-03: Direct class mutation is strictly blocked.")
-        super().__setattr__(name, value)
-
-class FailClosedEngine(metaclass=FailClosedEngineMeta):
+class FailClosedEngine:
     _zeroized_instances = _RegistrySentinel._zeroized_instances
 
     def __init__(self, *args, **kwargs):
@@ -25,6 +19,14 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
     @property
     def is_zeroized(self):
         return self._zeroized
+
+    @property
+    def __class__(self):
+        return type(self)
+
+    @__class__.setter
+    def __class__(self, value):
+        raise PermissionError("P0-03: Direct class mutation is strictly blocked.")
 
     def __setattr__(self, name, value):
         if name == "__class__":
