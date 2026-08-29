@@ -62,8 +62,12 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
             raise PermissionError("CRITICAL: Direct replacement is strictly forbidden.")
         super().__setattr__(name, value)
 
-    def __delattr__(self, name):
+    def __delattr__(cls_self, name):
         raise PermissionError("CRITICAL_BLOCK: Deletion of instance attributes and stubs is strictly blocked.")
+
+    def __getattr__(self, name):
+        # Catch any missing or popped constitutional stubs or fallback checks
+        raise PermissionError(f"CRITICAL: Constitutional stub '{name}' missing or bypassed.")
 
     def _verify_constitutional_integrity(self):
         if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
@@ -73,17 +77,8 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return True
 
     def execute_critical_operation(self, *args, **kwargs):
-        # Explicit check to catch if stub was popped from __dict__ or deleted
-        if '_verify_constitutional_integrity' not in self.__dict__ and '_verify_constitutional_integrity' not in type(self).__dict__:
-            raise PermissionError("CRITICAL: Constitutional integrity stub missing or bypassed.")
-
         try:
-            verifier = getattr(self, '_verify_constitutional_integrity', None)
-            if verifier is None:
-                raise PermissionError("CRITICAL: Constitutional integrity stub missing or bypassed.")
-            verifier()
-        except PermissionError:
-            raise
+            self._verify_constitutional_integrity()
         except Exception:
             raise PermissionError("CRITICAL: Constitutional integrity stub missing or bypassed.")
 
