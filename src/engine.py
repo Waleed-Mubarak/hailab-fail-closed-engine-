@@ -49,8 +49,6 @@ class ZeroizedEngineProxy:
 
 
 class FailClosedEngine:
-    __slots__ = ('audit_trail', 'authorized_admins', '__secure_ram_key', '__is_zeroized', '__terminal_state_locked')
-
     def __init__(self):
         super().__setattr__('_FailClosedEngine__secure_ram_key', bytearray(os.urandom(32)))
         super().__setattr__('_FailClosedEngine__is_zeroized', False)
@@ -60,6 +58,7 @@ class FailClosedEngine:
         self._log_event("ENGINE_INITIALIZED", "Fail-Closed Sovereign Engine initialized.")
 
     def __setattr__(self, name, value):
+        # السماح بتغيير الكلاس حصرياً أثناء عملية التصفير للتحول إلى الوكيل المحصن
         if name == '__class__':
             if getattr(self, '_FailClosedEngine__is_zeroized', False) and value is not ZeroizedEngineProxy:
                 raise PermissionError("CRITICAL_SECURITY_BLOCK: __class__ modification blocked on zeroized state.")
