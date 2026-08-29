@@ -49,7 +49,6 @@ class ZeroizedEngineProxy:
 
 
 class FailClosedEngine:
-    # استخدام __slots__ أو خاصية مسدودة لمنع أي تلاعب خارجي بالـ __class__ عبر object.__setattr__
     __slots__ = ('audit_trail', 'authorized_admins', '__secure_ram_key', '__is_zeroized', '__terminal_state_locked')
 
     def __init__(self):
@@ -61,9 +60,8 @@ class FailClosedEngine:
         self._log_event("ENGINE_INITIALIZED", "Fail-Closed Sovereign Engine initialized.")
 
     def __setattr__(self, name, value):
-        # منع تعديل الكลาส حتى لو تم استدعاؤها عبر object.__setattr__ أو الطرق الانعكاسية
         if name == '__class__':
-            if getattr(self, '_FailClosedEngine__is_zeroized', False):
+            if getattr(self, '_FailClosedEngine__is_zeroized', False) and value is not ZeroizedEngineProxy:
                 raise PermissionError("CRITICAL_SECURITY_BLOCK: __class__ modification blocked on zeroized state.")
         super().__setattr__(name, value)
 
@@ -135,7 +133,6 @@ class FailClosedEngine:
 
         self._log_event("ZEROIZATION_COMPLETE", "Secure RAM wiped and terminal flags locked.")
         
-        # التبديل النهائي للوكيل مع حماية إضافية
         try:
             object.__setattr__(self, '__class__', ZeroizedEngineProxy)
         except Exception:
