@@ -1,18 +1,19 @@
+import os
 import weakref
 
 class _RegistrySentinelMeta(type):
     def __setattr__(cls, name, value):
-        raise PermissionError("P0-05: Direct replacement of the zeroization registry is strictly forbidden.")
+        raise PermissionError("P0-05: Direct replacement or modification of the registry sentinel is strictly forbidden.")
 
 class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
     _zeroized_instances = weakref.WeakSet()
-    _permanently_zeroized = weakref.WeakSet()
+    # استخدام set عادي مع مراجع قوية لمنع تجاوز التتبع عبر .discard()
+    _permanently_zeroized = set()
 
 class FailClosedEngineMeta(type):
     def __setattr__(cls, name, value):
-        if name == "__class__":
-            raise PermissionError("P0-03: Direct class mutation is strictly blocked.")
-        super().__setattr__(name, value)
+        # منع أي كتابة على مستوى الكلاس لحماية السجلات من الاستبدال
+        raise PermissionError("P0-03/P0-05: Direct class modification or attribute replacement is strictly blocked.")
 
 class FailClosedEngine(metaclass=FailClosedEngineMeta):
     _zeroized_instances = _RegistrySentinel._zeroized_instances
@@ -24,7 +25,8 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         self._FailClosedEngine__terminal_state_locked = False
         self.system_locked = False
         self.secure_ram_key_status = "ACTIVE"
-        self._FailClosedEngine__secure_ram_key = bytearray(b"\x00" * 32)
+        # استعادة استخدام os.urandom(32) لضمان مفتاح عشوائي مشفر
+        self._FailClosedEngine__secure_ram_key = bytearray(os.urandom(32))
         self.audit_trail = []
         self._zeroized_instances.add(self)
 
@@ -38,22 +40,26 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         super().__setattr__(name, value)
 
     def __delattr__(self, name):
-        if name in ("__class__", "_zeroized_instances"):
+        if name in ("__class__", "_zeroized_instances", "_permanently_zeroized"):
             raise PermissionError("P0-03/P0-05: Deletion of constitutional attributes is strictly blocked.")
         super().__delattr__(name)
+
+    def check_admissibility(self):
+        # استعادة منطق فحص سلامة المفتاح والتحقق من عدم كونه أصفاراً
+        if all(b == 0 for b in self._FailClosedEngine__secure_ram_key):
+            raise PermissionError("P0-04: Cryptographically inert zero-initialized RAM key detected.")
+        if self in self._permanently_zeroized or self._FailClosedEngine__is_zeroized:
+            raise PermissionError("P0-03: CRITICAL_BLOCK - Engine is zeroized.")
+        return True
 
     def _verify_constitutional_integrity(self):
         if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
             raise PermissionError("P0-03: Constitutional integrity violation detected.")
-        if self in self._permanently_zeroized or self.__dict__.get("_FailClosedEngine__is_zeroized", False):
-            raise PermissionError("P0-03: CRITICAL_BLOCK - Engine is zeroized.")
+        self.check_admissibility()
         return True
 
     def execute_critical_operation(self, *args, **kwargs):
         self._verify_constitutional_integrity()
-        
-        if self in self._permanently_zeroized or self.__dict__.get("_FailClosedEngine__is_zeroized", False):
-            raise PermissionError("P0-03: CRITICAL_BLOCK - Operation denied on zeroized engine.")
 
         quorum_flags = kwargs.get('quorum_flags') or kwargs.get('quorum') or (args[0] if args else None)
         
@@ -67,7 +73,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
 
     def zeroize(self):
         self._permanently_zeroized.add(self)
-        if not self.__dict__.get("_FailClosedEngine__is_zeroized", False):
+        if not self._FailClosedEngine__is_zeroized:
             self._FailClosedEngine__is_zeroized = True
             self._FailClosedEngine__terminal_state_locked = True
             self.system_locked = True
