@@ -14,8 +14,7 @@ class FailClosedEngineMeta(type):
         super().__setattr__(name, value)
 
 class FailClosedEngine(metaclass=FailClosedEngineMeta):
-    __slots__ = ('_quorum_reached', '__is_zeroized', '__terminal_state_locked', 'system_locked', 'secure_ram_key_status', '__secure_ram_key', 'audit_trail', '__weakref__')
-
+    
     @classmethod
     @property
     def _zeroized_instances(cls):
@@ -40,9 +39,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
             raise PermissionError("P0-03: Direct class mutation is strictly blocked.")
         if name == "_zeroized_instances":
             raise PermissionError("P0-05: Direct replacement of the zeroization registry is strictly forbidden.")
-        if name not in self.__slots__ and not name.startswith('_FailClosedEngine__'):
-            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
-        super(FailClosedEngine, self).__setattr__(name, value)
+        super().__setattr__(name, value)
 
     def __delattr__(self, name):
         if name in ("__class__", "_zeroized_instances"):
