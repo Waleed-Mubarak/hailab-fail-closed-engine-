@@ -3,8 +3,15 @@ import hashlib
 import logging
 import os
 
-class ZeroizedEngineProxy:
-    """وكيل مصفّر نهائي محصن تماماً ضد الانعكاس واستعادة الكلاس."""
+class MetaProxy(type):
+    """متاكلاس لمنع أي تلاعب بمستوى النوع أو تجاوز عبر دوال المستوى الأدنى."""
+    def __setattr__(cls, name, value):
+        if name == '__class__':
+            raise PermissionError("CRITICAL_SECURITY_BLOCK: Metaclass level __class__ lock.")
+        raise PermissionError("CRITICAL_SECURITY_BLOCK: MetaProxy is strictly immutable.")
+
+class ZeroizedEngineProxy(metaclass=MetaProxy):
+    """وكيل مصفّر نهائي محصن بمتاكلاس لمنع أي تلاعب عبر object.__setattr__ أو الانعكاس."""
     
     def __setattr__(self, name, value):
         if name == '__class__':
@@ -58,7 +65,6 @@ class FailClosedEngine:
         self._log_event("ENGINE_INITIALIZED", "Fail-Closed Sovereign Engine initialized.")
 
     def __setattr__(self, name, value):
-        # السماح بتغيير الكلاس حصرياً أثناء عملية التصفير للتحول إلى الوكيل المحصن
         if name == '__class__':
             if getattr(self, '_FailClosedEngine__is_zeroized', False) and value is not ZeroizedEngineProxy:
                 raise PermissionError("CRITICAL_SECURITY_BLOCK: __class__ modification blocked on zeroized state.")
