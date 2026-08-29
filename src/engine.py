@@ -66,6 +66,9 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         raise PermissionError("P0-03/P0-05: Deletion of constitutional attributes and stubs is strictly blocked.")
 
     def _verify_constitutional_integrity(self):
+        # Ensure that if this method or core attributes are missing from __dict__ via bypass, it fails closed
+        if '_verify_constitutional_integrity' not in self.__dict__ and '_verify_constitutional_integrity' not in type(self).__dict__:
+            raise PermissionError("P0-03: Constitutional integrity stub missing.")
         if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
             raise PermissionError("P0-03: Constitutional integrity violation detected.")
         if self.__is_zeroized:
@@ -73,6 +76,10 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return True
 
     def execute_critical_operation(self, *args, **kwargs):
+        # Explicit check for dictionary pop/bypass of core validation stubs
+        if '_verify_constitutional_integrity' in self.__dict__ and not callable(self.__dict__['_verify_constitutional_integrity']):
+            raise PermissionError("P0-03: Constitutional integrity stub bypassed.")
+        
         try:
             self._verify_constitutional_integrity()
         except (AttributeError, TypeError, KeyError, NameError):
