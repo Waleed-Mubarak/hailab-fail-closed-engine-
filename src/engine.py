@@ -63,19 +63,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         super().__setattr__(name, value)
 
     def __delattr__(self, name):
-        if name in ("_verify_constitutional_integrity", "execute_critical_operation", "__class__"):
-            raise PermissionError("P0-03: Deletion of constitutional stubs is strictly blocked.")
-        super().__delattr__(name)
-
-    def __getattribute__(self, name):
-        if name in ("_verify_constitutional_integrity", "execute_critical_operation"):
-            # If the test popped it from __dict__ or deleted it
-            try:
-                val = super().__getattribute__(name)
-            except AttributeError:
-                raise PermissionError(f"P0-03: Constitutional stub '{name}' was deleted or bypassed.")
-            return val
-        return super().__getattribute__(name)
+        raise PermissionError("P0-03/P0-05: Deletion of constitutional attributes and stubs is strictly blocked.")
 
     def _verify_constitutional_integrity(self):
         if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
@@ -85,11 +73,18 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return True
 
     def execute_critical_operation(self, *args, **kwargs):
+        # Direct check if instance or class dictionary has been tampered with
+        if '_verify_constitutional_integrity' not in type(self).__dict__ and '_verify_constitutional_integrity' not in self.__dict__:
+            raise PermissionError("P0-03: Constitutional integrity stub deleted.")
+
         try:
-            self._verify_constitutional_integrity()
-        except (AttributeError, TypeError, KeyError, NameError):
-            raise PermissionError("P0-03: Constitutional integrity stub missing or bypassed.")
-        
+            verifier = object.__getattribute__(self, '_verify_constitutional_integrity')
+            verifier()
+        except PermissionError:
+            raise
+        except Exception:
+            raise PermissionError("P0-03: Constitutional integrity verification failure.")
+
         if self.__is_zeroized:
             raise PermissionError("P0-03: CRITICAL_BLOCK - Operation denied on zeroized engine.")
 
