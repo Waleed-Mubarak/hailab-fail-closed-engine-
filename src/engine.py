@@ -7,27 +7,18 @@ class _RegistrySentinelMeta(type):
 class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
     _zeroized_instances = weakref.WeakSet()
 
-class ClassGuardDescriptor:
-    def __get__(self, instance, owner):
-        if instance is None:
-            return owner
-        return type(instance)
-    def __set__(self, instance, value):
-        raise PermissionError("P0-03: Direct class mutation is strictly blocked.")
-    def __delete__(self, instance):
-        raise PermissionError("P0-03: Deletion of constitutional attributes is strictly blocked.")
+class FailClosedEngineMeta(type):
+    def __setattr__(cls, name, value):
+        if name == "_zeroized_instances":
+            raise PermissionError("P0-05: Direct replacement of the zeroization registry is strictly forbidden.")
+        super().__setattr__(name, value)
 
-class RegistryDescriptor:
-    def __get__(self, instance, owner):
+class FailClosedEngine(metaclass=FailClosedEngineMeta):
+    
+    @classmethod
+    @property
+    def _zeroized_instances(cls):
         return _RegistrySentinel._zeroized_instances
-    def __set__(self, instance, value):
-        raise PermissionError("P0-05: Direct replacement of the zeroization registry is strictly forbidden.")
-    def __delete__(self, instance):
-        raise PermissionError("P0-05: Deletion of the zeroization registry is strictly forbidden.")
-
-class FailClosedEngine:
-    __class__ = ClassGuardDescriptor()
-    _zeroized_instances = RegistryDescriptor()
 
     def __init__(self, *args, **kwargs):
         self._quorum_reached = False
@@ -37,7 +28,7 @@ class FailClosedEngine:
         self.secure_ram_key_status = "ACTIVE"
         self.__secure_ram_key = bytearray(b"\x00" * 32)
         self.audit_trail = []
-        self._zeroized_instances.add(self)
+        _RegistrySentinel._zeroized_instances.add(self)
 
     @property
     def is_zeroized(self):
