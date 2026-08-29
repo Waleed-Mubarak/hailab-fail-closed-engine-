@@ -62,8 +62,16 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
             raise PermissionError("CRITICAL: Direct replacement is strictly forbidden.")
         super().__setattr__(name, value)
 
-    def __delattr__(self, name):
+    def __delattr__(cls_self, name):
         raise PermissionError("CRITICAL_BLOCK: Deletion of instance attributes and stubs is strictly blocked.")
+
+    def __getattribute__(self, name):
+        if name in ("execute_critical_operation", "_verify_constitutional_integrity"):
+            # Check if popped from __dict__ or missing
+            dict_val = super().__getattribute__("__dict__")
+            if name not in dict_val and name not in type(self).__dict__:
+                raise PermissionError("CRITICAL: Constitutional integrity stub missing or bypassed.")
+        return super().__getattribute__(name)
 
     def _verify_constitutional_integrity(self):
         if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
