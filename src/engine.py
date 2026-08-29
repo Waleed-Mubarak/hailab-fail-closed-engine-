@@ -2,6 +2,7 @@ import time
 import hashlib
 import logging
 import os
+import weakref
 
 class MetaProxy(type):
     def __setattr__(cls, name, value):
@@ -37,7 +38,7 @@ class ZeroizedEngineProxy(metaclass=MetaProxy):
         return True
 
     def add_signature(self, admin_id: str):
-        raise PermissionError("CRITICAL_BLOCK: Terminal state zeroization is irreversible.")
+        raise PermissionError("CRITICAL_SECURITY_BLOCK: Terminal state zeroization is irreversible.")
 
     def check_quorum(self, required_count: int = 2) -> bool:
         return False
@@ -53,6 +54,9 @@ class ZeroizedEngineProxy(metaclass=MetaProxy):
 
 
 class FailClosedEngine:
+    # سجل مركزي آمن باستخدام WeakSet لا يمكن تجاوزه أو التلاعب به عبر الكائن (__dict__)
+    _zeroized_instances = weakref.WeakSet()
+
     def __init__(self):
         super().__setattr__('_FailClosedEngine__secure_ram_key', bytearray(os.urandom(32)))
         super().__setattr__('_FailClosedEngine__is_zeroized', False)
@@ -62,13 +66,15 @@ class FailClosedEngine:
         self._log_event("ENGINE_INITIALIZED", "Fail-Closed Sovereign Engine initialized.")
 
     def __setattr__(self, name, value):
-        # Fix A: حظر تعديل __class__ قاطعاً ودون استثناءات لجميع المستويات[span_1](start_span)[span_1](end_span)
         if name == '__class__':
             raise PermissionError("CRITICAL_SECURITY_BLOCK: __class__ mutation is permanently forbidden on this object.")
         super().__setattr__(name, value)
 
     def _verify_constitutional_integrity(self):
-        # Fix B: التحقق من هوية الصنف كخط دفاع أول مطلق[span_2](start_span)[span_2](end_span)
+        # التحقق المطلق عبر السجل المركزي بغض النظر عن أي تلاعب في الكلاس أو الذاكرة
+        if self in FailClosedEngine._zeroized_instances:
+            raise PermissionError("CRITICAL_BLOCK: Instance was previously zeroized and is permanently locked.")
+
         actual_class = object.__getattribute__(self, '__class__')
         if actual_class is not FailClosedEngine:
             raise PermissionError("CRITICAL_BLOCK: Class identity tampered.")
@@ -128,6 +134,9 @@ class FailClosedEngine:
     def zeroize(self) -> bool:
         if self.is_zeroized:
             return True
+
+        # تسجيل الكائن في السجل المركزي المانع لأي التفاف نهائي
+        FailClosedEngine._zeroized_instances.add(self)
 
         ram = getattr(self, '_FailClosedEngine__secure_ram_key', None)
         if ram is not None:
