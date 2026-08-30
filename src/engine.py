@@ -5,15 +5,20 @@ class _RegistrySentinelMeta(type):
         raise PermissionError("P0-05: Direct replacement of the registry is strictly forbidden.")
     
     def __contains__(cls, engine):
-        return engine in cls._permanently_zeroized
+        # استخدام دالة التحقق المغلفة حصرياً
+        return cls._is_member(engine)
 
 class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
-    # Use protected attribute so the metaclass can check it cleanly
-    _permanently_zeroized = set()
+    # إخفاء المجموعة الخام خلف نطاق خاص تماماً لمنع الوصول المباشر
+    __permanently_zeroized = set()
+
+    @classmethod
+    def _is_member(cls, engine):
+        return engine in cls.__permanently_zeroized
 
     @classmethod
     def add(cls, engine):
-        cls._permanently_zeroized.add(engine)
+        cls.__permanently_zeroized.add(engine)
 
     @classmethod
     def discard(cls, engine):
