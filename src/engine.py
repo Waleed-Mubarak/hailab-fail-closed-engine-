@@ -20,6 +20,11 @@ def _create_secure_registry():
         def __contains__(cls, engine):
             return engine in __permanently_zeroized
 
+        @classmethod
+        def _get_secure_debug_view(cls):
+            """واجهة قراءة فقط للاختبارات الداخلية دون السماح بأي تعديل أو تلاعب"""
+            return __permanently_zeroized
+
     return _RegistrySentinel
 
 _RegistrySentinel = _create_secure_registry()
