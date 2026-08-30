@@ -1,32 +1,28 @@
 import os
 
-class _RegistrySentinelMeta(type):
-    def __setattr__(cls, name, value):
-        raise PermissionError("P0-05: Direct replacement of the registry is strictly forbidden.")
-    
-    def __contains__(cls, engine):
-        # استخدام دالة التحقق المغلفة حصرياً
-        return cls._is_member(engine)
-
-class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
-    # إخفاء المجموعة الخام خلف نطاق خاص تماماً لمنع الوصول المباشر
+def _create_secure_registry():
     __permanently_zeroized = set()
+    
+    class _RegistrySentinel:
+        @classmethod
+        def add(cls, engine):
+            __permanently_zeroized.add(engine)
 
-    @classmethod
-    def _is_member(cls, engine):
-        return engine in cls.__permanently_zeroized
+        @classmethod
+        def discard(cls, engine):
+            raise PermissionError("P0-05: Direct mutation/discard from the zeroized registry is strictly forbidden.")
 
-    @classmethod
-    def add(cls, engine):
-        cls.__permanently_zeroized.add(engine)
+        @classmethod
+        def clear(cls):
+            raise PermissionError("P0-05: Direct clearing of the zeroized registry is strictly forbidden.")
 
-    @classmethod
-    def discard(cls, engine):
-        raise PermissionError("P0-05: Direct mutation/discard from the zeroized registry is strictly forbidden.")
+        @classmethod
+        def __contains__(cls, engine):
+            return engine in __permanently_zeroized
 
-    @classmethod
-    def clear(cls):
-        raise PermissionError("P0-05: Direct clearing of the zeroized registry is strictly forbidden.")
+    return _RegistrySentinel
+
+_RegistrySentinel = _create_secure_registry()
 
 class FailClosedEngineMeta(type):
     def __setattr__(cls, name, value):
