@@ -1,21 +1,22 @@
 import os
 
+_REGISTRY_DATA = {}  # مخزن على مستوى الموديول لمنع أي وصول عبر مسارات السمات
+
 class _SecureRegistrySet:
-    """تطبيق التركيب (Composition) لمنع أي وصول مباشر للـ set الأصلي عبر الكلاس الأب"""
     def __init__(self):
-        self.__data = set()  # مخفي كلياً عن أي استدعاء خارجي
+        _REGISTRY_DATA[id(self)] = set()
         
     def add(self, item):
-        self.__data.add(item)
+        _REGISTRY_DATA[id(self)].add(item)
         
     def __contains__(self, item):
-        return item in self.__data
+        return item in _REGISTRY_DATA.get(id(self), set())
         
     def __iter__(self):
-        return iter(self.__data)
+        return iter(_REGISTRY_DATA.get(id(self), set()))
         
     def __len__(self):
-        return len(self.__data)
+        return len(_REGISTRY_DATA.get(id(self), set()))
         
     def discard(self, item):
         raise PermissionError("P0-05: Registry mutation forbidden.")
