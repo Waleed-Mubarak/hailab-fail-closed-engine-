@@ -1,33 +1,56 @@
 import os
 
-def _create_secure_registry():
-    __permanently_zeroized = set()
+class _SecureRegistrySet(set):
+    """مجموعة مشتقة ترث من set الأصلي لضمان مطابقة نوع الأنواع (Type Check)، مع حظر دائم لأي تعديل خارجي"""
+    def discard(self, __value):
+        raise PermissionError("P0-05: Direct mutation/discard from the zeroized registry is strictly forbidden.")
+
+    def clear(self):
+        raise PermissionError("P0-05: Direct clearing of the zeroized registry is strictly forbidden.")
+
+    def remove(self, __value):
+        raise PermissionError("P0-05: Direct mutation from the zeroized registry is strictly forbidden.")
+
+    def pop(self):
+        raise PermissionError("P0-05: Direct mutation from the zeroized registry is strictly forbidden.")
+
+    def update(self, *s):
+        raise PermissionError("P0-05: Direct update/mutation from the zeroized registry is strictly forbidden.")
+
+    def intersection_update(self, *s):
+        raise PermissionError("P0-05: Direct mutation from the zeroized registry is strictly forbidden.")
+
+    def difference_update(self, *s):
+        raise PermissionError("P0-05: Direct mutation from the zeroized registry is strictly forbidden.")
+
+    def symmetric_difference_update(self, *s):
+        raise PermissionError("P0-05: Direct mutation from the zeroized registry is strictly forbidden.")
+
+    def add(self, __element):
+        # السماح حصرياً بالتسجيل الداخلي للعمليات المشروعة
+        super().add(__element)
+
+class _RegistrySentinelMeta(type):
+    def __setattr__(cls, name, value):
+        raise PermissionError("P0-05: Direct replacement of the registry is strictly forbidden.")
     
-    class _RegistrySentinel:
-        @classmethod
-        def add(cls, engine):
-            __permanently_zeroized.add(engine)
+    def __contains__(cls, engine):
+        return engine in cls._permanently_zeroized
 
-        @classmethod
-        def discard(cls, engine):
-            raise PermissionError("P0-05: Direct mutation/discard from the zeroized registry is strictly forbidden.")
+class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
+    _permanently_zeroized = _SecureRegistrySet()
 
-        @classmethod
-        def clear(cls):
-            raise PermissionError("P0-05: Direct clearing of the zeroized registry is strictly forbidden.")
+    @classmethod
+    def add(cls, engine):
+        cls._permanently_zeroized.add(engine)
 
-        @classmethod
-        def __contains__(cls, engine):
-            return engine in __permanently_zeroized
+    @classmethod
+    def discard(cls, engine):
+        raise PermissionError("P0-05: Direct mutation/discard from the zeroized registry is strictly forbidden.")
 
-        @classmethod
-        def _get_secure_debug_view(cls):
-            """واجهة قراءة فقط للاختبارات الداخلية دون السماح بأي تعديل أو تلاعب"""
-            return __permanently_zeroized
-
-    return _RegistrySentinel
-
-_RegistrySentinel = _create_secure_registry()
+    @classmethod
+    def clear(cls):
+        raise PermissionError("P0-05: Direct clearing of the zeroized registry is strictly forbidden.")
 
 class FailClosedEngineMeta(type):
     def __setattr__(cls, name, value):
