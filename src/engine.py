@@ -1,34 +1,33 @@
 import os
 
-class _SecureRegistrySet(set):
-    """مجموعة مشتقة ترث من set الأصلي لضمان مطابقة نوع الأنواع (Type Check)، مع حظر دائم لأي تعديل خارجي"""
-    def discard(self, __value):
-        raise PermissionError("P0-05: Direct mutation/discard from the zeroized registry is strictly forbidden.")
+class _SecureRegistrySet:
+    """تطبيق التركيب (Composition) لمنع أي وصول مباشر للـ set الأصلي عبر الكلاس الأب"""
+    def __init__(self):
+        self.__data = set()  # مخفي كلياً عن أي استدعاء خارجي
+        
+    def add(self, item):
+        self.__data.add(item)
+        
+    def __contains__(self, item):
+        return item in self.__data
+        
+    def __iter__(self):
+        return iter(self.__data)
+        
+    def __len__(self):
+        return len(self.__data)
+        
+    def discard(self, item):
+        raise PermissionError("P0-05: Registry mutation forbidden.")
 
     def clear(self):
-        raise PermissionError("P0-05: Direct clearing of the zeroized registry is strictly forbidden.")
+        raise PermissionError("P0-05: Registry mutation forbidden.")
 
-    def remove(self, __value):
-        raise PermissionError("P0-05: Direct mutation from the zeroized registry is strictly forbidden.")
+    def remove(self, item):
+        raise PermissionError("P0-05: Registry mutation forbidden.")
 
     def pop(self):
-        raise PermissionError("P0-05: Direct mutation from the zeroized registry is strictly forbidden.")
-
-    def update(self, *s):
-        raise PermissionError("P0-05: Direct update/mutation from the zeroized registry is strictly forbidden.")
-
-    def intersection_update(self, *s):
-        raise PermissionError("P0-05: Direct mutation from the zeroized registry is strictly forbidden.")
-
-    def difference_update(self, *s):
-        raise PermissionError("P0-05: Direct mutation from the zeroized registry is strictly forbidden.")
-
-    def symmetric_difference_update(self, *s):
-        raise PermissionError("P0-05: Direct mutation from the zeroized registry is strictly forbidden.")
-
-    def add(self, __element):
-        # السماح حصرياً بالتسجيل الداخلي للعمليات المشروعة
-        super().add(__element)
+        raise PermissionError("P0-05: Registry mutation forbidden.")
 
 class _RegistrySentinelMeta(type):
     def __setattr__(cls, name, value):
