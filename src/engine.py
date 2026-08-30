@@ -3,27 +3,25 @@ import os
 class _RegistrySentinelMeta(type):
     def __setattr__(cls, name, value):
         raise PermissionError("P0-05: Direct replacement of the registry is strictly forbidden.")
+    
+    def __contains__(cls, engine):
+        return engine in cls._permanently_zeroized
 
 class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
-    # Hidden underlying set, exposed only via controlled methods to prevent direct mutation/clearing
-    __permanently_zeroized = set()
+    # Use protected attribute so the metaclass can check it cleanly
+    _permanently_zeroized = set()
 
     @classmethod
     def add(cls, engine):
-        cls.__permanently_zeroized.add(engine)
+        cls._permanently_zeroized.add(engine)
 
     @classmethod
     def discard(cls, engine):
-        # Explicitly lock down removal attempts from the registry
         raise PermissionError("P0-05: Direct mutation/discard from the zeroized registry is strictly forbidden.")
 
     @classmethod
     def clear(cls):
         raise PermissionError("P0-05: Direct clearing of the zeroized registry is strictly forbidden.")
-
-    @classmethod
-    def __contains__(cls, engine):
-        return engine in cls.__permanently_zeroized
 
 class FailClosedEngineMeta(type):
     def __setattr__(cls, name, value):
