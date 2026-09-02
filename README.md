@@ -53,7 +53,8 @@ engine.authorize_recovery("Admin_B")
 
 ## 📄 License
 
-This project is open-source under the MIT License.
+© 2026 Waleed Mubarak. All Rights Reserved. This repository contains proprietary deep tech architecture. Unauthorized commercial use, duplication, or integration is strictly prohibited. For licensing inquiries, contact the author directly.
+
 
 ---
 
