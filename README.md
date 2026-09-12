@@ -8,6 +8,18 @@ docs/
 src/
     └── engine.py
 
+## 🛡️ Layer 5: Sovereign Communication & Fail-Closed Enforcement
+
+A security-first architecture layer designed to enforce strict cryptographic and hardware boundaries for mission-critical edge communications and state synchronization.
+
+* **Core Components**:
+  * `Layer5SecureEnforcementEngine`: The primary enforcement logic executing protocol validation and routing decisions.
+  * `Layer5Context`: State management wrapper tracking session metadata, node identifiers, and security context parameters.
+  * `MockHSMInterface`: Hardware Security Module abstraction layer verifying secure physical and cryptographic key bindings.
+* **Security Policy & Invariants**:
+  * **Hardware Binding Enforcement**: Triggers an immediate `FAIL_CLOSED_TRIGGERED` state with an `HSM_BINDING_VIOLATION` reason if the provided hardware key handle is unrecognized or invalid.
+  * **Multi-Party Authorization (MPA) Quorum**: Enforces a strict signature threshold (minimum quorum of 2 valid signatures) to prevent unauthorized transmission. Any deficit results in an `INSUFFICIENT_MPA_QUORUM` fail-closed lockdown.
+
 ## 🚀 Quick Duress Simulation
 ## Architectural Boundaries & Admissibility Model
 To run the live interactive demonstrator script showcasing the fail-closed defense against advanced class-level resurrection and state spoofing attacks, execute:
