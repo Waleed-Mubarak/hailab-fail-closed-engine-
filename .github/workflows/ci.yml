@@ -21,5 +21,7 @@ jobs:
           pip install pytest pytest-cov
 
       - name: Run Tests with Coverage
+        env:
+          PYTHONPATH: src
         run: |
-          PYTHONPATH=src pytest --cov=src
+          pytest --cov=src
