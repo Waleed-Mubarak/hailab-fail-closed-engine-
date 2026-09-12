@@ -1,10 +1,10 @@
-import unittest
 import sys
 import os
 
-# إضافة مجلد src إلى مسار البحث لضمان توافقه مع بيئة الـ CI
+# تعديل مسار البحث أولاً وقبل أي عملية استيراد تخص حزم المشروع
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
+import unittest
 from layer5_engine import Layer5SecureEnforcementEngine, Layer5Context, MockHSMInterface
 
 class TestLayer5SecureEnforcementEngine(unittest.TestCase):
@@ -22,7 +22,7 @@ class TestLayer5SecureEnforcementEngine(unittest.TestCase):
     def test_secure_transmission_success(self):
         payload = {"action": "sync_state", "data": "test_payload"}
         result = self.engine.execute_sovereign_communication(self.valid_context, payload)
-        self.assertEqual(result["status"], "SECURE_TRANسمISSION_ACTIVE" if "SECURE_TRANسمISSION_ACTIVE" in result.get("status", "") else "SECURE_TRANSMISSION_ACTIVE")
+        self.assertEqual(result["status"], "SECURE_TRANSMISSION_ACTIVE")
 
     def test_fail_closed_on_invalid_hsm_handle(self):
         invalid_context = Layer5Context(
