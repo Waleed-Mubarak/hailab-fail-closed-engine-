@@ -1,5 +1,5 @@
 import unittest
-from src.layer5_engine import Layer5SecureEnforcementEngine, Layer5Context, MockHSMInterface
+from layer5_engine import Layer5SecureEnforcementEngine, Layer5Context, MockHSMInterface
 
 class TestLayer5SecureEnforcementEngine(unittest.TestCase):
     
