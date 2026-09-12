@@ -2,10 +2,12 @@ import unittest
 import sys
 import os
 
-# إضافة مجلد src مباشرة إلى مسار البحث
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
-
-from layer5_engine import Layer5SecureEnforcementEngine, Layer5Context, MockHSMInterface
+# محاولة الاستيراد المباشر أو عبر مجلد src بحسب بيئة التشغيل
+try:
+    from layer5_engine import Layer5SecureEnforcementEngine, Layer5Context, MockHSMInterface
+except ImportError:
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+    from layer5_engine import Layer5SecureEnforcementEngine, Layer5Context, MockHSMInterface
 
 class TestLayer5SecureEnforcementEngine(unittest.TestCase):
     
