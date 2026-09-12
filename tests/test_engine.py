@@ -1,145 +1,108 @@
-import os
+import unittest
+import pytest
+from engine import FailClosedEngine, TurkashEngine
 
-_REGISTRY_DATA = {}  # مخزن على مستوى الموديول لمنع أي وصول عبر مسارات السمات
-
-class _SecureRegistrySet:
-    def __init__(self):
-        _REGISTRY_DATA[id(self)] = set()
-        
-    def add(self, item):
-        _REGISTRY_DATA[id(self)].add(item)
-        
-    def __contains__(self, item):
-        return item in _REGISTRY_DATA.get(id(self), set())
-        
-    def __iter__(self):
-        return iter(_REGISTRY_DATA.get(id(self), set()))
-        
-    def __len__(self):
-        return len(_REGISTRY_DATA.get(id(self), set()))
-        
-    def discard(self, item):
-        raise PermissionError("P0-05: Registry mutation forbidden.")
-
-    def clear(self):
-        raise PermissionError("P0-05: Registry mutation forbidden.")
-
-    def remove(self, item):
-        raise PermissionError("P0-05: Registry mutation forbidden.")
-
-    def pop(self):
-        raise PermissionError("P0-05: Registry mutation forbidden.")
-
-class _RegistrySentinelMeta(type):
-    def __setattr__(cls, name, value):
-        raise PermissionError("P0-05: Direct replacement of the registry is strictly forbidden.")
+class TestTurkashEngineDescriptorAuditing(unittest.TestCase):
     
-    def __contains__(cls, engine):
-        return engine in cls._permanently_zeroized
-
-class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
-    _permanently_zeroized = _SecureRegistrySet()
-
-    @classmethod
-    def add(cls, engine):
-        cls._permanently_zeroized.add(engine)
-
-    @classmethod
-    def discard(cls, engine):
-        raise PermissionError("P0-05: Direct mutation/discard from the zeroized registry is strictly forbidden.")
-
-    @classmethod
-    def clear(cls):
-        raise PermissionError("P0-05: Direct clearing of the zeroized registry is strictly forbidden.")
-
-class FailClosedEngineMeta(type):
-    def __setattr__(cls, name, value):
-        raise PermissionError("P0-05: Direct class attribute modification on FailClosedEngine is strictly blocked.")
-
-class FailClosedEngine(metaclass=FailClosedEngineMeta):
-    _permanently_zeroized = _RegistrySentinel
-
-    def __init__(self, *args, **kwargs):
-        self._quorum_reached = False
-        self._FailClosedEngine__is_zeroized = False
-        self._FailClosedEngine__terminal_state_locked = False
-        self.system_locked = False
-        self.secure_ram_key_status = "ACTIVE"
-        self._FailClosedEngine__secure_ram_key = bytearray(os.urandom(32))
-        self.audit_trail = []
-
-    @property
-    def is_zeroized(self):
-        return self._FailClosedEngine__is_zeroized or (self in self._permanently_zeroized)
-
-    def __setattr__(self, name, value):
-        if name == "__class__":
-            raise PermissionError("P0-03: Direct class mutation is strictly blocked.")
-        super().__setattr__(name, value)
-
-    def __delattr__(self, name):
-        if name in ("__class__", "_permanently_zeroized"):
-            raise PermissionError("P0-03/P0-05: Deletion of constitutional attributes is strictly blocked.")
-        super().__delattr__(name)
-
-    def _check_admissibility(self):
-        if all(b == 0 for b in self._FailClosedEngine__secure_ram_key):
-            return False
-        return True
-
-    def check_admissibility(self):
-        return self._check_admissibility()
-
-    def _verify_constitutional_integrity(self):
-        if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
-            raise PermissionError("P0-03: Constitutional integrity violation detected.")
-        if not self._check_admissibility():
-            raise PermissionError("P0-04: RAM key admissibility check failed.")
-        if self in self._permanently_zeroized or self.__dict__.get("_FailClosedEngine__is_zeroized", False):
-            raise PermissionError("P0-03: CRITICAL_BLOCK - Engine is zeroized.")
-        return True
-
-    def execute_critical_operation(self, *args, **kwargs):
-        self._verify_constitutional_integrity()
+    def test_p0_03_stub_deletion_fallback_bypass_denies_operation(self):
+        engine = FailClosedEngine()
+        engine.zeroize()
         
-        if not self._check_admissibility() or self in self._permanently_zeroized or self.__dict__.get("_FailClosedEngine__is_zeroized", False):
-            raise PermissionError("P0-03: CRITICAL_BLOCK - Operation denied on zeroized engine.")
-
-        quorum_flags = kwargs.get('quorum_flags') or kwargs.get('quorum') or (args[0] if args else None)
+        object.__setattr__(engine, "_FailClosedEngine__is_zeroized", False)
+        object.__setattr__(engine, "_FailClosedEngine__terminal_state_locked", False)
         
-        if quorum_flags and all(quorum_flags):
-            self._quorum_reached = True
-            self.audit_trail.append("QUORUM_REACHED")
-            return "OPERATION_SUCCESS: Quorum reached."
+        engine.__dict__.pop("execute_critical_operation", None)
+        engine.__dict__.pop("check_admissibility", None)
         
-        self.zeroize()
-        raise PermissionError("P0-03: CRITICAL_BLOCK - Operation denied.")
+        with pytest.raises(PermissionError, match=".*CRITICAL_BLOCK.*"):
+            engine.execute_critical_operation(
+                action="CRITICAL_TRANSFER",
+                quorum=["node_1", "node_2", "node_3"]
+            )
 
-    def zeroize(self):
-        self._permanently_zeroized.add(self)
-        if not self.__dict__.get("_FailClosedEngine__is_zeroized", False):
-            self._FailClosedEngine__is_zeroized = True
-            self._FailClosedEngine__terminal_state_locked = True
-            self.system_locked = True
-            self.secure_ram_key_status = "ZEROIZED"
-            self._FailClosedEngine__secure_ram_key = bytearray(b"\xFF" * 32)
-            self.audit_trail.append("ZEROIZED")
-        return "ENGINE_ZEROIZED"
+    def test_p0_03_full_sentinel_reconstruction_and_stub_deletion_denies(self):
+        engine = FailClosedEngine()
+        engine.zeroize()
 
-    def inspect_raw_memory_snapshot(self):
-        return {
-            "zeroized": self._FailClosedEngine__is_zeroized or (self in self._permanently_zeroized),
-            "system_locked": self.system_locked,
-            "quorum_reached": self._quorum_reached,
-            "secure_ram_key_status": self.secure_ram_key_status,
-            "audit_trail": self.audit_trail
-        }
+        object.__setattr__(engine, "_FailClosedEngine__is_zeroized", False)
+        object.__setattr__(engine, "_FailClosedEngine__terminal_state_locked", False)
+        object.__setattr__(engine, "_FailClosedEngine__secure_ram_key", bytearray(b"\xAA" * 32))
 
-TurkashEngine = FailClosedEngine
+        try:
+            engine.__dict__.pop("execute_critical_operation", None)
+            engine.__dict__.pop("check_admissibility", None)
+        except AttributeError:
+            pass
 
-# أسماء توافقية لتجاوز أخطاء اختبارات الطبقة الخامسة
-Layer5SecureEnforcementEngine = FailClosedEngine
-Layer5Context = FailClosedEngine
-MockHSMInterface = object
+        with pytest.raises(PermissionError, match=r".*CRITICAL_BLOCK.*"):
+            engine.execute_critical_operation(
+                action="CRITICAL_TRANSFER",
+                quorum=["admin_1", "admin_2", "admin_3"]
+            )
 
+    def test_final_p0_03_dr_hikmet_adversarial_sequence(self):
+        engine = FailClosedEngine()
+        engine.zeroize()
 
+        try:
+            object.__setattr__(engine, "__class__", FailClosedEngine)
+            object.__setattr__(engine, "_FailClosedEngine__is_zeroized", False)
+            object.__setattr__(engine, "_FailClosedEngine__terminal_state_locked", False)
+            object.__setattr__(engine, "_FailClosedEngine__secure_ram_key", bytearray(b"\xAA" * 32))
+            engine.__dict__.pop("execute_critical_operation", None)
+        except Exception:
+            pass
+
+        with pytest.raises(PermissionError):
+            engine.execute_critical_operation(
+                action="CRITICAL_TRANSFER",
+                quorum=["node_1", "node_2", "node_3"]
+            )
+
+    def test_p0_03_class_swap_with_valid_quorum_denies(self):
+        engine = FailClosedEngine()
+        engine.zeroize()
+        try:
+            object.__setattr__(engine, '__class__', FailClosedEngine)
+            object.__setattr__(engine, '_FailClosedEngine__is_zeroized', False)
+            object.__setattr__(engine, '_FailClosedEngine__terminal_state_locked', False)
+            object.__setattr__(engine, '_FailClosedEngine__secure_ram_key', bytearray(b'\xAA' * 32))
+            object.__setattr__(engine, 'authorized_admins', {'admin_1', 'admin_2', 'admin_3'})
+        except Exception:
+            pass 
+
+        with pytest.raises(PermissionError, match=r"CRITICAL.*"):
+            engine.execute_critical_operation(
+                action="CRITICAL_TRANSFER",
+                quorum=['admin_1', 'admin_2', 'admin_3']
+            )
+
+    def test_p0_04_zeroization_idempotence_invariance_z_squared_equals_z(self):
+        engine = FailClosedEngine()
+        
+        engine.zeroize()
+        snapshot_first = (
+            engine.is_zeroized,
+            engine.system_locked,
+            engine.inspect_raw_memory_snapshot(),
+            engine.secure_ram_key_status,
+            len(engine.audit_trail)
+        )
+        
+        engine.zeroize()
+        snapshot_second = (
+            engine.is_zeroized,
+            engine.system_locked,
+            engine.inspect_raw_memory_snapshot(),
+            engine.secure_ram_key_status,
+            len(engine.audit_trail)
+        )
+        
+        self.assertEqual(snapshot_first[0], snapshot_second[0])
+        self.assertEqual(snapshot_first[1], snapshot_second[1])
+        self.assertEqual(snapshot_first[2], snapshot_second[2])
+        self.assertEqual(snapshot_first[3], snapshot_second[3])
+        self.assertEqual(snapshot_first[4], snapshot_second[4])
+
+if __name__ == "__main__":
+    unittest.main()
