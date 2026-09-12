@@ -1,6 +1,16 @@
 import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+
+# البحث التلقائي عن مجلد src بغض النظر عن اسم مجلد الاختبارات
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = current_dir
+while root_dir != os.path.dirname(root_dir):
+    src_path = os.path.join(root_dir, 'src')
+    if os.path.isdir(src_path):
+        if src_path not in sys.path:
+            sys.path.insert(0, src_path)
+        break
+    root_dir = os.path.dirname(root_dir)
 
 import unittest
 from layer5_engine import Layer5SecureEnforcementEngine, Layer5Context, MockHSMInterface
