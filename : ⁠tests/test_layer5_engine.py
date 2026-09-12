@@ -2,10 +2,10 @@ import unittest
 import sys
 import os
 
-# إضافة مجلد الجذر إلى مسار البحث لضمان الوصول لمجلد src
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# إضافة مجلد src مباشرة إلى مسار البحث
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
-from src.layer5_engine import Layer5SecureEnforcementEngine, Layer5Context, MockHSMInterface
+from layer5_engine import Layer5SecureEnforcementEngine, Layer5Context, MockHSMInterface
 
 class TestLayer5SecureEnforcementEngine(unittest.TestCase):
     
