@@ -1,7 +1,6 @@
 import sys
 import os
 
-# تعديل مسار البحث أولاً وقبل أي عملية استيراد تخص حزم المشروع
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 import unittest
