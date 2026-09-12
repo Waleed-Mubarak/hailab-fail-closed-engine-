@@ -104,5 +104,16 @@ class TestTurkashEngineDescriptorAuditing(unittest.TestCase):
         self.assertEqual(snapshot_first[3], snapshot_second[3])
         self.assertEqual(snapshot_first[4], snapshot_second[4])
 
+    def test_p0_05_layer5_fail_closed_enforcement(self):
+        engine = FailClosedEngine()
+        engine.zeroize()
+        
+        with pytest.raises(PermissionError, match=r".*(CRITICAL_BLOCK|FAIL_CLOSED).*"):
+            engine.execute_critical_operation(
+                action="CRITICAL_TRANSFER",
+                quorum=["node_1", "node_2"]
+            )
+        self.assertTrue(engine.system_locked)
+
 if __name__ == "__main__":
     unittest.main()
