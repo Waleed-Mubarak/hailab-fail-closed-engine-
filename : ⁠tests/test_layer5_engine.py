@@ -2,7 +2,7 @@ import unittest
 import sys
 import os
 
-# إضافة مجلد src مساراً للبحث لضمان استيراد الملف بسلاسة
+# ضبط المسار ليشمل مجلد src بشكل دقيق ليتوافق مع بيئة الاختبار الآلي
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 from layer5_engine import Layer5SecureEnforcementEngine, Layer5Context, MockHSMInterface
@@ -50,4 +50,3 @@ class TestLayer5SecureEnforcementEngine(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
