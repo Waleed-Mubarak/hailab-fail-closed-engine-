@@ -6,7 +6,7 @@ Adversarial Verification Suite: Dr. Hikmet Red-Team Invariant Tests
 
 import unittest
 import pytest
-from src.engine import FailClosedEngine, TurkashEngine
+from engine import FailClosedEngine, TurkashEngine
 
 class TestTurkashEngineDescriptorAuditing(unittest.TestCase):
     
