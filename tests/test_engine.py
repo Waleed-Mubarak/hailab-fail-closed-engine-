@@ -1,6 +1,12 @@
+"""
+TurkashEngine Test Suite
+Compliance: Assurance Ladder Tier 2 (Software-Demonstrated) & Tier 3 (Hardware-Backed)
+Adversarial Verification Suite: Dr. Hikmet Red-Team Invariant Tests
+"""
+
 import unittest
 import pytest
-from engine import FailClosedEngine, TurkashEngine
+from src.engine import FailClosedEngine, TurkashEngine
 
 class TestTurkashEngineDescriptorAuditing(unittest.TestCase):
     
