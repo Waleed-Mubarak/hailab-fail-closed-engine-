@@ -1,3 +1,9 @@
+"""
+TurkashEngine Core Module
+Compliance: Assurance Ladder Tier 2 (Software-Demonstrated) & Tier 3 (Hardware-Backed / Mock HSM)
+Architectural Boundary: Software contract implementation with fail-closed zeroization invariants.
+"""
+
 import os
 
 _REGISTRY_DATA = {}  # مخزن على مستوى الموديول لمنع أي وصول عبر مسارات السمات
@@ -57,6 +63,10 @@ class FailClosedEngineMeta(type):
         raise PermissionError("P0-05: Direct class attribute modification on FailClosedEngine is strictly blocked.")
 
 class FailClosedEngine(metaclass=FailClosedEngineMeta):
+    """
+    Core Fail-Closed Engine implementing Tier 2 (Software-Demonstrated) state transitions
+    and Tier 3 (Hardware-Backed pseudo-HSM key isolation) software contracts.
+    """
     _permanently_zeroized = _RegistrySentinel
 
     def __init__(self, *args, **kwargs):
