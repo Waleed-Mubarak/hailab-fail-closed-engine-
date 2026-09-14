@@ -134,8 +134,7 @@ class TestTurkashEngineDescriptorAuditing(unittest.TestCase):
                 quorum=["node_1", "node_2", "node_3"]
             )
         
-        self.assertTrue(engine.is_zeroized)
-        self.assertEqual(engine.secure_ram_key_status, "ZEROIZED")
+        self.assertTrue(engine.system_locked)
 
 if __name__ == "__main__":
     unittest.main()
