@@ -121,5 +121,21 @@ class TestTurkashEngineDescriptorAuditing(unittest.TestCase):
             )
         self.assertTrue(engine.system_locked)
 
+    def test_advanced_ram_key_corruption_triggers_fail_closed(self):
+        engine = FailClosedEngine()
+        try:
+            object.__setattr__(engine, "_FailClosedEngine__secure_ram_key", bytearray(b"\x00" * 32))
+        except Exception:
+            pass
+
+        with pytest.raises(PermissionError, match=r".*CRITICAL_BLOCK.*|.*Admissibility.*"):
+            engine.execute_critical_operation(
+                action="SENSITIVE_DATA_ACCESS",
+                quorum=["node_1", "node_2", "node_3"]
+            )
+        
+        self.assertTrue(engine.is_zeroized)
+        self.assertEqual(engine.secure_ram_key_status, "ZEROIZED")
+
 if __name__ == "__main__":
     unittest.main()
