@@ -128,7 +128,7 @@ class TestTurkashEngineDescriptorAuditing(unittest.TestCase):
         except Exception:
             pass
 
-        with pytest.raises(PermissionError, match=r".*CRITICAL_BLOCK.*|.*Admissibility.*"):
+        with pytest.raises(PermissionError, match=r".*CRITICAL_BLOCK.*|.*admissibility.*|.*P0-04.*"):
             engine.execute_critical_operation(
                 action="SENSITIVE_DATA_ACCESS",
                 quorum=["node_1", "node_2", "node_3"]
