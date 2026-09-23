@@ -13,17 +13,7 @@ docs/
 ├── Annex_A_Technical_Specification.pdf
 └── Turkash_ASV_SDP_White_Paper_V2.pdf
 src/
-└── engine.py
-
-# Autonomous Fail-Closed & Zeroization Engine
-**Security-first architecture for mission-critical edge nodes, designed to prevent data extraction and ensure deterministic destruction under duress.**
-
-
-docs/
-    ├── Annex_A_Technical_Specification.pdf
-    └── Turkash_ASV_SDP_White_Paper_V2.pdf
-src/
-    └── engine.py
+└── 
 
 ## 🛡️ Layer 5: Sovereign Communication & Fail-Closed Enforcement
 
