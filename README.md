@@ -1,3 +1,20 @@
+# Edge Zeroization Engine & Security Agent
+
+> **"Software isolation is a myth; hardware state is the only truth."**
+
+**Security-first architecture for mission-critical edge nodes, designed to prevent data extraction and ensure deterministic destruction under duress.**
+
+---
+
+## 🏗️ Repository Architecture & Project Evolution
+
+```text
+docs/
+├── Annex_A_Technical_Specification.pdf
+└── Turkash_ASV_SDP_White_Paper_V2.pdf
+src/
+└── engine.py
+
 # Autonomous Fail-Closed & Zeroization Engine
 **Security-first architecture for mission-critical edge nodes, designed to prevent data extraction and ensure deterministic destruction under duress.**
 
