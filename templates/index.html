@@ -1,1 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hailab Fail-Closed Engine | Security Operations Suite</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-color: #f8fafc;
+            --accent-green: #10b981;
+            --accent-blue: #3b82f6;
+            --accent-red: #ef4444;
+            --border-color: #334155;
+        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-color); margin: 0; padding: 20px; color: var(--text-color); }
+        .container { max-width: 1000px; margin: auto; }
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-bottom: 25px; }
+        h1 { font-size: 22px; color: #38bdf8; margin: 0; }
+        .badge { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: bold; border: 1px solid rgba(16, 185, 129, 0.3); }
+        
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 25px; }
+        .card { background: var(--card-bg); padding: 20px; border-radius: 10px; border: 1px solid var(--border-color); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .card h3 { margin-top: 0; font-size: 16px; color: #cbd5e1; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
+        
+        .btn-group { display: flex; flex-direction: column; gap: 10px; }
+        button { background: var(--accent-blue); color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: background 0.2s; text-align: left; display: flex; justify-content: space-between; align-items: center; }
+        button:hover { opacity: 0.9; }
+        button.danger { background: var(--accent-red); }
+        button.success { background: var(--accent-green); }
+
+        .console-box { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 20px; }
+        .console-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        pre { background: #090d16; color: #34d399; padding: 15px; border-radius: 6px; overflow-x: auto; font-family: 'Courier New', Courier, monospace; font-size: 13px; margin: 0; min-height: 150px; max-height: 350px; }
+        .clear-btn { background: transparent; border: 1px solid var(--border-color); color: #94a3b8; padding: 4px 10px; font-size: 12px; border-radius: 4px; cursor: pointer; }
+        .clear-btn:hover { background: var(--border-color); color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🛡️ Hailab Fail-Closed & Zeroization Engine</h1>
+            <div class="badge">● SECURE OPS: ONLINE</div>
+        </header>
+
+        <div class="grid">
+            <div class="card">
+                <h3>System Architecture</h3>
+                <p><strong>Engine Core:</strong> <code>src/fail_closed_engine.py</code></p>
+                <p><strong>Protocol:</strong> <code>Fail-Closed / Deterministic Purge</code></p>
+                <p><strong>Environment:</strong> <code>Linux Mint / Python venv</code></p>
+            </div>
+
+            <div class="card">
+                <h3>Control Operations</h3>
+                <div class="btn-group">
+                    <button class="success" onclick="executeCommand('pytest', 'Running Unit Tests...')">
+                        <span>▶ Run Pytest Suite</span> <span>[Test]</span>
+                    </button>
+                    <button onclick="executeCommand('fuzz', 'Executing Fuzz Testing...')">
+                        <span>⚡ Run Fuzz Tests</span> <span>[Security]</span>
+                    </button>
+                    <button class="danger" onclick="executeCommand('zeroize', 'Triggering Zeroization Protocol...')">
+                        <span>🧹 Volatile Memory Zeroization</span> <span>[Purge]</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="console-box">
+            <div class="console-header">
+                <strong>Execution Terminal Logs</strong>
+                <button class="clear-btn" onclick="clearLogs()">Clear Console</button>
+            </div>
+            <pre id="output">System initialized. Awaiting operator command...</pre>
+        </div>
+    </div>
+
+    <script>
+        function executeCommand(action, loadingText) {
+            document.getElementById('output').innerText = loadingText;
+            fetch('/run-action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: action })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('output').innerText = data.result;
+            })
+            .catch(err => {
+                document.getElementById('output').innerText = "Error executing action: " + err;
+            });
+        }
+
+        function clearLogs() {
+            document.getElementById('output').innerText = "Console cleared. Ready...";
+        }
+    </script>
+</body>
+</html>
 
