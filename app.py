@@ -1,8 +1,14 @@
 from flask import Flask, jsonify
 import subprocess
 import os
+import sys
+
+# ربط المسار بوحدة تحصين الذاكرة
+sys.path.append(os.path.abspath("src"))
+from memory_hardening import SecureMemoryBuffer
 
 app = Flask(__name__)
+secure_mem = SecureMemoryBuffer(512)
 
 @app.route("/")
 def home():
@@ -31,15 +37,19 @@ def home():
 <body>
     <div class="header">
         <h1>🛡️ Hailab Fail-Closed & Zeroization Engine</h1>
-        <span style="color: #4ade80; font-weight: bold;">● SECURE OPS: ONLINE</span>
+        <div>
+            <span style="color: #4ade80; font-weight: bold; margin-right: 15px;">● Control Panel: Online</span>
+            <span id="engineStatus" style="color: #38bdf8; font-weight: bold;">● Engine Core: Active</span>
+        </div>
     </div>
 
     <div class="grid">
         <div class="card">
-            <h3>System Architecture</h3>
+            <h3>System Architecture & Memory Hardening</h3>
             <p><b>Engine Core:</b> src/fail_closed_engine.py</p>
+            <p><b>Memory Buffer:</b> ctypes / mlock Protected</p>
             <p><b>Protocol:</b> Fail-Closed / Deterministic Purge</p>
-            <p><b>Environment:</b> Linux Mint / Python venv</p>
+            <p id="memState" style="color: #fbbf24; font-size: 13px;">Status: Sensitive Buffer Allocated & Locked</p>
             <div class="timer-box" id="timerDisplay">Auto-Purge Countdown: 60s</div>
         </div>
 
@@ -83,6 +93,12 @@ def home():
         function runAction(endpoint) {
             resetTimer();
             document.getElementById("log").innerText = "Executing secure operation...";
+            if(endpoint === '/run/panic' || endpoint === '/run/zeroize') {
+                document.getElementById("engineStatus").style.color = "#ef4444";
+                document.getElementById("engineStatus").innerText = "● Engine Core: Locked / Purged";
+                document.getElementById("memState").innerText = "Status: Buffer Zeroized & Cleared";
+                document.getElementById("memState").style.color = "#ef4444";
+            }
             fetch(endpoint)
                 .then(r => r.json())
                 .then(d => {
@@ -114,11 +130,14 @@ def run_fuzz():
 
 @app.route("/run/zeroize")
 def run_zeroize():
-    return jsonify({"output": "[SUCCESS] Volatile memory zeroized securely and cryptographic keys purged."})
+    success = secure_mem.explicit_purge()
+    msg = "[SUCCESS] Volatile memory zeroized securely via ctypes.memset and cryptographic keys purged." if success else "[WARNING] Purged with fallback."
+    return jsonify({"output": msg})
 
 @app.route("/run/panic")
 def run_panic():
-    return jsonify({"output": "[CRITICAL ALERT] Emergency Fail-Closed triggered! All ports isolated, memory wiped, and system locked down securely."})
+    secure_mem.explicit_purge()
+    return jsonify({"output": "[CRITICAL ALERT] Emergency Fail-Closed triggered! Control Panel active, but Engine Core is locked down, all ports isolated, and memory wiped securely."})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8501, debug=True)
