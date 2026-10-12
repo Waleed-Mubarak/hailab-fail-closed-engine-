@@ -1,1 +1,16 @@
+version: '3.8'
+
+services:
+  fail-closed-engine:
+    build: .
+    container_name: hailab_fail_closed_engine
+    ports:
+      - "8501:8501"
+    cap_add:
+      - IPC_LOCK
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    restart: unless-stopped
 
