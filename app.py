@@ -15,10 +15,13 @@ def run_action():
     action = data.get('action')
     
     try:
-        # تحديد مسار المشروع وضبط متغير البيئة PYTHONPATH
+        # ضبط مسار البيئة ليشمل مجلد المشروع ومجلد src تحديداً
         env = os.environ.copy()
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        env["PYTHONPATH"] = current_dir
+        src_dir = os.path.join(current_dir, "src")
+        
+        # إضافة المسارين لضمان وصول pytest لجميع الحزم
+        env["PYTHONPATH"] = f"{current_dir}:{src_dir}"
 
         if action == 'pytest':
             res = subprocess.run([sys.executable, '-m', 'pytest'], capture_output=True, text=True, env=env)
