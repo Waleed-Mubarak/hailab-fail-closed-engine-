@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify
 import subprocess
 import sys
+import os
 
 app = Flask(__name__)
 
@@ -14,12 +15,17 @@ def run_action():
     action = data.get('action')
     
     try:
+        # تحديد مسار المشروع وضبط متغير البيئة PYTHONPATH
+        env = os.environ.copy()
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        env["PYTHONPATH"] = current_dir
+
         if action == 'pytest':
-            res = subprocess.run([sys.executable, '-m', 'pytest'], capture_output=True, text=True)
+            res = subprocess.run([sys.executable, '-m', 'pytest'], capture_output=True, text=True, env=env)
         elif action == 'fuzz':
-            res = subprocess.run([sys.executable, 'tests/test_fuzz.py'], capture_output=True, text=True)
+            res = subprocess.run([sys.executable, 'tests/test_fuzz.py'], capture_output=True, text=True, env=env)
         elif action == 'zeroize':
-            res = subprocess.run([sys.executable, '-c', 'print("[SUCCESS] Volatile memory zeroized securely.")'], capture_output=True, text=True)
+            res = subprocess.run([sys.executable, '-c', 'print("[SUCCESS] Volatile memory zeroized securely.")'], capture_output=True, text=True, env=env)
         else:
             return jsonify({'result': 'Unknown action specified.'})
             
@@ -30,4 +36,3 @@ def run_action():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8501, debug=True)
-
