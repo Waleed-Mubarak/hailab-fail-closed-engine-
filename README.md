@@ -1,4 +1,4 @@
-[![GitHub stars](https://img.shields.io/github/stars/Waleed-Mubarak/hailab-fail-closed-engine?style=for-the-badge&logo=github&color=gold)](https://github.com/Waleed-Mubarak/hailab-fail-closed-engine/stargazers)
+[![GitHub stars](https://img.shields.io/github/stars/Waleed-Mubarak/hailab-fail-closed-engine-?style=for-the-badge&logo=github&color=gold)](https://github.com/Waleed-Mubarak/hailab-fail-closed-engine-/stargazers)
 
 # Edge Zeroization Engine & Security Agent
 
