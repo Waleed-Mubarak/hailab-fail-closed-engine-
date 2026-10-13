@@ -84,3 +84,12 @@ engine.authorize_recovery("Admin_B")
 ![CI Status](https://github.com/Waleed-Mubarak/hailab-fail-closed-engine-/actions/workflows/ci.yml/badge.svg)
 ![Python Version](https://img.shields.io/badge/python-3.10%252B-blue.svg)
 
+
+---
+
+## 🧪 Running Tests & Verification
+
+To run the test suite smoothly without any import path issues:
+
+```bash
+PYTHONPATH=. pytest tests/
