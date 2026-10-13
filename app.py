@@ -116,7 +116,8 @@ def home():
 def run_pytest():
     env = os.environ.copy()
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    env["PYTHONPATH"] = os.path.join(current_dir, "src")
+    # ضبط PYTHONPATH ليقصد المجلد الجذري للمشروع بدلاً من src لتفادي أخطاء الاستيراد
+    env["PYTHONPATH"] = current_dir
     res = subprocess.run(["pytest"], capture_output=True, text=True, env=env)
     return jsonify({"output": res.stdout or res.stderr or "Pytest executed."})
 
@@ -124,7 +125,7 @@ def run_pytest():
 def run_fuzz():
     env = os.environ.copy()
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    env["PYTHONPATH"] = os.path.join(current_dir, "src")
+    env["PYTHONPATH"] = current_dir
     res = subprocess.run(["python3", "tests/test_fuzz.py"], capture_output=True, text=True, env=env)
     return jsonify({"output": res.stdout or res.stderr or "Fuzz test executed."})
 
