@@ -27,4 +27,4 @@ jobs:
 
     - name: Run Tests with Coverage
       run: |
-        PYTHONPATH=src pytest --cov=src
+        PYTHONPATH=. pytest --cov=src
