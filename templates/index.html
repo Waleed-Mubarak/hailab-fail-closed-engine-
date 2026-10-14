@@ -47,10 +47,12 @@
 
         <div class="grid">
             <div class="card">
-                <h3>System Architecture</h3>
+                <h3>System Architecture & Memory Hardening</h3>
                 <p><strong>Engine Core:</strong> <code>src/fail_closed_engine.py</code></p>
+                <p><strong>Memory Buffer:</strong> <code id="mem-buffer">Loading...</code></p>
                 <p><strong>Protocol:</strong> <code>Fail-Closed / Deterministic Purge</code></p>
-                <p><strong>Environment:</strong> <code>Linux Mint / Python venv</code></p>
+                <p style="color: #fbbf24;"><strong id="mem-status">Loading status...</strong></p>
+                <p style="color: #f87171;"><strong>Auto-Purge Countdown:</strong> <span id="countdown">--</span>s</p>
             </div>
 
             <div class="card">
@@ -82,6 +84,20 @@
     </div>
 
     <script>
+        function fetchStatus() {
+            fetch('/status')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('mem-buffer').innerText = data.memory_buffer;
+                document.getElementById('mem-status').innerText = "Status: " + data.status;
+                document.getElementById('countdown').innerText = data.countdown;
+            })
+            .catch(err => console.error("Error fetching status:", err));
+        }
+
+        // جلب الحالة عند تحميل الصفحة
+        fetchStatus();
+
         function runAction(url, loadingText) {
             document.getElementById('output').innerText = loadingText;
             fetch(url, {
