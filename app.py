@@ -9,8 +9,8 @@ app = Flask(__name__)
 def home():
     return render_template('index.html')
 
-@app.route('/run-tests', methods=['GET'])
-def run_tests():
+@app.route('/run/pytest', methods=['GET'])
+def run_pytest():
     try:
         env = os.environ.copy()
         env["PYTHONPATH"] = os.getcwd()
@@ -20,7 +20,7 @@ def run_tests():
     except Exception as e:
         return jsonify({'status': 'ERROR', 'result': str(e)}), 500
 
-@app.route('/run-fuzz', methods=['GET'])
+@app.route('/run/fuzz', methods=['GET'])
 def run_fuzz():
     try:
         env = os.environ.copy()
@@ -31,8 +31,8 @@ def run_fuzz():
     except Exception as e:
         return jsonify({'status': 'ERROR', 'result': str(e)}), 500
 
-@app.route('/zeroize-memory', methods=['GET'])
-def zeroize_memory():
+@app.route('/run/zeroize', methods=['GET'])
+def run_zeroize():
     try:
         env = os.environ.copy()
         env["PYTHONPATH"] = os.getcwd()
@@ -42,8 +42,8 @@ def zeroize_memory():
     except Exception as e:
         return jsonify({'status': 'ERROR', 'result': str(e)}), 500
 
-@app.route('/panic-shutdown', methods=['GET'])
-def panic_shutdown():
+@app.route('/run/panic', methods=['GET'])
+def run_panic():
     try:
         env = os.environ.copy()
         env["PYTHONPATH"] = os.getcwd()
