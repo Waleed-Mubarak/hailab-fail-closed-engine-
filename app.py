@@ -50,11 +50,9 @@ def run_panic():
     try:
         env = os.environ.copy()
         env["PYTHONPATH"] = os.getcwd()
-        # استدعاء روتين الطوارئ والعزل مباشرة من PanicHandler وتجنب تضارب pytest
-        result = subprocess.run([
-            sys.executable, '-c', 
-            'from tests.test_panic_routine import PanicHandler; handler = PanicHandler(); handler.trigger_panic()'
-        ], capture_output=True, text=True, timeout=30, env=env)
+        # حقن مسار العمل لمنع أخطاء ModuleNotFoundError وتشغيل روتين الطوارئ مباشرة
+        cmd = 'import sys, os; sys.path.insert(0, os.getcwd()); from tests.test_panic_routine import PanicHandler; handler = PanicHandler(); handler.trigger_panic()'
+        result = subprocess.run([sys.executable, '-c', cmd], capture_output=True, text=True, timeout=30, env=env)
         output = result.stdout if result.stdout else result.stderr
         return jsonify({
             'status': 'SUCCESS' if result.returncode == 0 else 'FAILURE', 
