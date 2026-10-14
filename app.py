@@ -14,7 +14,6 @@ def run_pytest():
     try:
         env = os.environ.copy()
         env["PYTHONPATH"] = os.getcwd()
-        # تحديد مجلد tests لتشغيل جميع الاختبارات بنجاح
         result = subprocess.run([sys.executable, '-m', 'pytest', 'tests/', '-v'], capture_output=True, text=True, timeout=60, env=env)
         output = result.stdout if result.stdout else result.stderr
         return jsonify({'status': 'SUCCESS' if result.returncode == 0 else 'FAILURE', 'result': output})
@@ -48,7 +47,9 @@ def run_panic():
     try:
         env = os.environ.copy()
         env["PYTHONPATH"] = os.getcwd()
-        result = subprocess.run([sys.executable, '-m', 'pytest', 'tests/test_panic_routine.py', '-v'], capture_output=True, text=True, timeout=30, env=env)
+        # مسار دقيق ومباشر لاختبار روتين الطوارئ لمنع مشكلة عدم العثور على الملف
+        test_path = os.path.join('tests', 'test_panic_routine.py')
+        result = subprocess.run([sys.executable, '-m', 'pytest', test_path, '-v'], capture_output=True, text=True, timeout=30, env=env)
         output = result.stdout if result.stdout else result.stderr
         return jsonify({'status': 'SUCCESS' if result.returncode == 0 else 'FAILURE', 'result': output if output else 'PANIC Routine Enforced: System & Network Isolated Successfully.'})
     except Exception as e:
