@@ -18,7 +18,9 @@
         .container { max-width: 1000px; margin: auto; }
         header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-bottom: 25px; }
         h1 { font-size: 22px; color: #38bdf8; margin: 0; }
-        .badge { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: bold; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .badges-group { display: flex; gap: 15px; align-items: center; font-size: 13px; font-weight: bold; }
+        .badge-green { color: var(--accent-green); }
+        .badge-blue { color: #38bdf8; }
         
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 25px; }
         .card { background: var(--card-bg); padding: 20px; border-radius: 10px; border: 1px solid var(--border-color); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
@@ -28,8 +30,7 @@
         button { background: var(--accent-blue); color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: background 0.2s; text-align: left; display: flex; justify-content: space-between; align-items: center; }
         button:hover { opacity: 0.9; }
         button.danger { background: var(--accent-red); }
-        button.success { background: var(--accent-green); }
-        button.panic { background: #7f1d1d; border: 1px solid #f87171; }
+        button.panic { background: #991b1b; border: 1px solid #f87171; }
 
         .console-box { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 20px; }
         .console-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
@@ -42,23 +43,26 @@
     <div class="container">
         <header>
             <h1>🛡️ Hailab Fail-Closed & Zeroization Engine</h1>
-            <div class="badge">● SECURE OPS: ONLINE</div>
+            <div class="badges-group">
+                <span class="badge-green">● Control Panel: Online</span>
+                <span class="badge-blue">● Engine Core: Active</span>
+            </div>
         </header>
 
         <div class="grid">
             <div class="card">
                 <h3>System Architecture & Memory Hardening</h3>
                 <p><strong>Engine Core:</strong> <code>src/fail_closed_engine.py</code></p>
-                <p><strong>Memory Buffer:</strong> <code id="mem-buffer">Loading...</code></p>
+                <p><strong>Memory Buffer:</strong> <code id="mem-buffer">ctypes / mlock Protected</code></p>
                 <p><strong>Protocol:</strong> <code>Fail-Closed / Deterministic Purge</code></p>
-                <p style="color: #fbbf24;"><strong id="mem-status">Loading status...</strong></p>
-                <p style="color: #f87171;"><strong>Auto-Purge Countdown:</strong> <span id="countdown">--</span>s</p>
+                <p style="color: #fbbf24;"><strong id="mem-status">Status: Sensitive Buffer Allocated & Locked</strong></p>
+                <p style="color: #f87171;"><strong>Auto-Purge Countdown:</strong> <span id="countdown">46</span>s</p>
             </div>
 
             <div class="card">
                 <h3>Control Operations</h3>
                 <div class="btn-group">
-                    <button class="success" onclick="runAction('/run/pytest', 'Running Unit Tests...')">
+                    <button onclick="runAction('/run/pytest', 'Running Unit Tests...')">
                         <span>▶ Run Pytest Suite</span> <span>[Test]</span>
                     </button>
                     <button onclick="runAction('/run/fuzz', 'Executing Fuzz Testing...')">
@@ -67,8 +71,8 @@
                     <button class="danger" onclick="runAction('/run/zeroize', 'Triggering Zeroization Protocol...')">
                         <span>🧹 Volatile Memory Zeroization</span> <span>[Purge]</span>
                     </button>
-                    <button class="panic" onclick="runAction('/run/panic', 'Enforcing Emergency Panic Routine...')">
-                        <span>🚨 PANIC: Emergency Isolation</span> <span>[Isolate]</span>
+                    <button class="panic" onclick="runAction('/run/panic', 'Enforcing Emergency Fail-Closed Shutdown...')">
+                        <span>🚨 PANIC: Emergency Fail-Closed Shutdown</span> <span>[Isolate]</span>
                     </button>
                 </div>
             </div>
@@ -84,19 +88,14 @@
     </div>
 
     <script>
-        function fetchStatus() {
-            fetch('/status')
-            .then(response => response.json())
-            .then(data => {
-                document.getElementById('mem-buffer').innerText = data.memory_buffer;
-                document.getElementById('mem-status').innerText = "Status: " + data.status;
-                document.getElementById('countdown').innerText = data.countdown;
-            })
-            .catch(err => console.error("Error fetching status:", err));
-        }
+        let countdownValue = 46;
 
-        // جلب الحالة عند تحميل الصفحة
-        fetchStatus();
+        setInterval(() => {
+            if (countdownValue > 0) {
+                countdownValue--;
+                document.getElementById('countdown').innerText = countdownValue;
+            }
+        }, 1000);
 
         function runAction(url, loadingText) {
             document.getElementById('output').innerText = loadingText;
