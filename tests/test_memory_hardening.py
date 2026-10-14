@@ -1,74 +1,50 @@
 import pytest
 import ctypes
-from src.memory_hardening import SecureMemoryBuffer, InvalidatedBufferError, MemoryLockError
+from src.memory_hardening import FailClosedEngine, InvalidatedBufferError
 
 def test_memory_zeroization_and_dangling_references():
     """
     اختبار تصفير البيانات وتدمير المراجع المعلقة (Zeroization & Reference Destruction)
     """
-    buffer_size = 128
-    sec_buffer = SecureMemoryBuffer(size=buffer_size)
+    secret_data = b"SuperSecretKey123"
+    engine = FailClosedEngine(secret_data)
     
-    # كتابة بيانات حساسة
-    secret_data = "SuperSecretKey123"
-    sec_buffer.write_sensitive_data(secret_data)
-    
-    # التأكد من صحة القراءة قبل التطهير
-    assert secret_data.encode('utf-8') in sec_buffer.read_data()
+    # التأكد من صحة البيانات قبل التطهير
+    assert bytes(engine._buffer) == secret_data
     
     # تنفيذ التطهير الصريح
-    sec_buffer.explicit_purge()
+    engine.zeroize()
     
-    # 1. التحقق من رفع استثناء عند محاولة القراءة بعد التطهير
-    with pytest.raises(InvalidatedBufferError):
-        sec_buffer.read_data()
+    # التحقق من أن المخزن والبيانات تم تصفيرها تماماً (امتلاء المخزن بالأصفار)
+    assert all(b == 0 for b in engine._buffer)
+    assert engine._is_invalidated is True
 
-    # 2. التحقق من قطع مرجع الذاكرة وتصفيره (Buffer is cleared / set to None)
-    assert sec_buffer.buffer is None
-    assert sec_buffer._memory_view is None
-
-def test_use_after_purge_prevention():
-    """
-    اختبار منع الاستخدام بعد التنظيف (Use-After-Clear Prevention)
-    """
-    sec_buffer = SecureMemoryBuffer(size=64)
-    sec_buffer.write_sensitive_data("ConfidentialData")
-    
-    sec_buffer.explicit_purge()
-    
-    # محاولة كتابة بيانات جديدة بعد التطهير يجب أن تفشل فوراً
+    # محاولة القراءة بعد التطهير يجب أن ترفع استثناء أمنياً
     with pytest.raises(InvalidatedBufferError):
-        sec_buffer.write_sensitive_data("NewDataAttempt")
+        engine.read_data()
 
 def test_multiple_purges_safety():
     """
     اختبار سلامة النظام عند تنفيذ التطهير المزدوج/المتكرر
     """
-    sec_buffer = SecureMemoryBuffer(size=32)
-    sec_buffer.explicit_purge()
-    
-    # التطهير للمرة الثانية يجب ألا يسبب انهياراً أو أخطاء غير متوقعة
-    assert sec_buffer.explicit_purge() is True
+    engine = FailClosedEngine(b"TestKey999")
+    assert engine.zeroize() is True
+    # التطهير للمرة الثانية يجب ألا يسبب انهياراً أو أخطاء
+    assert engine.zeroize() is True
 
 def test_physical_zeroization_verification():
     """
-    اختبار عدائي إضافي: التحقق من خلو الذاكرة الخشنة تماماً من البايتات الحساسة بعد التنظيف
-    استجابة لتقرير التدقيق الثاني لد. حكمة كريموف.
+    اختبار عدائي: التحقق من محو الذاكرة المادية تماماً عبر العنوان المؤشر عليه
     """
-    buffer_size = 64
-    sec_buffer = SecureMemoryBuffer(size=buffer_size)
+    secret_bytes = b"CriticalSecureMaterial"
+    engine = FailClosedEngine(secret_bytes)
     
-    # حفظ عنوان الذاكرة مؤقتاً قبل التطهير للفحص
-    addr = ctypes.addressof(sec_buffer.buffer)
-    
-    sec_buffer.write_sensitive_data("AcrobatSecret999")
+    addr = engine._addr
+    size = engine.size
     
     # تنفيذ التطهير
-    sec_buffer.explicit_purge()
+    engine.zeroize()
     
-    # التحقق المباشر من أن محتوى العنوان المادي يحتوي حصراً على أصفار (0x00)
-    # عبر قراءة بايتات الذاكرة من نفس العنوان عبر ctypes
-    raw_bytes_check = ctypes.string_at(addr, buffer_size)
-    
-    # التأكد من أن جميع البايتات أصبحت أصفاراً تماماً ولا توجد بقايا مفاتيح تشفير
-    assert all(b == 0 for b in raw_bytes_check), "CRITICAL: Physical memory contains lingering un-zeroized bytes!"
+    # الفحص المباشر للعنوان المادي للذاكرة عبر ctypes للتأكد من عدم بقاء أي أثر للبايتات
+    raw_memory_check = ctypes.string_at(addr, size)
+    assert all(b == 0 for b in raw_memory_check), "CRITICAL: Physical memory residue detected!"
