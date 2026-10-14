@@ -14,7 +14,6 @@ def run_pytest():
     try:
         env = os.environ.copy()
         env["PYTHONPATH"] = os.getcwd()
-        # تشغيل اختبارات مجلد tests بالكامل مع استهداف موديل memory_hardening
         result = subprocess.run([sys.executable, '-m', 'pytest', 'tests/', '-v'], capture_output=True, text=True, timeout=60, env=env)
         output = result.stdout if result.stdout else result.stderr
         return jsonify({'status': 'SUCCESS' if result.returncode == 0 else 'FAILURE', 'result': output})
@@ -37,7 +36,6 @@ def run_zeroize():
     try:
         env = os.environ.copy()
         env["PYTHONPATH"] = os.getcwd()
-        # استدعاء دالة التطهير المباشر من موديل memory_hardening المعتمد
         result = subprocess.run([
             sys.executable, '-c', 
             'from src.memory_hardening import FailClosedEngine; engine = FailClosedEngine(b"TestMaterial"); engine.zeroize()'
@@ -52,7 +50,7 @@ def run_panic():
     try:
         env = os.environ.copy()
         env["PYTHONPATH"] = os.getcwd()
-        # استهداف ملف اختبار روتين الطوارئ والعزل المرتبط بالمحرك
+        # تشغيل اختبار روتين الطوارئ المرتبط بـ PanicHandler و trigger_panic بدقة
         test_path = os.path.join('tests', 'test_panic_routine.py')
         result = subprocess.run([sys.executable, '-m', 'pytest', test_path, '-v'], capture_output=True, text=True, timeout=30, env=env)
         output = result.stdout if result.stdout else result.stderr
