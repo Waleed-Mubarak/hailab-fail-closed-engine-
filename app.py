@@ -50,11 +50,16 @@ def run_panic():
     try:
         env = os.environ.copy()
         env["PYTHONPATH"] = os.getcwd()
-        # تشغيل اختبار روتين الطوارئ المرتبط بـ PanicHandler و trigger_panic بدقة
-        test_path = os.path.join('tests', 'test_panic_routine.py')
-        result = subprocess.run([sys.executable, '-m', 'pytest', test_path, '-v'], capture_output=True, text=True, timeout=30, env=env)
+        # استدعاء روتين الطوارئ والعزل مباشرة من PanicHandler وتجنب تضارب pytest
+        result = subprocess.run([
+            sys.executable, '-c', 
+            'from tests.test_panic_routine import PanicHandler; handler = PanicHandler(); handler.trigger_panic()'
+        ], capture_output=True, text=True, timeout=30, env=env)
         output = result.stdout if result.stdout else result.stderr
-        return jsonify({'status': 'SUCCESS' if result.returncode == 0 else 'FAILURE', 'result': output if output else 'PANIC Routine Enforced: System & Network Isolated Successfully.'})
+        return jsonify({
+            'status': 'SUCCESS' if result.returncode == 0 else 'FAILURE', 
+            'result': output if output else 'PANIC Routine Enforced: System & Network Isolated Successfully.'
+        })
     except Exception as e:
         return jsonify({'status': 'ERROR', 'result': str(e)}), 500
 
