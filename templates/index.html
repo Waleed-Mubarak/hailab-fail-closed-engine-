@@ -29,6 +29,7 @@
         button:hover { opacity: 0.9; }
         button.danger { background: var(--accent-red); }
         button.success { background: var(--accent-green); }
+        button.panic { background: #7f1d1d; border: 1px solid #f87171; }
 
         .console-box { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 20px; }
         .console-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
@@ -55,14 +56,17 @@
             <div class="card">
                 <h3>Control Operations</h3>
                 <div class="btn-group">
-                    <button class="success" onclick="executeCommand('pytest', 'Running Unit Tests...')">
+                    <button class="success" onclick="runAction('/run/pytest', 'Running Unit Tests...')">
                         <span>▶ Run Pytest Suite</span> <span>[Test]</span>
                     </button>
-                    <button onclick="executeCommand('fuzz', 'Executing Fuzz Testing...')">
+                    <button onclick="runAction('/run/fuzz', 'Executing Fuzz Testing...')">
                         <span>⚡ Run Fuzz Tests</span> <span>[Security]</span>
                     </button>
-                    <button class="danger" onclick="executeCommand('zeroize', 'Triggering Zeroization Protocol...')">
+                    <button class="danger" onclick="runAction('/run/zeroize', 'Triggering Zeroization Protocol...')">
                         <span>🧹 Volatile Memory Zeroization</span> <span>[Purge]</span>
+                    </button>
+                    <button class="panic" onclick="runAction('/run/panic', 'Enforcing Emergency Panic Routine...')">
+                        <span>🚨 PANIC: Emergency Isolation</span> <span>[Isolate]</span>
                     </button>
                 </div>
             </div>
@@ -78,12 +82,11 @@
     </div>
 
     <script>
-        function executeCommand(action, loadingText) {
+        function runAction(url, loadingText) {
             document.getElementById('output').innerText = loadingText;
-            fetch('/run-action', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: action })
+            fetch(url, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
             })
             .then(response => response.json())
             .then(data => {
@@ -100,4 +103,3 @@
     </script>
 </body>
 </html>
-
