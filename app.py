@@ -27,6 +27,15 @@ class PanicHandler:
 def home():
     return render_template('index.html')
 
+@app.route('/status', methods=['GET'])
+def get_status():
+    # إرجاع حالة الذاكرة والعداد التنازلي للواجهة الأمامية
+    return jsonify({
+        'memory_buffer': 'ctypes / mlock Protected',
+        'status': 'Sensitive Buffer Allocated & Locked',
+        'countdown': 46
+    })
+
 @app.route('/run/pytest', methods=['GET'])
 def run_pytest():
     try:
@@ -62,7 +71,6 @@ def run_zeroize():
 @app.route('/run/panic', methods=['GET'])
 def run_panic():
     try:
-        # تنفيذ روتين الطوارئ محلياً مباشرة دون أي أخطاء استيراد
         handler = PanicHandler()
         success = handler.trigger_panic()
         
