@@ -84,6 +84,9 @@ engine.authorize_recovery("Admin_B")
 ![CI Status](https://github.com/Waleed-Mubarak/hailab-fail-closed-engine-/actions/workflows/ci.yml/badge.svg)
 ![Python Version](https://img.shields.io/badge/python-3.10%252B-blue.svg)
 
+[![DEV.to Profile](https://img.shields.io/badge/DEV.to-Waleed--Mubarak-black?style=flat-square&logo=dev.to)](https://dev.to/waleedmubarak)
+[![Substack](https://img.shields.io/badge/Substack-HAI_Lab-FF6719?style=flat-square&logo=substack&logoColor=white)](https://waleedmubarak.substack.com)
+
 
 ---
 
