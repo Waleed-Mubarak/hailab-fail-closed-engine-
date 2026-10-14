@@ -1,146 +1,69 @@
-from flask import Flask, jsonify
+from flask import Flask, render_template, jsonify
 import subprocess
-import os
 import sys
+import logging
 
-# ربط المسار بوحدة تحصين الذاكرة
-sys.path.append(os.path.abspath("src"))
-from memory_hardening import SecureMemoryBuffer
+# إعداد نظام التسجيل (Logging) لتتبع الطلبات وحالة الاختبارات في الوقت الفعلي
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-secure_mem = SecureMemoryBuffer(512)
 
-@app.route("/")
+@app.route('/')
 def home():
-    return """<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Hailab Fail-Closed & Zeroization Engine</title>
-    <style>
-        body { background-color: #0f172a; color: #f8fafc; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; }
-        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 15px; margin-bottom: 20px; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
-        .card { background-color: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        h2, h3 { color: #38bdf8; margin-top: 0; }
-        button { background-color: #0284c7; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; margin: 5px 0; width: 100%; transition: background 0.2s; }
-        button:hover { background-color: #0369a1; }
-        .btn-purge { background-color: #dc2626; }
-        .btn-purge:hover { background-color: #b91c1c; }
-        .btn-panic { background-color: #7c2d12; border: 1px solid #f97316; color: #ffedd5; animation: pulse 1.5s infinite; }
-        .btn-panic:hover { background-color: #9a3412; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
-        pre { background-color: #090d16; color: #34d399; padding: 15px; border-radius: 6px; overflow-x: auto; border: 1px solid #1e293b; height: 200px; margin: 0; }
-        .timer-box { font-size: 14px; color: #fbbf24; margin-top: 10px; font-weight: bold; text-align: center; }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>🛡️ Hailab Fail-Closed & Zeroization Engine</h1>
-        <div>
-            <span style="color: #4ade80; font-weight: bold; margin-right: 15px;">● Control Panel: Online</span>
-            <span id="engineStatus" style="color: #38bdf8; font-weight: bold;">● Engine Core: Active</span>
-        </div>
-    </div>
+    """عرض الصفحة الرئيسية لواجهة التحكم"""
+    logger.info("Accessing main security dashboard interface.")
+    return render_template('index.html')
 
-    <div class="grid">
-        <div class="card">
-            <h3>System Architecture & Memory Hardening</h3>
-            <p><b>Engine Core:</b> src/fail_closed_engine.py</p>
-            <p><b>Memory Buffer:</b> ctypes / mlock Protected</p>
-            <p><b>Protocol:</b> Fail-Closed / Deterministic Purge</p>
-            <p id="memState" style="color: #fbbf24; font-size: 13px;">Status: Sensitive Buffer Allocated & Locked</p>
-            <div class="timer-box" id="timerDisplay">Auto-Purge Countdown: 60s</div>
-        </div>
-
-        <div class="card">
-            <h3>Control Operations</h3>
-            <button onclick="runAction('/run/pytest')">▶ Run Pytest Suite [Test]</button>
-            <button onclick="runAction('/run/fuzz')" style="background-color: #2563eb;">⚡ Run Fuzz Tests [Security]</button>
-            <button class="btn-purge" onclick="runAction('/run/zeroize')">🧹 Volatile Memory Zeroization [Purge]</button>
-            <button class="btn-panic" onclick="runAction('/run/panic')">🚨 PANIC: Emergency Fail-Closed Shutdown</button>
-        </div>
-    </div>
-
-    <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <h3 style="margin: 0;">Execution Terminal Logs</h3>
-            <button onclick="document.getElementById('log').innerText='Ready...'" style="width: auto; padding: 5px 10px; background-color: #475569;">Clear Console</button>
-        </div>
-        <pre id="log">Ready for secure operations...</pre>
-    </div>
-
-    <script>
-        let timeLeft = 60;
-        const timerElem = document.getElementById("timerDisplay");
+@app.route('/run-tests', methods=['GET'])
+def run_tests():
+    """
+    تشغيل مجموعة اختبارات Pytest بالكامل (بما فيها اختبارات الذاكرة، 
+    التطهير المادي، وإجراءات الذعر) وإرجاع النتائج بصيغة JSON.
+    """
+    try:
+        logger.info("Initiating automated adversarial and unit test suites...")
         
-        const countdown = setInterval(() => {
-            timeLeft--;
-            timerElem.innerText = `Auto-Purge Countdown: ${timeLeft}s`;
-            if (timeLeft <= 0) {
-                clearInterval(countdown);
-                runAction('/run/panic');
-                timerElem.innerText = "SYSTEM TRIGGERED: FAIL-CLOSED LOCKED";
-            }
-        }, 1000);
+        # تنفيذ اختبارات بايثون باستخدام بيئة التشغيل الحالية
+        result = subprocess.run(
+            [sys.executable, '-m', 'pytest', '-v'],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        
+        output = result.stdout if result.stdout else result.stderr
+        
+        if result.returncode == 0:
+            logger.info("All test suites passed successfully.")
+            status_msg = "SUCCESS: All security and panic routines passed verification."
+        else:
+            logger.warning("Some tests failed or encountered warnings.")
+            status_msg = "WARNING/FAILURE: Review test output below."
 
-        function resetTimer() {
-            timeLeft = 60;
-        }
+        return jsonify({
+            'status': status_msg,
+            'exit_code': result.returncode,
+            'result': output if output else 'Tests completed with no textual output.'
+        })
 
-        window.onload = window.onmousemove = window.onkeypress = resetTimer;
+        
+    except subprocess.TimeoutExpired:
+        logger.error("Test execution timed out.")
+        return jsonify({
+            'status': 'ERROR',
+            'exit_code': -1,
+            'result': 'CRITICAL ERROR: Test execution timed out after 60 seconds.'
+        }), 500
+        
+    except Exception as e:
+        logger.error(f"Unexpected error during test execution: {str(e)}")
+        return jsonify({
+            'status': 'ERROR',
+            'exit_code': -1,
+            'result': f'CRITICAL ERROR: {str(e)}'
+        }), 500
 
-        function runAction(endpoint) {
-            resetTimer();
-            document.getElementById("log").innerText = "Executing secure operation...";
-            if(endpoint === '/run/panic' || endpoint === '/run/zeroize') {
-                document.getElementById("engineStatus").style.color = "#ef4444";
-                document.getElementById("engineStatus").innerText = "● Engine Core: Locked / Purged";
-                document.getElementById("memState").innerText = "Status: Buffer Zeroized & Cleared";
-                document.getElementById("memState").style.color = "#ef4444";
-            }
-            fetch(endpoint)
-                .then(r => r.json())
-                .then(d => {
-                    document.getElementById("log").innerText = d.output;
-                })
-                .catch(err => {
-                    document.getElementById("log").innerText = "Error executing command: " + err;
-                });
-        }
-    </script>
-</body>
-</html>"""
-
-@app.route("/run/pytest")
-def run_pytest():
-    env = os.environ.copy()
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    src_dir = os.path.join(current_dir, "src")
-    # دمج المجلد الجذري ومجلد src معاً في PYTHONPATH لتغطية الاختبارات القديمة والجديدة
-    env["PYTHONPATH"] = f"{current_dir}:{src_dir}"
-    res = subprocess.run(["pytest"], capture_output=True, text=True, env=env)
-    return jsonify({"output": res.stdout or res.stderr or "Pytest executed."})
-
-@app.route("/run/fuzz")
-def run_fuzz():
-    env = os.environ.copy()
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    src_dir = os.path.join(current_dir, "src")
-    env["PYTHONPATH"] = f"{current_dir}:{src_dir}"
-    res = subprocess.run(["python3", "tests/test_fuzz.py"], capture_output=True, text=True, env=env)
-    return jsonify({"output": res.stdout or res.stderr or "Fuzz test executed."})
-
-@app.route("/run/zeroize")
-def run_zeroize():
-    success = secure_mem.explicit_purge()
-    msg = "[SUCCESS] Volatile memory zeroized securely via ctypes.memset and cryptographic keys purged." if success else "[WARNING] Purged with fallback."
-    return jsonify({"output": msg})
-
-@app.route("/run/panic")
-def run_panic():
-    secure_mem.explicit_purge()
-    return jsonify({"output": "[CRITICAL ALERT] Emergency Fail-Closed triggered! Control Panel active, but Engine Core is locked down, all ports isolated, and memory wiped securely."})
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8501, debug=True)
+if __name__ == '__main__':
+    # تشغيل الخادم المحلي على المنفذ المخصص مع تفعيل وضع التطوير
+    app.run(host='0.0.0.0', port=8501, debug=True)
