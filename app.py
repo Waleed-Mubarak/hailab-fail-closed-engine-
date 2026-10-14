@@ -8,7 +8,7 @@ app = Flask(__name__)
 def home():
     return render_template('index.html')
 
-@app.route('/run-tests', methods=['GET'])
+@app.route('/run/pytest', methods=['GET'])
 def run_tests():
     """مسار تشغيل اختبارات Pytest الرئيسية"""
     try:
@@ -18,7 +18,7 @@ def run_tests():
     except Exception as e:
         return jsonify({'status': 'ERROR', 'result': str(e)}), 500
 
-@app.route('/run-fuzz', methods=['GET'])
+@app.route('/run/fuzz', methods=['GET'])
 def run_fuzz():
     """مسار تشغيل اختبارات العشوائية / Fuzz Tests"""
     try:
@@ -28,7 +28,7 @@ def run_fuzz():
     except Exception as e:
         return jsonify({'status': 'ERROR', 'result': str(e)}), 500
 
-@app.route('/zeroize-memory', methods=['GET'])
+@app.route('/run/zeroize', methods=['GET'])
 def zeroize_memory():
     """مسار التطهير المادي للذاكرة المتطايرة"""
     try:
@@ -38,9 +38,9 @@ def zeroize_memory():
     except Exception as e:
         return jsonify({'status': 'ERROR', 'result': str(e)}), 500
 
-@app.route('/panic-shutdown', methods=['GET'])
+@app.route('/run/panic', methods=['GET'])
 def panic_shutdown():
-    """مسار زر الطوارئ والذعر وعزل النظام والشبكة (الزر الرابع)"""
+    """مسار زر الطوارئ والذعر وعزل النظام والشبكة"""
     try:
         result = subprocess.run([sys.executable, '-m', 'pytest', 'tests/test_panic_routine.py', '-v'], capture_output=True, text=True, timeout=30)
         output = result.stdout if result.stdout else result.stderr
