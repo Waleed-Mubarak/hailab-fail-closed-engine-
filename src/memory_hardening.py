@@ -1,6 +1,14 @@
 import ctypes
 
+class InvalidatedBufferError(PermissionError):
+    """استثناء أمني يتم رفعه عند محاولة استخدام مخزن مؤقت تم تطهيره وإلغاؤه"""
+    pass
+
 class FailClosedEngine:
+    """
+    محرك حماية الذاكرة والتعامل الصارم مع المفاتيح الحساسة 
+    مع التطهير الفوري وإلغاء المراجع لمنع ثغرات Use-After-Clear.
+    """
     def __init__(self, data: bytes):
         # تحويل البيانات إلى bytearray قابل للتعديل في الذاكرة
         self._buffer = bytearray(data)
@@ -26,13 +34,19 @@ class FailClosedEngine:
             # 2. مسح مؤشر الذاكرة الصلبة عبر ctypes memset لضمان محو الرواسب تماماً
             ctypes.memset(self._addr, 0, self.size)
 
-            # 3. إبطال المراجع بشكل قاطع لمنع Use-After-Clear
+            # 3. الإبطال التام وقطع الروابط لمنع Use-After-Clear
             self._is_invalidated = True
             
-            # قطع ارتباط المؤشرات الداخلية
+            # مسح المراجع الداخلية
             del self._c_data
             
             return True
         except Exception as e:
             self._is_invalidated = True
             raise SystemError(f"CRITICAL: Zeroization failed securely! Error: {e}")
+
+    def read_data(self) -> bytes:
+        """قراءة صريحة للبيانات المحفوفة بضوابط الوصول الحرج"""
+        if self._is_invalidated or self._buffer is None:
+            raise InvalidatedBufferError("CRITICAL: Attempted read access to an invalidated/purged memory buffer.")
+        return bytes(self._buffer)
