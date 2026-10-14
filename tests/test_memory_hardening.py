@@ -1,4 +1,5 @@
 import pytest
+import ctypes
 from src.memory_hardening import SecureMemoryBuffer, InvalidatedBufferError, MemoryLockError
 
 def test_memory_zeroization_and_dangling_references():
@@ -48,3 +49,26 @@ def test_multiple_purges_safety():
     
     # التطهير للمرة الثانية يجب ألا يسبب انهياراً أو أخطاء غير متوقعة
     assert sec_buffer.explicit_purge() is True
+
+def test_physical_zeroization_verification():
+    """
+    اختبار عدائي إضافي: التحقق من خلو الذاكرة الخشنة تماماً من البايتات الحساسة بعد التنظيف
+    استجابة لتقرير التدقيق الثاني لد. حكمة كريموف.
+    """
+    buffer_size = 64
+    sec_buffer = SecureMemoryBuffer(size=buffer_size)
+    
+    # حفظ عنوان الذاكرة مؤقتاً قبل التطهير للفحص
+    addr = ctypes.addressof(sec_buffer.buffer)
+    
+    sec_buffer.write_sensitive_data("AcrobatSecret999")
+    
+    # تنفيذ التطهير
+    sec_buffer.explicit_purge()
+    
+    # التحقق المباشر من أن محتوى العنوان المادي يحتوي حصراً على أصفار (0x00)
+    # عبر قراءة بايتات الذاكرة من نفس العنوان عبر ctypes
+    raw_bytes_check = ctypes.string_at(addr, buffer_size)
+    
+    # التأكد من أن جميع البايتات أصبحت أصفاراً تماماً ولا توجد بقايا مفاتيح تشفير
+    assert all(b == 0 for b in raw_bytes_check), "CRITICAL: Physical memory contains lingering un-zeroized bytes!"
