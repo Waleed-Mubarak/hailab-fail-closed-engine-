@@ -14,7 +14,8 @@ def run_pytest():
     try:
         env = os.environ.copy()
         env["PYTHONPATH"] = os.getcwd()
-        result = subprocess.run([sys.executable, '-m', 'pytest', '-v'], capture_output=True, text=True, timeout=60, env=env)
+        # إضافة مجلد tests لتحديد مكان ملفات الاختبار بدقة
+        result = subprocess.run([sys.executable, '-m', 'pytest', 'tests/', '-v'], capture_output=True, text=True, timeout=60, env=env)
         output = result.stdout if result.stdout else result.stderr
         return jsonify({'status': 'SUCCESS' if result.returncode == 0 else 'FAILURE', 'result': output})
     except Exception as e:
