@@ -21,7 +21,7 @@ class FailClosedEngine:
 
     def zeroize(self):
         """
-        معالجة وتطهير مواد مفتاح التشفير في المكان وقبل إبطال المراجع.
+        معالجة وتطهير مواد مفتاح التشفير في المكان وققبل إبطال المراجع.
         """
         if self._is_invalidated:
             return True
@@ -50,3 +50,20 @@ class FailClosedEngine:
         if self._is_invalidated or self._buffer is None:
             raise InvalidatedBufferError("CRITICAL: Attempted read access to an invalidated/purged memory buffer.")
         return bytes(self._buffer)
+
+    def panic(self):
+        """
+        روتين الطوارئ الفوري (Panic & Isolation Routine):
+        يقوم بتطهير الذاكرة الحساسة أولاً ثم تفعيل حالة الإغلاق الشامل والعزل التام.
+        """
+        try:
+            # 1. تنفيذ التطهير الشامل للذاكرة كمرحلة أولى أساسية
+            self.zeroize()
+            
+            # 2. تطبيق بروتوكول العزل الإضافي وإيقاف العمليات
+            self._is_invalidated = True
+            
+            return True
+        except Exception as e:
+            self._is_invalidated = True
+            raise SystemError(f"CRITICAL: Panic isolation routine failed! Error: {e}")
