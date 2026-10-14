@@ -10,7 +10,6 @@ if current_dir not in sys.path:
 app = Flask(__name__)
 
 class PanicHandler:
-    """محاكاة مسار الذعر والإغلاق الحتمي لعزل النظام"""
     def __init__(self):
         self.is_isolated = False
         self.network_interfaces_down = False
@@ -29,7 +28,6 @@ def home():
 
 @app.route('/status', methods=['GET'])
 def get_status():
-    # إرجاع حالة الذاكرة والعداد التنازلي للواجهة الأمامية
     return jsonify({
         'memory_buffer': 'ctypes / mlock Protected',
         'status': 'Sensitive Buffer Allocated & Locked',
@@ -73,7 +71,6 @@ def run_panic():
     try:
         handler = PanicHandler()
         success = handler.trigger_panic()
-        
         if success and handler.is_isolated and handler.network_interfaces_down:
             output = (
                 "============================= test session starts ==============================\n"
