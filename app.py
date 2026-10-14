@@ -1,10 +1,6 @@
 from flask import Flask, render_template, jsonify
 import subprocess
 import sys
-import logging
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -14,6 +10,7 @@ def home():
 
 @app.route('/run-tests', methods=['GET'])
 def run_tests():
+    """مسار تشغيل اختبارات Pytest الرئيسية"""
     try:
         result = subprocess.run([sys.executable, '-m', 'pytest', '-v'], capture_output=True, text=True, timeout=60)
         output = result.stdout if result.stdout else result.stderr
@@ -23,6 +20,7 @@ def run_tests():
 
 @app.route('/run-fuzz', methods=['GET'])
 def run_fuzz():
+    """مسار تشغيل اختبارات العشوائية / Fuzz Tests"""
     try:
         result = subprocess.run([sys.executable, '-m', 'pytest', '-k', 'fuzz'], capture_output=True, text=True, timeout=60)
         output = result.stdout if result.stdout else result.stderr
@@ -32,6 +30,7 @@ def run_fuzz():
 
 @app.route('/zeroize-memory', methods=['GET'])
 def zeroize_memory():
+    """مسار التطهير المادي للذاكرة المتطايرة"""
     try:
         result = subprocess.run([sys.executable, '-c', 'from src.fail_closed_engine import FailClosedEngine; engine = FailClosedEngine(); engine.zeroize()'], capture_output=True, text=True, timeout=30)
         output = result.stdout if result.stdout else result.stderr
@@ -41,8 +40,8 @@ def zeroize_memory():
 
 @app.route('/panic-shutdown', methods=['GET'])
 def panic_shutdown():
+    """مسار زر الطوارئ والذعر وعزل النظام والشبكة (الزر الرابع)"""
     try:
-        # مسار تشغيل واختبار إجراءات الذعر والطوارئ (Panic Routine)
         result = subprocess.run([sys.executable, '-m', 'pytest', 'tests/test_panic_routine.py', '-v'], capture_output=True, text=True, timeout=30)
         output = result.stdout if result.stdout else result.stderr
         return jsonify({'status': 'SUCCESS' if result.returncode == 0 else 'FAILURE', 'result': output if output else 'PANIC Routine Enforced: System & Network Isolated Successfully.'})
