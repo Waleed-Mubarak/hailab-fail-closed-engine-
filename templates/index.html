@@ -14,13 +14,15 @@
             --accent-red: #ef4444;
             --border-color: #334155;
         }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-color); margin: 0; padding: 20px; color: var(--text-color); }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-color); margin: 0; padding: 20px; color: var(--text-color); transition: background 0.3s; }
+        body.panic-active { background: #2a0f0f; } /* وميض خلفية خفيف عند الطوارئ */
         .container { max-width: 1000px; margin: auto; }
         header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-bottom: 25px; }
         h1 { font-size: 22px; color: #38bdf8; margin: 0; }
         .badges-group { display: flex; gap: 15px; align-items: center; font-size: 13px; font-weight: bold; }
-        .badge-green { color: var(--accent-green); }
-        .badge-blue { color: #38bdf8; }
+        .badge-green { color: var(--accent-green); transition: color 0.3s; }
+        .badge-blue { color: #38bdf8; transition: color 0.3s; }
+        .badge-red { color: var(--accent-red) !important; text-shadow: 0 0 8px rgba(239, 68, 68, 0.6); }
         
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 25px; }
         .card { background: var(--card-bg); padding: 20px; border-radius: 10px; border: 1px solid var(--border-color); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
@@ -44,8 +46,8 @@
         <header>
             <h1>🛡️ Hailab Fail-Closed & Zeroization Engine</h1>
             <div class="badges-group">
-                <span class="badge-green">● Control Panel: Online</span>
-                <span class="badge-blue">● Engine Core: Active</span>
+                <span id="panel-badge" class="badge-green">● Control Panel: Online</span>
+                <span id="core-badge" class="badge-blue">● Engine Core: Active</span>
             </div>
         </header>
 
@@ -71,7 +73,7 @@
                     <button class="danger" onclick="runAction('/run/zeroize', 'Triggering Zeroization Protocol...')">
                         <span>🧹 Volatile Memory Zeroization</span> <span>[Purge]</span>
                     </button>
-                    <button class="panic" onclick="runAction('/run/panic', 'Enforcing Emergency Fail-Closed Shutdown...')">
+                    <button class="panic" onclick="triggerPanic()">
                         <span>🚨 PANIC: Emergency Fail-Closed Shutdown</span> <span>[Isolate]</span>
                     </button>
                 </div>
@@ -109,6 +111,33 @@
             })
             .catch(err => {
                 document.getElementById('output').innerText = "Error executing action: " + err;
+            });
+        }
+
+        function triggerPanic() {
+            document.getElementById('output').innerText = "ENFORCING EMERGENCY PANIC ROUTINE & ISOLATION...";
+            
+            fetch('/run/panic', {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('output').innerText = data.result;
+                if (data.status === 'SUCCESS') {
+                    // تفعيل الإنذار المرئي وتحويل الحالة للأحمر
+                    document.body.classList.add('panic-active');
+                    let coreBadge = document.getElementById('core-badge');
+                    coreBadge.innerText = "● Engine Core: ISOLATED / PANIC";
+                    coreBadge.className = "badge-red";
+                    
+                    let panelBadge = document.getElementById('panel-badge');
+                    panelBadge.innerText = "● Control Panel: LOCKED DOWN";
+                    panelBadge.className = "badge-red";
+                }
+            })
+            .catch(err => {
+                document.getElementById('output').innerText = "Error executing panic routine: " + err;
             });
         }
 
