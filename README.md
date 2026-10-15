@@ -46,3 +46,9 @@ docs/
 src/
 └── ...
 
+Architectural Boundaries & Admissibility
+1. Quorum vs. Admissibility: Reaching the administrative quorum alone does not authorize execution. Full execution admissibility is strictly governed by rules and state validation.
+2. Operational Integrity: Multi-sample temporal filtering is applied alongside functions like ⁠verify_chassis_sensors()⁠ to enforce physical security invariants.
+📜 License
+© 2026 Waleed Mubarak. All Rights Reserved.
+This repository contains proprietary deep-tech architecture. Unauthorized commercial use, duplication, or integration is strictly prohibited. For licensing inquiries, contact the author directly.
