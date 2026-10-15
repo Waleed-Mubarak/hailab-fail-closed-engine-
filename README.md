@@ -18,7 +18,7 @@ Security-first architecture for mission-critical edge nodes, designed to prevent
 ## 🚀 Quick Start & Installation
 
 ### 1. Clone the Repository
-* Command: `git clone https://github.com/Waleed-Mubarak/hailab-fail-closed-engine-.git`
+* Command: https://github.com/Waleed-Mubarak/hailab-fail-closed-engine-.git
 * Directory: `cd hailab-fail-closed-engine-`
 
 ### 2. Basic Usage Example
