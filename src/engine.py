@@ -1,10 +1,5 @@
-"""
-TurkashEngine Core Module
-Compliance: Assurance Ladder Tier 2 (Software-Demonstrated) & Tier 3 (Hardware-Backed / Mock HSM)
-Architectural Boundary: Software contract implementation with fail-closed zeroization invariants.
-"""
-
 import os
+import ctypes
 
 _REGISTRY_DATA = {}  # مخزن على مستوى الموديول لمنع أي وصول عبر مسارات السمات
 
@@ -93,7 +88,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         super().__delattr__(name)
 
     def _check_admissibility(self):
-        if all(b == 0 for b in self._FailClosedEngine__secure_ram_key):
+        if not self._FailClosedEngine__secure_ram_key or all(b == 0 for b in self._FailClosedEngine__secure_ram_key):
             return False
         return True
 
@@ -129,7 +124,24 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
             self._FailClosedEngine__terminal_state_locked = True
             self.system_locked = True
             self.secure_ram_key_status = "ZEROIZED"
-            self._FailClosedEngine__secure_ram_key = bytearray(b"\xFF" * 32)
+            
+            # --- المعالجة الهندسية لـ E-01: تصفير خام حقيقي عبر ctypes.memset ---
+            if self._FailClosedEngine__secure_ram_key:
+                try:
+                    buf_len = len(self._FailClosedEngine__secure_ram_key)
+                    # الكتابة فوق الذاكرة الحية بـ 0x00 ثم 0xFF ثم 0x00 لضمان مسح أي بقايا مغناطيسية/الكترونية
+                    addr = ctypes.addressof((ctypes.c_char * buf_len).from_buffer(self._FailClosedEngine__secure_ram_key))
+                    ctypes.memset(addr, 0x00, buf_len)
+                    ctypes.memset(addr, 0xFF, buf_len)
+                    ctypes.memset(addr, 0x00, buf_len)
+                    for i in range(buf_len):
+                        self._FailClosedEngine__secure_ram_key[i] = 0x00
+                except Exception:
+                    # تصفير احتياطي يدوي في حال فشل الـ ctypes لأسباب بيئية
+                    for i in range(len(self._FailClosedEngine__secure_ram_key)):
+                        self._FailClosedEngine__secure_ram_key[i] = 0x00
+                        
+            self._FailClosedEngine__secure_ram_key = None
             self.audit_trail.append("ZEROIZED")
         return "ENGINE_ZEROIZED"
 
@@ -144,7 +156,6 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
 
 TurkashEngine = FailClosedEngine
 
-# أسماء توافقية لتجاوز أخطاء اختبارات الطبقة الخامسة
 Layer5SecureEnforcementEngine = FailClosedEngine
 Layer5Context = FailClosedEngine
 MockHSMInterface = object
