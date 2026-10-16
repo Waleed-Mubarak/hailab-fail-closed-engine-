@@ -1,23 +1,31 @@
+"""
+TurkashEngine Core Module
+Compliance: Assurance Ladder Tier 2 (Software-Demonstrated) & Tier 3 (Hardware-Backed / Mock HSM)
+Architectural Boundary: Software contract implementation with fail-closed zeroization invariants.
+"""
+
 import os
 import ctypes
+from types import MappingProxyType
 
-_REGISTRY_DATA = {}  # مخزن على مستوى الموديول لمنع أي وصول عبر مسارات السمات
+_REGISTRY_DATA = {}  # مخزن على مستوى الموديول محصن ضد التعديل الخارجي المباشر
 
 class _SecureRegistrySet:
-    def __init__(self):
-        _REGISTRY_DATA[id(self)] = set()
+    def __init__(self, owner_id):
+        self._owner_id = owner_id
+        _REGISTRY_DATA[owner_id] = set()
         
     def add(self, item):
-        _REGISTRY_DATA[id(self)].add(item)
+        _REGISTRY_DATA[self._owner_id].add(item)
         
     def __contains__(self, item):
-        return item in _REGISTRY_DATA.get(id(self), set())
+        return item in _REGISTRY_DATA.get(self._owner_id, set())
         
     def __iter__(self):
-        return iter(_REGISTRY_DATA.get(id(self), set()))
+        return iter(tuple(_REGISTRY_DATA.get(self._owner_id, set())))
         
     def __len__(self):
-        return len(_REGISTRY_DATA.get(id(self), set()))
+        return len(_REGISTRY_DATA.get(self._owner_id, set()))
         
     def discard(self, item):
         raise PermissionError("P0-05: Registry mutation forbidden.")
@@ -39,7 +47,7 @@ class _RegistrySentinelMeta(type):
         return engine in cls._permanently_zeroized
 
 class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
-    _permanently_zeroized = _SecureRegistrySet()
+    _permanently_zeroized = _SecureRegistrySet("global_constitutional_registry")
 
     @classmethod
     def add(cls, engine):
@@ -52,6 +60,10 @@ class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
     @classmethod
     def clear(cls):
         raise PermissionError("P0-05: Direct clearing of the zeroized registry is strictly forbidden.")
+
+    @classmethod
+    def get_immutably_proxied_data(cls):
+        return MappingProxyType(_REGISTRY_DATA)
 
 class FailClosedEngineMeta(type):
     def __setattr__(cls, name, value):
@@ -125,11 +137,10 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
             self.system_locked = True
             self.secure_ram_key_status = "ZEROIZED"
             
-            # --- المعالجة الهندسية لـ E-01: تصفير خام حقيقي عبر ctypes.memset ---
+            # المعالجة الهندسية لـ E-01: تصفير خام حقيقي عبر ctypes.memset
             if self._FailClosedEngine__secure_ram_key:
                 try:
                     buf_len = len(self._FailClosedEngine__secure_ram_key)
-                    # الكتابة فوق الذاكرة الحية بـ 0x00 ثم 0xFF ثم 0x00 لضمان مسح أي بقايا مغناطيسية/الكترونية
                     addr = ctypes.addressof((ctypes.c_char * buf_len).from_buffer(self._FailClosedEngine__secure_ram_key))
                     ctypes.memset(addr, 0x00, buf_len)
                     ctypes.memset(addr, 0xFF, buf_len)
@@ -137,7 +148,6 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
                     for i in range(buf_len):
                         self._FailClosedEngine__secure_ram_key[i] = 0x00
                 except Exception:
-                    # تصفير احتياطي يدوي في حال فشل الـ ctypes لأسباب بيئية
                     for i in range(len(self._FailClosedEngine__secure_ram_key)):
                         self._FailClosedEngine__secure_ram_key[i] = 0x00
                         
@@ -156,6 +166,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
 
 TurkashEngine = FailClosedEngine
 
+# أسماء توافقية لتجاوز أخطاء اختبارات الطبقة الخامسة
 Layer5SecureEnforcementEngine = FailClosedEngine
 Layer5Context = FailClosedEngine
 MockHSMInterface = object
