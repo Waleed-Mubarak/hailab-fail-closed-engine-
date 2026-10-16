@@ -36,7 +36,7 @@ class _SecureRegistrySet:
     def remove(self, item):
         raise PermissionError("P0-05: Registry mutation forbidden.")
 
-    def pop(self):
+    def pop(self, item=None):
         raise PermissionError("P0-05: Registry mutation forbidden.")
 
 class _RegistrySentinelMeta(type):
@@ -108,7 +108,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
             raise PermissionError("P0-03: Constitutional integrity violation detected.")
         if not self._check_admissibility():
-            raise PermissionError("P0-04: RAM key admissibility check failed.")
+            raise PermissionError("P0-03: CRITICAL_BLOCK - RAM key admissibility check failed.")
         if self in self._permanently_zeroized or self.__dict__.get("_FailClosedEngine__is_zeroized", False):
             raise PermissionError("P0-03: CRITICAL_BLOCK - Engine is zeroized.")
         return True
@@ -137,7 +137,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
             self.system_locked = True
             self.secure_ram_key_status = "ZEROIZED"
             
-            # المعالجة الهندسية لـ E-01: تصفير خام حقيقي عبر ctypes.memset
+            # التصفير الخام الحقيقي عبر ctypes.memset
             if self._FailClosedEngine__secure_ram_key:
                 try:
                     buf_len = len(self._FailClosedEngine__secure_ram_key)
