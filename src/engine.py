@@ -91,12 +91,12 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
 
     def __setattr__(self, name, value):
         if name == "__class__":
-            raise PermissionError("P0-03: Direct class mutation is strictly blocked.")
+            raise PermissionError("P0-03: CRITICAL_BLOCK - Direct class mutation is strictly blocked.")
         super().__setattr__(name, value)
 
     def __delattr__(self, name):
         if name in ("__class__", "_permanently_zeroized"):
-            raise PermissionError("P0-03/P0-05: Deletion of constitutional attributes is strictly blocked.")
+            raise PermissionError("P0-03/P0-05: CRITICAL_BLOCK - Deletion of constitutional attributes is strictly blocked.")
         super().__delattr__(name)
 
     def _check_admissibility(self):
@@ -106,9 +106,9 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
 
     def _verify_constitutional_integrity(self):
         if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
-            raise PermissionError("P0-03: Constitutional integrity violation detected.")
+            raise PermissionError("P0-03: CRITICAL_BLOCK - Constitutional integrity violation detected.")
         if not self._check_admissibility():
-            raise PermissionError("P0-03: CRITICAL_BLOCK - RAM key admissibility check failed.")
+            raise PermissionError("CRITICAL_BLOCK: P0-04 - RAM key admissibility check failed.")
         if self in self._permanently_zeroized or self.__dict__.get("_FailClosedEngine__is_zeroized", False):
             raise PermissionError("P0-03: CRITICAL_BLOCK - Engine is zeroized.")
         return True
