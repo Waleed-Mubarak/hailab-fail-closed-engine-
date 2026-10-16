@@ -78,11 +78,11 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
 
     def __init__(self, *args, **kwargs):
         self._quorum_reached = False
-        self._FailClosedEngine__is_zeroized = False
-        self._FailClosedEngine__terminal_state_locked = False
-        self.system_locked = False
-        self.secure_ram_key_status = "ACTIVE"
-        self._FailClosedEngine__secure_ram_key = bytearray(os.urandom(32))
+        object.__setattr__(self, "_FailClosedEngine__is_zeroized", False)
+        object.__setattr__(self, "_FailClosedEngine__terminal_state_locked", False)
+        object.__setattr__(self, "system_locked", False)
+        object.__setattr__(self, "secure_ram_key_status", "ACTIVE")
+        object.__setattr__(self, "_FailClosedEngine__secure_ram_key", bytearray(os.urandom(32)))
         self.audit_trail = []
 
     @property
@@ -93,7 +93,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         if name == "__class__":
             raise PermissionError("P0-03: CRITICAL_BLOCK - Direct class mutation is strictly blocked.")
         
-        # حماية إضافية لإغلاق E-03: منع تعديل متغيرات الحالة الحرجة بعد تصفير المحرك أو قفله
+        # حماية صارمة لإغلاق E-03: منع تعديل متغيرات الحالة الحرجة من الخارج بعد التصفير
         critical_state_vars = (
             "_FailClosedEngine__is_zeroized",
             "_FailClosedEngine__terminal_state_locked",
@@ -144,10 +144,10 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
     def zeroize(self):
         self._permanently_zeroized.add(self)
         if not self.__dict__.get("_FailClosedEngine__is_zeroized", False):
-            self._FailClosedEngine__is_zeroized = True
-            self._FailClosedEngine__terminal_state_locked = True
-            self.system_locked = True
-            self.secure_ram_key_status = "ZEROIZED"
+            object.__setattr__(self, "_FailClosedEngine__is_zeroized", True)
+            object.__setattr__(self, "_FailClosedEngine__terminal_state_locked", True)
+            object.__setattr__(self, "system_locked", True)
+            object.__setattr__(self, "secure_ram_key_status", "ZEROIZED")
             
             # التصفير الخام الحقيقي عبر ctypes.memset
             if self._FailClosedEngine__secure_ram_key:
@@ -163,7 +163,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
                     for i in range(len(self._FailClosedEngine__secure_ram_key)):
                         self._FailClosedEngine__secure_ram_key[i] = 0x00
                         
-            self._FailClosedEngine__secure_ram_key = None
+            object.__setattr__(self, "_FailClosedEngine__secure_ram_key", None)
             self.audit_trail.append("ZEROIZED")
         return "ENGINE_ZEROIZED"
 
