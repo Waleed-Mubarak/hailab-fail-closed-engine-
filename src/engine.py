@@ -92,6 +92,18 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
     def __setattr__(self, name, value):
         if name == "__class__":
             raise PermissionError("P0-03: CRITICAL_BLOCK - Direct class mutation is strictly blocked.")
+        
+        # حماية إضافية لإغلاق E-03: منع تعديل متغيرات الحالة الحرجة بعد تصفير المحرك أو قفله
+        critical_state_vars = (
+            "_FailClosedEngine__is_zeroized",
+            "_FailClosedEngine__terminal_state_locked",
+            "system_locked",
+            "secure_ram_key_status"
+        )
+        if name in critical_state_vars:
+            if self.__dict__.get("_FailClosedEngine__terminal_state_locked", False) or self.__dict__.get("_FailClosedEngine__is_zeroized", False):
+                raise PermissionError(f"P0-03: CRITICAL_BLOCK - Tampering forbidden: state variable '{name}' is immutable after zeroization.")
+
         super().__setattr__(name, value)
 
     def __delattr__(self, name):
