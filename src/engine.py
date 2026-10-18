@@ -18,7 +18,7 @@ class _StrictImmutableRegistry:
 
     def add(self, item):
         if self._locked:
-            raise PermissionError("P0-05 / E-02: Registry is permanently locked.")
+            raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry is permanently locked.")
         self._registry_set.add(item)
 
     def contains(self, item):
@@ -47,21 +47,21 @@ class _SecureRegistrySet:
         return len(_MASTER_REGISTRY.get_immutable_snapshot())
 
     def discard(self, item):
-        raise PermissionError("P0-05 / E-02: Registry mutation strictly forbidden.")
+        raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry mutation strictly forbidden.")
 
     def clear(self):
-        raise PermissionError("P0-05 / E-02: Registry clearing strictly forbidden.")
+        raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry clearing strictly forbidden.")
 
     def remove(self, item):
-        raise PermissionError("P0-05 / E-02: Registry removal strictly forbidden.")
+        raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry removal strictly forbidden.")
 
     def pop(self, item=None):
-        raise PermissionError("P0-05 / E-02: Registry pop strictly forbidden.")
+        raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry pop strictly forbidden.")
 
 
 class _RegistrySentinelMeta(type):
     def __setattr__(cls, name, value):
-        raise PermissionError("P0-05 / E-02: Metadata replacement strictly blocked.")
+        raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Metadata replacement strictly blocked.")
     
     def __contains__(cls, engine):
         return _MASTER_REGISTRY.contains(engine)
@@ -74,16 +74,16 @@ class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
 
     @classmethod
     def discard(cls, engine):
-        raise PermissionError("P0-05: Forbidden.")
+        raise PermissionError("CRITICAL_BLOCK: P0-05: Forbidden.")
 
     @classmethod
     def clear(cls):
-        raise PermissionError("P0-05: Forbidden.")
+        raise PermissionError("CRITICAL_BLOCK: P0-05: Forbidden.")
 
 
 class FailClosedEngineMeta(type):
     def __setattr__(cls, name, value):
-        raise PermissionError("P0-05 / E-03: Class attribute tampering strictly blocked.")
+        raise PermissionError("CRITICAL_BLOCK: P0-05 / E-03: Class attribute tampering strictly blocked.")
 
 
 class FailClosedEngine(metaclass=FailClosedEngineMeta):
@@ -114,15 +114,15 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         )
         if name in critical_state_vars:
             if self.__dict__.get('_FailClosedEngine__terminal_state_locked', False) or self.__dict__.get('_FailClosedEngine__is_zeroized', False):
-                raise PermissionError(f"P0-03 / E-03: Critical security violation. State variable '{name}' is immutable post-zeroization.")
+                raise PermissionError(f"CRITICAL_BLOCK: P0-03 / E-03: Critical security violation. State variable '{name}' is immutable post-zeroization.")
 
         if name == "__class__":
-            raise PermissionError("P0-03: Class mutation blocked.")
+            raise PermissionError("CRITICAL_BLOCK: P0-03: Class mutation blocked.")
 
         super().__setattr__(name, value)
 
     def __delattr__(self, name):
-        raise PermissionError("P0-03: Deletion of attributes prohibited.")
+        raise PermissionError("CRITICAL_BLOCK: P0-03: Deletion of attributes prohibited.")
 
     def _check_admissibility(self):
         key = self.__dict__.get('_FailClosedEngine__secure_ram_key', None)
@@ -132,11 +132,11 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
 
     def _verify_constitutional_integrity(self):
         if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
-            raise PermissionError("P0-03: Constitutional integrity violation.")
+            raise PermissionError("CRITICAL_BLOCK: P0-03: Constitutional integrity violation.")
         if not self._check_admissibility():
             raise PermissionError("CRITICAL_BLOCK: P0-04 - RAM key admissibility check failed.")
         if self.is_zeroized:
-            raise PermissionError("P0-03: Engine is zeroized.")
+            raise PermissionError("CRITICAL_BLOCK: P0-03 - Engine is zeroized.")
         return True
 
     def execute_critical_operation(self, *args, **kwargs):
