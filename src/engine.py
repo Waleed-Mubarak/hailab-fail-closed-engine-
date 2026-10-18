@@ -98,7 +98,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
     """
     __slots__ = (
         '_quorum_reached',
-        '_is_zeroized',
+        '__is_zeroized',
         '_terminal_state_locked',
         'system_locked',
         'secure_ram_key_status',
@@ -110,7 +110,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
 
     def __init__(self, *args, **kwargs):
         object.__setattr__(self, '_quorum_reached', False)
-        object.__setattr__(self, '_is_zeroized', False)
+        object.__setattr__(self, '_FailClosedEngine__is_zeroized', False)
         object.__setattr__(self, '_terminal_state_locked', False)
         object.__setattr__(self, 'system_locked', False)
         object.__setattr__(self, 'secure_ram_key_status', "ACTIVE")
@@ -119,8 +119,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
 
     @property
     def is_zeroized(self):
-        # التحقق من السجل الخارجي المستقل يمنع التجاوز حتى لو تم التلاعب بالمتغير المحلي
-        return self._is_zeroized or _MASTER_REGISTRY.contains(self)
+        return getattr(self, '_FailClosedEngine__is_zeroized', False) or _MASTER_REGISTRY.contains(self)
 
     def __setattr__(self, name, value):
         if getattr(self, '_terminal_state_locked', False) or self.is_zeroized:
@@ -146,7 +145,8 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         if not isinstance(self, FailClosedEngine):
             raise PermissionError("P0-03: Constitutional integrity violation.")
         if not self._check_admissibility():
-            raise PermissionError("CRITICAL_BLOCK: P0-04 - RAM key admissibility check failed.")
+            self.zeroize()
+            raise PermissionError("CRITICAL_BLOCK: P0-04 - RAM key corruption / admissibility check failed.")
         if self.is_zeroized:
             raise PermissionError("P0-03: Engine is zeroized.")
         return True
@@ -161,14 +161,13 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
             return "OPERATION_SUCCESS: Quorum reached."
 
         self.zeroize()
-        return "DENY"
+        raise PermissionError("P0-04: Quorum failure triggered Fail-Closed state.")
 
     def zeroize(self):
-        # E-01 & E-05: التصفير الخام وإبطال المراجع نهائياً وتسجيل الكائن بالسجل غير القابل للتعديل
         _MASTER_REGISTRY.add(self)
 
-        if not getattr(self, '_is_zeroized', False):
-            object.__setattr__(self, '_is_zeroized', True)
+        if not getattr(self, '_FailClosedEngine__is_zeroized', False):
+            object.__setattr__(self, '_FailClosedEngine__is_zeroized', True)
             object.__setattr__(self, '_terminal_state_locked', True)
             object.__setattr__(self, 'system_locked', True)
             object.__setattr__(self, 'secure_ram_key_status', "ZEROIZED")
@@ -222,7 +221,6 @@ class ProductionPanicHandler:
         self.active_sockets.append(sock)
 
     def trigger_panic(self):
-        # 1. إغلاق المقابس النشطة
         for s in self.active_sockets:
             try:
                 s.shutdown(socket.SHUT_RDWR)
@@ -231,7 +229,6 @@ class ProductionPanicHandler:
                 pass
         self.active_sockets.clear()
 
-        # 2. تنفيذ أحكام عزل الشبكة على مستوى Linux/Docker
         try:
             if sys.platform.startswith("linux"):
                 os.system("ip link set dev eth0 down 2>/dev/null || true")
