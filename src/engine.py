@@ -106,7 +106,6 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return self._FailClosedEngine__is_zeroized or (_MASTER_REGISTRY.contains(self))
 
     def __setattr__(self, name, value):
-        # E-03: منع تام لأي محاولة تلاعب بمتغيرات الحالة الحرجة بعد التصفير أو القفل
         critical_state_vars = (
             '_FailClosedEngine__is_zeroized',
             '_FailClosedEngine__terminal_state_locked',
@@ -153,7 +152,6 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return "DENY"
 
     def zeroize(self):
-        # E-01 & E-05: التصفير الخام وإبطال المراجع نهائياً
         _MASTER_REGISTRY.add(self)
 
         if not self.__dict__.get('_FailClosedEngine__is_zeroized', False):
@@ -167,7 +165,6 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
                 try:
                     buf_len = len(key_buf)
                     addr = ctypes.addressof((ctypes.c_char * buf_len).from_buffer(key_buf))
-                    # 3-Pass Overwrite
                     ctypes.memset(addr, 0x00, buf_len)
                     ctypes.memset(addr, 0xFF, buf_len)
                     ctypes.memset(addr, 0x00, buf_len)
@@ -191,15 +188,13 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
             "audit_trail": self.__dict__.get('audit_trail', [])
         }
 
-
 TurkashEngine = FailClosedEngine
+Layer5SecureEnforcementEngine = FailClosedEngine
+Layer5Context = FailClosedEngine
+MockHSMInterface = object
 
-
-# E-06: عزل شبكة فعلي وحقيقي (Actual Socket Termination & Interface Isolation)
+# E-06: عزل شبكة فعلي وحقيقي
 class ProductionPanicHandler:
-    """
-    Enforces absolute OS-level and socket-level network isolation during panic state.
-    """
     def __init__(self):
         self.is_isolated = False
         self.active_sockets = []
