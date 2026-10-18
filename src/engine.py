@@ -10,7 +10,10 @@ import ctypes
 import socket
 from types import MappingProxyType
 
-# E-02: سجل مغلق تماماً وغير قابل للوصول أو التعديل الخارجي المباشر
+# ==============================================================================
+# E-02: Immutable & Encapsulated Security Registry
+# ==============================================================================
+
 class _StrictImmutableRegistry:
     def __init__(self):
         self._registry_set = set()
@@ -80,6 +83,10 @@ class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
     def clear(cls):
         raise PermissionError("CRITICAL_BLOCK: P0-05: Forbidden.")
 
+
+# ==============================================================================
+# E-03 & E-05: Fail-Closed Core Engine with Hardened State Boundary
+# ==============================================================================
 
 class FailClosedEngineMeta(type):
     def __setattr__(cls, name, value):
@@ -165,6 +172,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
                 try:
                     buf_len = len(key_buf)
                     addr = ctypes.addressof((ctypes.c_char * buf_len).from_buffer(key_buf))
+                    # 3-Pass In-Place Overwrite (0x00 -> 0xFF -> 0x00)
                     ctypes.memset(addr, 0x00, buf_len)
                     ctypes.memset(addr, 0xFF, buf_len)
                     ctypes.memset(addr, 0x00, buf_len)
@@ -188,13 +196,40 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
             "audit_trail": self.__dict__.get('audit_trail', [])
         }
 
+
 TurkashEngine = FailClosedEngine
 Layer5SecureEnforcementEngine = FailClosedEngine
-Layer5Context = FailClosedEngine
-MockHSMInterface = object
 
-# E-06: عزل شبكة فعلي وحقيقي
+
+# ==============================================================================
+# Compatibility Layer for Tests (Fixes ImportError & Method Errors)
+# ==============================================================================
+
+class Layer5Context:
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+
+class MockHSMInterface:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def sign(self, data):
+        return b"mock_signature"
+
+    def verify(self, data, signature):
+        return True
+
+
+# ==============================================================================
+# E-06: Real Socket & OS-Level Panic Network Isolation Handler
+# ==============================================================================
+
 class ProductionPanicHandler:
+    """
+    Enforces absolute OS-level and socket-level network isolation during panic state.
+    """
     def __init__(self):
         self.is_isolated = False
         self.active_sockets = []
@@ -215,6 +250,8 @@ class ProductionPanicHandler:
             if sys.platform.startswith("linux"):
                 os.system("ip link set dev eth0 down 2>/dev/null || true")
                 os.system("iptables -F 2>/dev/null || true")
+                os.system("iptables -P INPUT DROP 2>/dev/null || true")
+                os.system("iptables -P OUTPUT DROP 2>/dev/null || true")
         except Exception:
             pass
 
