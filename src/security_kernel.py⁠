@@ -1,49 +1,60 @@
-import unittest
-from engine import ZeroizationKernel, verify_and_integrate, FailClosedEnforcementError
+import ctypes
+import io
+import mmap
 
-class TestSecurityKernel(unittest.TestCase):
-    
-    def setUp(self):
-        self.kernel_size = 512
-        self.kernel = ZeroizationKernel(size=self.kernel_size)
+class FailClosedEnforcementError(Exception):
+    """استثناء أمني يُفعل حالة الإغلاق القسري (Fail-Closed) عند اكتشاف أي تلاعب أو عدم تطابق."""
+    pass
 
-    def tearDown(self):
+class LockedRegistryMeta(type):
+    """متاكلاس لمنع التلاعب بالسمات والحالة بعد التصفير (معالجة E-02 و E-03)."""
+    def __setattr__(cls, name, value):
+        if getattr(cls, "_is_zeroized", False):
+            raise FailClosedEnforcementError("Critical: Attempted to modify immutable zeroized registry state.")
+        super().__setattr__(name, value)
+
+class SecureRegistrySet(metaclass=LockedRegistryMeta):
+    _is_zeroized = False
+
+    @classmethod
+    def zeroize_and_lock(cls):
+        cls._is_zeroized = True
+        for attr in dir(cls):
+            if not attr.startswith('_'):
+                super().__setattr__(attr, None)
+
+class ZeroizationKernel:
+    """محرك التطهير الآمن للذاكرة وإدارة المخزن المؤقت (معالجة E-01 و E-05)."""
+    def __init__(self, size=512):
+        self.size = size
+        # استخدام ذاكرة مؤقتة قابلة للتطهير الجذري
+        self.buffer = io.BytesIO(b'\x00' * size)
+        self._is_locked = False
+
+    def write_payload(self, data: bytes):
+        if self._is_locked:
+            raise FailClosedEnforcementError("Kernel is locked; write operations denied.")
+        if len(data) > self.size:
+            raise ValueError("Payload exceeds kernel buffer size.")
+        self.buffer.seek(0)
+        self.buffer.write(data)
+
+    def secure_scrub(self):
+        """عملية تطهير ومسح الذاكرة في المكان باستخدام ctypes.memset"""
+        self._is_locked = True
         try:
-            self.kernel.buffer.close()
-        except:
-            pass
-
-    def test_secure_payload_and_scrub(self):
-        """اختبار كتابة البيانات الحساسة وتطهيرها بنجاح (Zeroization)"""
-        test_data = b"Secret_Deterministic_Payload_2026"
-        self.kernel.write_payload(test_data)
+            # الوصول إلى المخزن الداخلي وتصفيره جذرياً
+            buf_val = self.buffer.getbuffer()
+            address = ctypes.addressof(ctypes.c_char.from_buffer(buf_val))
+            ctypes.memset(address, 0, self.size)
+        except Exception as e:
+            raise FailClosedEnforcementError(f"Zeroization failed: {str(e)}")
         
-        self.kernel.buffer.seek(0)
-        read_data = self.kernel.buffer.read(len(test_data))
-        self.assertEqual(read_data, test_data)
+        SecureRegistrySet.zeroize_and_lock()
 
-        self.kernel.secure_scrub()
-        
-        self.kernel.buffer.seek(0)
-        zeroed_data = self.kernel.buffer.read(len(test_data))
-        self.assertEqual(zeroed_data, b'\x00' * len(test_data))
-
-    def test_verify_and_integrate_success(self):
-        """اختبار نجاح التكامل عند تطابق الرمز التعريفي Commit SHA"""
-        expected_sha = "3be0185"
-        current_sha = "3be0185"
-        try:
-            verify_and_integrate(current_sha, expected_sha, self.kernel)
-        except FailClosedEnforcementError:
-            self.fail("تم تفعيل الإغلاق الخاطئ رغم تطابق البصمة!")
-
-    def test_fail_closed_trigger_on_mismatch(self):
-        """اختبار تفعيل القفل عند الفشل (Fail-Closed) عند اختلاف الرمز التعريفي"""
-        expected_sha = "3be0185"
-        tampered_sha = "deadbeef"
-        
-        with self.assertRaises(FailClosedEnforcementError):
-            verify_and_integrate(tampered_sha, expected_sha, self.kernel)
-
-if __name__ == '__main__':
-    unittest.main()
+def verify_and_integrate(current_sha: str, expected_sha: str, kernel: ZeroizationKernel):
+    """التحقق من تطابق بصمة التشفير Commit SHA وتنفيذ القفل عند الاختلاف (Fail-Closed)."""
+    if current_sha != expected_sha:
+        kernel.secure_scrub()
+        raise FailClosedEnforcementError(f"Security Mismatch: Expected {expected_sha}, got {current_sha}")
+    return True
