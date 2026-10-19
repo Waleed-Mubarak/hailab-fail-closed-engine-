@@ -25,6 +25,23 @@ jobs:
         pip install -e .
         pip install pytest pytest-cov
 
+    - name: Sanity Check File Names (E-04 Validation)
+      run: |
+        python -c '
+        import os, sys
+        bad_chars = ["\u2060", "\u200b", "\ufeff"]
+        violations = []
+        for root, dirs, files in os.walk("."):
+            for f in files:
+                for bc in bad_chars:
+                    if bc in f:
+                        violations.append(os.path.join(root, f))
+        if violations:
+            print(f"CRITICAL: Found non-standard/hidden unicode characters in filenames: {violations}")
+            sys.exit(1)
+        print("File names sanity check passed: No hidden unicode characters found.")
+        '
+
     - name: Run Tests with Coverage
       run: |
         PYTHONPATH=. pytest tests/ --cov=src --cov-report=term --cov-report=xml
