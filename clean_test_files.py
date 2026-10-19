@@ -1,66 +1,71 @@
 """
 Automatic Test Files Cleaner and Sanitizer Script
-Fixes E-04: Removes invisible Unicode characters (like U+2060) and normalizes test filenames.
+Fixes E-04: Removes invisible Unicode characters (like U+2060) from filenames and directory names.
 """
 
 import os
 import shutil
 
-# تحديث النطاق ليشمل المجلد الجذر والمجلدات الفرعية بالكامل
 TARGET_DIRS = [".", "tests", "src", "docs"]
+BAD_CHARS = ["\u2060", "\u200b", "\ufeff"]
 
-def sanitize_filename(filename):
-    # إزالة أي محارف غير مطبوعة أو Unicode مشبوه مثل U+2060
-    cleaned = "".join(c for c in filename if ord(c) < 127 and c != '\u2060')
+def sanitize_name(name):
+    cleaned = name
+    for bc in BAD_CHARS:
+        cleaned = cleaned.replace(bc, "")
     return cleaned
 
 def clean_project_files():
-    print("[*] بدء فحص وتنظيف الملفات من محارف Unicode الخفية...")
+    print("[*] بدء فحص وتنظيف الملفات والمجلدات من محارف Unicode الخفية...")
     
-    seen_paths = set()
-    for directory in TARGET_DIRS:
-        if not os.path.exists(directory):
-            print(f"[-] المجلد غير موجود: {directory}")
+    # استخدام topdown=False لتتمكن من إعادة تسمية المجلدات من الداخل إلى الخارج
+    for target in TARGET_DIRS:
+        if not os.path.exists(target):
             continue
             
-        for root, dirs, files in os.walk(directory):
+        for root, dirs, files in os.walk(target, topdown=False):
+            # تنظيف أسماء الملفات
             for file in files:
                 old_path = os.path.join(root, file)
-                if old_path in seen_paths:
-                    continue
-                seen_paths.add(old_path)
+                clean_file_name = sanitize_name(file)
                 
-                clean_name = sanitize_filename(file)
-                
-                # التأكد من أن أسماء ملفات الاختبار تبدأ بـ test_
-                if "tests" in root and not clean_name.startswith("test_") and not clean_name.startswith("__"):
-                    clean_name = "test_" + clean_name
+                if "tests" in root and not clean_file_name.startswith("test_") and not clean_file_name.startswith("__"):
+                    clean_file_name = "test_" + clean_file_name
 
-                new_path = os.path.join(root, clean_name)
+                new_path = os.path.join(root, clean_file_name)
                 
-                # إذا كان الاسم يحتوي على محارف خفية وتم تغييره
                 if old_path != new_path:
-                    print(f"[!] تنظيف اسم الملف:\n    من: {repr(old_path)}\n    إلى: {repr(new_path)}")
+                    print(f"[!] تنظيف اسم الملف: {repr(old_path)} -> {repr(new_path)}")
                     try:
-                        shutil.copy2(old_path, new_path)
-                        os.remove(old_path)
-                    except Exception as ex:
-                        print(f"[-] خطأ أثناء إعادة التسمية {old_path}: {ex}")
+                        shutil.move(old_path, new_path)
+                    except Exception as e:
+                        print(f"[-] خطأ في نقل الملف: {e}")
                 else:
-                    # التحقق الداخلي من محتوى الملف للتأكد من خلوه من رموز Unicode الضارة
+                    # فحص المحتوى الداخلي للتأكد من خلوه من \u2060
                     try:
                         with open(old_path, 'r', encoding='utf-8', errors='ignore') as f:
                             content = f.read()
                         if '\u2060' in content:
-                            print(f"[!] تم العثور على محارف U+2060 داخل محتوى الملف: {old_path}")
-                            clean_content = content.replace('\u2060', '')
+                            content = content.replace('\u2060', '')
                             with open(old_path, 'w', encoding='utf-8') as f:
-                                f.write(clean_content)
-                            print(f"[OK] تم تنظيف محتوى الملف بنجاح: {old_path}")
-                    except Exception as e:
+                                f.write(content)
+                    except Exception:
                         pass
 
-    print("[+] تم الانتهاء من فحص وتنظيف كافة الملفات بنجاح!")
+            # تنظيف أسماء المجلدات
+            for directory in dirs:
+                old_dir_path = os.path.join(root, directory)
+                clean_dir_name = sanitize_name(directory)
+                new_dir_path = os.path.join(root, clean_dir_name)
+                
+                if old_dir_path != new_dir_path:
+                    print(f"[!] تنظيف اسم المجلد: {repr(old_dir_path)} -> {repr(new_dir_path)}")
+                    try:
+                        os.rename(old_dir_path, new_dir_path)
+                    except Exception as e:
+                        print(f"[-] خطأ في إعادة تسمية المجلد: {e}")
+
+    print("[+] تم الانتهاء من تطهير كافة الملفات والمجلدات بنجاح!")
 
 if __name__ == "__main__":
     clean_project_files()
