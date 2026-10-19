@@ -92,33 +92,38 @@ class LockedRegistryMeta(type):
 
 class SecureRegistrySet:
     """
-    Hardened encapsulation wrapper using slots and immutability controls
-    to prevent any attribute tampering or bypass via object.__setattr__.
+    Hardened encapsulation wrapper using properties and __setattr__ interception
+    to explicitly block and raise PermissionError on direct attribute tampering.
     """
-    __slots__ = ('_entries', '_is_sealed')
-
     def __init__(self, initial_entries=None):
-        super().__setattr__("_entries", set(initial_entries) if initial_entries else set())
-        super().__setattr__("_is_sealed", False)
+        object.__setattr__(self, "_stored_entries", set(initial_entries) if initial_entries else set())
+        object.__setattr__(self, "_is_sealed", False)
 
     def __setattr__(self, key, value):
-        raise PermissionError("E-02/E-03 Violation: Direct attribute assignment or tampering is strictly prohibited.")
+        if key in ("_entries", "_stored_entries", "_is_sealed"):
+            raise PermissionError("E-02/E-03 Violation: Direct attribute assignment or tampering is strictly prohibited.")
+        super().__setattr__(key, value)
 
-    def __delattr__(self, key):
-        raise PermissionError("E-02/E-03 Violation: Attribute deletion is forbidden.")
+    @property
+    def _entries(self):
+        return self._stored_entries
+
+    @_entries.setter
+    def _entries(self, value):
+        raise PermissionError("E-02/E-03 Violation: Direct assignment to '_entries' is prohibited.")
 
     def seal(self):
-        super().__setattr__("_is_sealed", True)
+        object.__setattr__(self, "_is_sealed", True)
 
     def register(self, item):
         if self._is_sealed or ZeroizationKernel.is_zeroized():
             raise PermissionError("E-03 Violation: System in terminal/zeroized state. Operations rejected.")
-        self._entries.add(item)
+        self._stored_entries.add(item)
 
     def get_entries(self):
         if ZeroizationKernel.is_zeroized():
             return set()
-        return set(self._entries)
+        return set(self._stored_entries)
 
 
 def verify_and_integrate(operation_name: str, registry_set: SecureRegistrySet):
