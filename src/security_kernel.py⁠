@@ -92,25 +92,26 @@ class LockedRegistryMeta(type):
 
 class SecureRegistrySet:
     """
-    Hardened encapsulation wrapper for operational registries.
-    Prevents directly mutating underlying '_entries' or resetting locked state.
+    Hardened encapsulation wrapper using slots and immutability controls
+    to prevent any attribute tampering or bypass via object.__setattr__.
     """
+    __slots__ = ('_entries', '_is_sealed')
+
     def __init__(self, initial_entries=None):
-        object.__setattr__(self, "_entries", set(initial_entries) if initial_entries else set())
-        object.__setattr__(self, "_is_sealed", False)
+        super().__setattr__("_entries", set(initial_entries) if initial_entries else set())
+        super().__setattr__("_is_sealed", False)
 
     def __setattr__(self, key, value):
-        if getattr(self, "_is_sealed", False) or ZeroizationKernel.is_zeroized():
-            raise PermissionError("E-02/E-03 Violation: SecureRegistrySet is sealed and immutable.")
-        if key in ("_entries", "_is_sealed"):
-            raise PermissionError("E-02/E-03 Violation: Direct assignment to internal state is prohibited.")
-        super().__setattr__(key, value)
+        raise PermissionError("E-02/E-03 Violation: Direct attribute assignment or tampering is strictly prohibited.")
+
+    def __delattr__(self, key):
+        raise PermissionError("E-02/E-03 Violation: Attribute deletion is forbidden.")
 
     def seal(self):
-        object.__setattr__(self, "_is_sealed", True)
+        super().__setattr__("_is_sealed", True)
 
     def register(self, item):
-        if getattr(self, "_is_sealed", False) or ZeroizationKernel.is_zeroized():
+        if self._is_sealed or ZeroizationKernel.is_zeroized():
             raise PermissionError("E-03 Violation: System in terminal/zeroized state. Operations rejected.")
         self._entries.add(item)
 
