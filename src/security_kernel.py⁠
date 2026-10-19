@@ -6,7 +6,6 @@ Addressing Adversarial Findings E-02, E-03, E-05, E-06
 import os
 import sys
 import ctypes
-import shutil
 import logging
 
 # =====================================================================
@@ -24,7 +23,6 @@ class ProductionPanicHandler:
         # 1. Attempt Network & Socket Isolation (Best effort)
         try:
             if sys.platform.startswith("linux"):
-                # Attempt socket closure/firewall isolation via system call fallback
                 os.system("iptables -A OUTPUT -j DROP > /dev/null 2>&1 || true")
         except Exception:
             pass
@@ -50,7 +48,6 @@ class ZeroizationKernel:
     @classmethod
     def force_zeroize_all(cls):
         cls._is_zeroized = True
-        # Invalidate internal registry references
         LockedRegistryMeta.lockdown_complete()
 
     @classmethod
@@ -96,32 +93,31 @@ class LockedRegistryMeta(type):
 class SecureRegistrySet:
     """
     Hardened encapsulation wrapper for operational registries.
-    Prevents directly mutating underlying '_registry_set' or resetting locked state.
+    Prevents directly mutating underlying '_entries' or resetting locked state.
     """
     def __init__(self, initial_entries=None):
-        self._entries = set(initial_entries) if initial_entries else set()
-        self._is_sealed = False
+        object.__setattr__(self, "_entries", set(initial_entries) if initial_entries else set())
+        object.__setattr__(self, "_is_sealed", False)
 
     def __setattr__(self, key, value):
-        # Intercept any attempt to overwrite _entries or _is_sealed directly
         if getattr(self, "_is_sealed", False) or ZeroizationKernel.is_zeroized():
             raise PermissionError("E-02/E-03 Violation: SecureRegistrySet is sealed and immutable.")
-        if key == "_entries" and hasattr(self, "_entries"):
-            raise PermissionError("E-02/E-03 Violation: Direct assignment to '_entries' is prohibited.")
+        if key in ("_entries", "_is_sealed"):
+            raise PermissionError("E-02/E-03 Violation: Direct assignment to internal state is prohibited.")
         super().__setattr__(key, value)
 
     def seal(self):
-        self._is_sealed = True
+        object.__setattr__(self, "_is_sealed", True)
 
     def register(self, item):
-        if self._is_sealed or ZeroizationKernel.is_zeroized():
+        if getattr(self, "_is_sealed", False) or ZeroizationKernel.is_zeroized():
             raise PermissionError("E-03 Violation: System in terminal/zeroized state. Operations rejected.")
         self._entries.add(item)
 
     def get_entries(self):
         if ZeroizationKernel.is_zeroized():
             return set()
-        return set(self._entries)  # Returns a copy to prevent external mutation
+        return set(self._entries)
 
 
 def verify_and_integrate(operation_name: str, registry_set: SecureRegistrySet):
