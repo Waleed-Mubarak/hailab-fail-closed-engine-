@@ -25,7 +25,11 @@ jobs:
         pip install -e .
         pip install pytest pytest-cov
 
-    - name: Sanity Check File Names (E-04 Validation)
+    - name: Run Automatic Sanitizer Script (E-04 Fix)
+      run: |
+        if [ -f clean_test_files.py ]; then python clean_test_files.py; fi
+
+    - name: Sanity Check File Names Validation
       run: |
         python -c '
         import os, sys
