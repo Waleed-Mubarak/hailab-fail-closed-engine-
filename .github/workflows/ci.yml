@@ -29,6 +29,26 @@ jobs:
       run: |
         if [ -f clean_test_files.py ]; then python clean_test_files.py; fi
 
+    - name: Force Purge Hidden Unicode Paths (E-04 Direct Fix)
+      run: |
+        python -c "
+        import os, shutil
+        for root, dirs, files in os.walk('.', topdown=False):
+            for d in dirs:
+                if '\u2060' in d or not d.strip():
+                    p = os.path.join(root, d)
+                    print(f'Force removing directory: {p}')
+                    shutil.rmtree(p, ignore_errors=True)
+            for f in files:
+                if '\u2060' in f:
+                    p = os.path.join(root, f)
+                    print(f'Force removing file: {p}')
+                    try:
+                        os.remove(p)
+                    except:
+                        pass
+        "
+
     - name: Sanity Check File Names Validation
       run: |
         python -c '
