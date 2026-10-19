@@ -13,10 +13,11 @@ def test_e02_prevent_direct_attribute_tampering():
     s_set = SecureRegistrySet(["op1"])
     s_set.seal()
     
-    # Attempt direct attribute modification via __setattr__
+    # Attempt direct attribute modification via standard assignment
     with pytest.raises(PermissionError, match="E-02/E-03 Violation"):
         s_set._entries = set()
 
+    # Attempt attribute tampering via object.__setattr__
     with pytest.raises(PermissionError, match="E-02/E-03 Violation"):
         object.__setattr__(s_set, "_entries", set())
 
@@ -52,4 +53,3 @@ def test_e06_production_panic_handler():
     with pytest.raises(SystemExit) as exc:
         ProductionPanicHandler.trigger_panic("Test Fault Injection")
     assert exc.value.code == 101
-
