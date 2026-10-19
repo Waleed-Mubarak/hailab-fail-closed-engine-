@@ -13,11 +13,11 @@ def test_e02_prevent_direct_attribute_tampering():
     s_set = SecureRegistrySet(["op1"])
     s_set.seal()
     
-    # Attempt direct attribute modification (Blocked by slots / __setattr__)
-    with pytest.raises((PermissionError, AttributeError)):
+    # Attempt direct attribute modification (Blocked by property setter / __setattr__)
+    with pytest.raises(PermissionError, match="E-02/E-03 Violation"):
         s_set._entries = set()
 
-    with pytest.raises((PermissionError, AttributeError)):
+    with pytest.raises(PermissionError, match="E-02/E-03 Violation"):
         object.__setattr__(s_set, "_entries", set())
 
 
