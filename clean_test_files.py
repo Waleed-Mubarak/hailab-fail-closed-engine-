@@ -1,6 +1,7 @@
 """
 Automatic Test Files Cleaner and Sanitizer Script
-Fixes E-04: Removes invisible Unicode characters (like U+2060) from filenames and directory names.
+Fixes E-04: Removes invisible Unicode characters (like U+2060) from filenames and directory names,
+and cleans up directories that consist entirely of hidden characters.
 """
 
 import os
@@ -18,7 +19,7 @@ def sanitize_name(name):
 def clean_project_files():
     print("[*] بدء فحص وتنظيف الملفات والمجلدات من محارف Unicode الخفية...")
     
-    # استخدام topdown=False لتتمكن من إعادة تسمية المجلدات من الداخل إلى الخارج
+    # استخدام topdown=False لضمان معالجة المجلدات الفرعية والملفات أولاً قبل المجلدات الرئيسية
     for target in TARGET_DIRS:
         if not os.path.exists(target):
             continue
@@ -52,12 +53,21 @@ def clean_project_files():
                     except Exception:
                         pass
 
-            # تنظيف أسماء المجلدات
+            # تنظيف أسماء المجلدات وحذف المجلدات الوهمية الفارغة
             for directory in dirs:
                 old_dir_path = os.path.join(root, directory)
                 clean_dir_name = sanitize_name(directory)
-                new_dir_path = os.path.join(root, clean_dir_name)
                 
+                # إذا أصبح اسم المجلد فارغاً تماماً بعد إزالة الرموز المخفية، احذفه بالكامل
+                if not clean_dir_name.strip():
+                    print(f"[-] حذف مجلد وهمي فارغ/مشفوع: {repr(old_dir_path)}")
+                    try:
+                        shutil.rmtree(old_dir_path)
+                    except Exception as e:
+                        print(f"[-] خطأ في حذف المجلد: {e}")
+                    continue
+
+                new_dir_path = os.path.join(root, clean_dir_name)
                 if old_dir_path != new_dir_path:
                     print(f"[!] تنظيف اسم المجلد: {repr(old_dir_path)} -> {repr(new_dir_path)}")
                     try:
