@@ -59,7 +59,7 @@ class ZeroizationKernel:
 # =====================================================================
 def verify_and_integrate(*args, **kwargs):
     if ZeroizationKernel.is_zeroized():
-        raise PermissionError("E-03 Violation: System is zeroized or in terminal state.")
+        ProductionPanicHandler.trigger_panic("E-03 Violation: System is zeroized or in terminal state.")
     return True
 
 
