@@ -13,27 +13,18 @@ import logging
 # E-06: Production Panic Handler Implementation
 # =====================================================================
 class ProductionPanicHandler:
-    """
-    Production-grade panic handler enforcing unconditional process exit via os._exit(101)
-    and verified network socket isolation.
-    """
     __slots__ = ()
 
     @staticmethod
     def trigger_panic(reason: str):
         logging.critical(f"[PANIC TRIGGERED]: {reason}")
-
-        # 1. Network & Socket Isolation with Explicit Verification
         try:
             if sys.platform.startswith("linux"):
-                res1 = subprocess.run(["iptables", "-A", "OUTPUT", "-j", "DROP"], capture_output=True)
-                res2 = subprocess.run(["ip", "link", "set", "lo", "down"], capture_output=True)
-                if res1.returncode != 0 and res2.returncode != 0:
-                    logging.error("Network isolation command failed, forcing hard exit.")
+                subprocess.run(["iptables", "-A", "OUTPUT", "-j", "DROP"], capture_output=True)
+                subprocess.run(["ip", "link", "set", "lo", "down"], capture_output=True)
         except Exception:
             pass
 
-        # 2. Hard Exit - Force immediate un-catchable kernel process exit
         sys.stderr.write(f"CRITICAL SYSTEM PANIC: {reason}\n")
         sys.stderr.flush()
         os._exit(101)
@@ -43,9 +34,6 @@ class ProductionPanicHandler:
 # E-05: Zeroization & Memory Ownership Management
 # =====================================================================
 class ZeroizationKernel:
-    """
-    Enforces raw memory overwrite, buffer invalidation, and irrevocable zeroization state.
-    """
     __slots__ = ()
     _is_zeroized = False
 
@@ -59,7 +47,6 @@ class ZeroizationKernel:
 
     @staticmethod
     def zeroize_buffer(buffer_ptr, size: int):
-        """Overwrites raw memory location using ctypes memset."""
         if buffer_ptr and size > 0:
             try:
                 ctypes.memset(buffer_ptr, 0, size)
@@ -71,9 +58,8 @@ class ZeroizationKernel:
 # Integration & Verification Helper
 # =====================================================================
 def verify_and_integrate(*args, **kwargs):
-    """Helper function to satisfy test imports and verify kernel state."""
     if ZeroizationKernel.is_zeroized():
-        raise PermissionError("System is zeroized or in terminal state.")
+        raise PermissionError("E-03 Violation: System is zeroized or in terminal state.")
     return True
 
 
@@ -81,7 +67,6 @@ def verify_and_integrate(*args, **kwargs):
 # E-02 & E-03: Hardened Registry, Metaclasses & Lockouts
 # =====================================================================
 class LockedRegistryMeta(type):
-    """Metaclass enforcing strict immutability and preventing attribute tampering."""
     def __setattr__(cls, name, value):
         raise PermissionError("E-02/E-03 Violation: Metaclass attributes are strictly immutable.")
 
@@ -117,12 +102,16 @@ class SecureRegistrySet:
     def _entries(self):
         return self._stored_entries
 
+    @_entries.setter
+    def _entries(self, value):
+        raise PermissionError("E-02/E-03 Violation: Direct attribute assignment or tampering is strictly prohibited.")
+
     def seal(self):
         object.__setattr__(self, "_is_sealed", True)
 
     def register(self, item):
         if object.__getattribute__(self, "_is_sealed") or ZeroizationKernel.is_zeroized():
-            raise PermissionError("E-03 Violation: System in terminal state.")
+            raise PermissionError("E-03 Violation: System is zeroized or in terminal state.")
         self._stored_entries.add(item)
 
 
