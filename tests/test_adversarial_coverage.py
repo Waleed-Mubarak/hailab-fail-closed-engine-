@@ -1,5 +1,6 @@
 import pytest
 import ctypes
+import os
 from src.security_kernel import (
     SecureRegistrySet,
     ZeroizationKernel,
@@ -21,7 +22,10 @@ def test_e02_prevent_direct_attribute_tampering():
         object.__setattr__(s_set, "_entries", set())
 
 
-def test_e03_terminal_state_lockdown():
+def test_e03_terminal_state_lockdown(monkeypatch):
+    # Setup monkeypatch for os._exit to intercept hard exit cleanly in pytest
+    monkeypatch.setattr(os, "_exit", lambda code: (_ for _ in ()).throw(SystemExit(code)))
+
     s_set = SecureRegistrySet(["op1"])
     ZeroizationKernel.force_zeroize_all()
 
@@ -48,7 +52,10 @@ def test_e05_raw_memory_zeroization():
 
 
 # --- E-06 Tests ---
-def test_e06_production_panic_handler():
+def test_e06_production_panic_handler(monkeypatch):
+    # Setup monkeypatch for os._exit to intercept hard exit cleanly in pytest
+    monkeypatch.setattr(os, "_exit", lambda code: (_ for _ in ()).throw(SystemExit(code)))
+
     with pytest.raises(SystemExit) as exc:
         ProductionPanicHandler.trigger_panic("Test Fault Injection")
     assert exc.value.code == 101
