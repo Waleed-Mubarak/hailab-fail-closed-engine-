@@ -1,6 +1,6 @@
 """
 Security Kernel Engine - Hardened Implementation
-Addressing Adversarial Findings E-02, E-03, E-05, E-06
+Addressing Adversarial Findings E-02, E-03, E-05, E-06 with full test compatibility
 """
 
 import os
@@ -68,9 +68,15 @@ class ZeroizationKernel:
 
 
 # =====================================================================
-# E-02 & E-03: Hardened Registry using __slots__ & Strict Lockouts
+# E-02 & E-03: Hardened Registry, Metaclasses & Lockouts
 # =====================================================================
-class StrictImmutableRegistry:
+class LockedRegistryMeta(type):
+    """Metaclass enforcing strict immutability and preventing attribute tampering."""
+    def __setattr__(cls, name, value):
+        raise PermissionError("E-02/E-03 Violation: Metaclass attributes are strictly immutable.")
+
+
+class StrictImmutableRegistry(metaclass=LockedRegistryMeta):
     __slots__ = ("_registry_set", "_locked")
 
     def __init__(self):
