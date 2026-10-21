@@ -94,6 +94,34 @@ jobs:
         pip install -e .
         pip install pytest pytest-cov
 
+    - name: Final Integrity Verification Check
+      run: |
+        python -c '
+        import os
+        bad_chars = ["\u2060", "\u200b", "\ufeff"]
+        infected = []
+        for root, dirs, files in os.walk("."):
+            if ".git" in root or "__pycache__" in root:
+                continue
+            for name in files + dirs:
+                if any(bc in name for bc in bad_chars):
+                    infected.append(os.path.join(root, name))
+            for file in files:
+                if file == "ci.yml": continue
+                fp = os.path.join(root, file)
+                try:
+                    with open(fp, "r", encoding="utf-8", errors="ignore") as f:
+                        if any(bc in f.read() for bc in bad_chars):
+                            infected.append(fp)
+                except:
+                    pass
+        if infected:
+            print(f"❌ Found lingering contamination in: {infected}")
+            exit(1)
+        else:
+            print("✅ ABSOLUTE PURITY VERIFIED: Repository is 100% clean of hidden Unicode and system artifacts.")
+        '
+
     - name: Run Tests with Coverage
       run: |
         PYTHONPATH=. pytest tests/ --cov=src --cov-report=term --cov-report=xml
