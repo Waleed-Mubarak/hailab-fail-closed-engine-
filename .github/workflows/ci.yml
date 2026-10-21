@@ -25,6 +25,7 @@ jobs:
         python -c '
         import os, subprocess
         bad_chars = ["\u2060", "\u200b", "\ufeff"]
+        
         for root, dirs, files in os.walk(".", topdown=False):
             for name in files + dirs:
                 if any(bc in name for bc in bad_chars):
@@ -35,13 +36,11 @@ jobs:
                     new_p = os.path.join(root, clean_name)
                     try:
                         subprocess.run(["git", "mv", old_p, new_p], check=False)
-                        print(f"Git moved: {old_p} -> {new_p}")
                     except Exception:
                         try:
                             os.rename(old_p, new_p)
-                            print(f"Renamed: {old_p} -> {new_p}")
-                        except Exception as e:
-                            print(f"Skipped {old_p}: {e}")
+                        except:
+                            pass
         ' || true
 
     - name: Commit and Push Cleaned Repository State
@@ -67,8 +66,10 @@ jobs:
         violations = []
         for root, dirs, files in os.walk("."):
             for f in files + dirs:
+                if f == "." or f == "..":
+                    continue
                 for bc in bad_chars:
-                    if bc in f:
+                    if bc in f or bc in root:
                         violations.append(os.path.join(root, f))
         if violations:
             print(f"CRITICAL: Found non-standard/hidden unicode characters in paths: {violations}")
