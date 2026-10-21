@@ -163,7 +163,13 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
 
     def zeroize(self):
         _MASTER_REGISTRY.add(self)
-        self.audit_trail.append("ZEROIZED")
+        
+        try:
+            trail = self.__dict__.get('audit_trail')
+            if trail is not None:
+                trail.append("ZEROIZED")
+        except Exception:
+            pass
 
         is_already_zeroized = self.__dict__.get('_FailClosedEngine__is_zeroized', False)
 
