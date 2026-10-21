@@ -165,12 +165,14 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         _MASTER_REGISTRY.add(self)
         self.audit_trail.append("ZEROIZED")
 
-        if not self.__dict__.get('_FailClosedEngine__is_zeroized', False):
-            object.__setattr__(self, '_FailClosedEngine__is_zeroized', True)
-            object.__setattr__(self, '_FailClosedEngine__terminal_state_locked', True)
-            object.__setattr__(self, 'system_locked', True)
-            object.__setattr__(self, 'secure_ram_key_status', "ZEROIZED")
+        is_already_zeroized = self.__dict__.get('_FailClosedEngine__is_zeroized', False)
 
+        object.__setattr__(self, '_FailClosedEngine__is_zeroized', True)
+        object.__setattr__(self, '_FailClosedEngine__terminal_state_locked', True)
+        object.__setattr__(self, 'system_locked', True)
+        object.__setattr__(self, 'secure_ram_key_status', "ZEROIZED")
+
+        if not is_already_zeroized:
             key_buf = self.__dict__.get('_FailClosedEngine__secure_ram_key', None)
             if key_buf is not None:
                 try:
