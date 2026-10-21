@@ -97,6 +97,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
     """
     Fully Hardened Fail-Closed Engine complying with absolute security invariants.
     """
+    __slots__ = ('_quorum_reached', '_FailClosedEngine__is_zeroized', '_FailClosedEngine__terminal_state_locked', 'system_locked', 'secure_ram_key_status', '_FailClosedEngine__secure_ram_key', 'audit_trail')
     _permanently_zeroized = _RegistrySentinel
 
     def __init__(self, *args, **kwargs):
@@ -113,6 +114,10 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return self._FailClosedEngine__is_zeroized or (_MASTER_REGISTRY.contains(self))
 
     def __setattr__(self, name, value):
+        # منع محاولات التلاعب المباشر أو الالتفاف عبر object.__setattr__ بعد التصفير
+        if self.__dict__.get('_FailClosedEngine__terminal_state_locked', False) or self.__dict__.get('_FailClosedEngine__is_zeroized', False):
+            raise PermissionError(f"CRITICAL_BLOCK: P0-03 / E-03: Critical security violation. Engine is locked/zeroized, attribute '{name}' is immutable.")
+
         critical_state_vars = (
             '_FailClosedEngine__is_zeroized',
             '_FailClosedEngine__terminal_state_locked',
@@ -120,8 +125,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
             'secure_ram_key_status'
         )
         if name in critical_state_vars:
-            if self.__dict__.get('_FailClosedEngine__terminal_state_locked', False) or self.__dict__.get('_FailClosedEngine__is_zeroized', False):
-                raise PermissionError(f"CRITICAL_BLOCK: P0-03 / E-03: Critical security violation. State variable '{name}' is immutable post-zeroization.")
+            raise PermissionError(f"CRITICAL_BLOCK: P0-03 / E-03: State variable '{name}' is strictly immutable.")
 
         if name == "__class__":
             raise PermissionError("CRITICAL_BLOCK: P0-03: Class mutation blocked.")
@@ -202,7 +206,7 @@ Layer5SecureEnforcementEngine = FailClosedEngine
 
 
 # ==============================================================================
-# Compatibility Layer for Tests (Fixes ImportError & Method Errors)
+# Compatibility Layer for Tests
 # ==============================================================================
 
 class Layer5Context:
@@ -223,12 +227,12 @@ class MockHSMInterface:
 
 
 # ==============================================================================
-# E-06: Real Socket & OS-Level Panic Network Isolation Handler
+# E-06: Real Socket & OS-Level Panic Network Isolation Handler (With os._exit)
 # ==============================================================================
 
 class ProductionPanicHandler:
     """
-    Enforces absolute OS-level and socket-level network isolation during panic state.
+    Enforces absolute OS-level and socket-level network isolation and uncatchable process termination.
     """
     def __init__(self):
         self.is_isolated = False
@@ -237,7 +241,7 @@ class ProductionPanicHandler:
     def register_socket(self, sock):
         self.active_sockets.append(sock)
 
-    def trigger_panic(self):
+    def trigger_panic(self, reason="CRITICAL_VIOLATION"):
         for s in self.active_sockets:
             try:
                 s.shutdown(socket.SHUT_RDWR)
@@ -256,4 +260,6 @@ class ProductionPanicHandler:
             pass
 
         self.is_isolated = True
-        return True
+        sys.stderr.write(f"CRITICAL SYSTEM PANIC: {reason}\n")
+        sys.stderr.flush()
+        os._exit(101)
