@@ -20,21 +20,26 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: Force Purge and Rename Git Tracked Files with U+2060
+    - name: Ultimate File Path Purge Script
       run: |
         python -c '
-        import subprocess, os
-        target_char = "\u2060"
-        try:
-            files = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
-            for f in files:
-                if target_char in f:
-                    clean_f = f.replace(target_char, "")
-                    os.makedirs(os.path.dirname(clean_f), exist_ok=True) if os.path.dirname(clean_f) else None
-                    subprocess.run(["git", "mv", f, clean_f])
-                    print(f"Cleaned git path: {f} -> {clean_f}")
-        except Exception as e:
-            print(f"Error during git mv: {e}")
+        import os
+        target = "\u2060"
+        for root, dirs, files in os.walk(".", topdown=False):
+            for name in files:
+                if target in name:
+                    old_p = os.path.join(root, name)
+                    new_name = name.replace(target, "")
+                    new_p = os.path.join(root, new_name)
+                    os.rename(old_p, new_p)
+                    print(f"Renamed file: {old_p} -> {new_p}")
+            for name in dirs:
+                if target in name:
+                    old_p = os.path.join(root, name)
+                    new_name = name.replace(target, "")
+                    new_p = os.path.join(root, new_name)
+                    os.rename(old_p, new_p)
+                    print(f"Renamed dir: {old_p} -> {new_p}")
         '
 
     - name: Commit and Push Cleaned Repository State
@@ -42,7 +47,7 @@ jobs:
         git config --local user.name "github-actions[bot]"
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git add -A
-        git commit -m "Auto-purge hidden Unicode U+2060 from repository paths" || echo "No changes to commit"
+        git commit -m "Auto-purge hidden Unicode U+2060 from repository paths and filenames" || echo "No changes to commit"
         git push || echo "No push needed"
 
     - name: Install dependencies
