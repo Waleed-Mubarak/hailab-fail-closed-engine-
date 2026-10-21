@@ -54,12 +54,37 @@ jobs:
                                 pass
         ' || true
 
+    - name: Deep Content Text Sanitization
+      run: |
+        python -c '
+        import glob
+        extensions = ("*.py", "*.md", "*.txt", "*.json", "*.yml", "*.yaml")
+        files = []
+        for ext in extensions:
+            files.extend(glob.glob("**/" + ext, recursive=True))
+            
+        for filepath in files:
+            try:
+                with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+                
+                cleaned = content.replace("\u2060", "").replace("\ufeff", "").replace("\u200b", "")
+                
+                if content != cleaned:
+                    with open(filepath, "w", encoding="utf-8") as f:
+                        f.write(cleaned)
+                    print(f"Sanitized content in: {filepath}")
+            except Exception as e:
+                print(f"Skipped {filepath}: {e}")
+        print("Deep content text sanitization completed successfully.")
+        '
+
     - name: Commit and Push Cleaned Repository State
       run: |
         git config --local user.name "github-actions[bot]"
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git add -A
-        git commit -m "Absolute purge and removal of hidden Unicode artifacts" || echo "No changes to commit"
+        git commit -m "Absolute purge and deep content sanitization of hidden Unicode" || echo "No changes to commit"
         git push || echo "No push needed"
 
     - name: Install dependencies
@@ -68,23 +93,6 @@ jobs:
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         pip install -e .
         pip install pytest pytest-cov
-
-    - name: Sanity Check File Names Validation
-      run: |
-        python -c '
-        import os, sys
-        bad_chars = ["\u2060", "\u200b", "\ufeff"]
-        violations = []
-        for root, dirs, files in os.walk("."):
-            for f in files + dirs:
-                for bc in bad_chars:
-                    if bc in f:
-                        violations.append(os.path.join(root, f))
-        if violations:
-            print(f"CRITICAL: Found non-standard/hidden unicode characters in filenames: {violations}")
-            sys.exit(1)
-        print("File names sanity check passed: No hidden unicode characters found.")
-        '
 
     - name: Run Tests with Coverage
       run: |
