@@ -9,6 +9,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # السماح للأكشن بتحديث ورفع الملفات النظيفة للمستودع
 
     steps:
     - uses: actions/checkout@v4
@@ -18,36 +20,37 @@ jobs:
       with:
         python-version: '3.10'
 
+    - name: Force Purge and Rename Git Tracked Files with U+2060
+      run: |
+        python -c '
+        import subprocess, os
+        target_char = "\u2060"
+        try:
+            files = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
+            for f in files:
+                if target_char in f:
+                    clean_f = f.replace(target_char, "")
+                    os.makedirs(os.path.dirname(clean_f), exist_ok=True) if os.path.dirname(clean_f) else None
+                    subprocess.run(["git", "mv", f, clean_f])
+                    print(f"Cleaned git path: {f} -> {clean_f}")
+        except Exception as e:
+            print(f"Error during git mv: {e}")
+        '
+
+    - name: Commit and Push Cleaned Repository State
+      run: |
+        git config --local user.name "github-actions[bot]"
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git add -A
+        git commit -m "Auto-purge hidden Unicode U+2060 from repository paths" || echo "No changes to commit"
+        git push || echo "No push needed"
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         pip install -e .
         pip install pytest pytest-cov
-
-    - name: Run Automatic Sanitizer Script (E-04 Fix)
-      run: |
-        if [ -f clean_test_files.py ]; then python clean_test_files.py; fi
-
-    - name: Force Purge Hidden Unicode Paths (E-04 Direct Fix)
-      run: |
-        python -c "
-        import os, shutil
-        for root, dirs, files in os.walk('.', topdown=False):
-            for d in dirs:
-                if '\u2060' in d or not d.strip():
-                    p = os.path.join(root, d)
-                    print(f'Force removing directory: {p}')
-                    shutil.rmtree(p, ignore_errors=True)
-            for f in files:
-                if '\u2060' in f:
-                    p = os.path.join(root, f)
-                    print(f'Force removing file: {p}')
-                    try:
-                        os.remove(p)
-                    except:
-                        pass
-        "
 
     - name: Sanity Check File Names Validation
       run: |
