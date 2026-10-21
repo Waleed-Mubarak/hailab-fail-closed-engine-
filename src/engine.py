@@ -163,6 +163,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
 
     def zeroize(self):
         _MASTER_REGISTRY.add(self)
+        self.audit_trail.append("ZEROIZED")
 
         if not self.__dict__.get('_FailClosedEngine__is_zeroized', False):
             object.__setattr__(self, '_FailClosedEngine__is_zeroized', True)
@@ -186,7 +187,6 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
                         key_buf[i] = 0x00
 
             object.__setattr__(self, '_FailClosedEngine__secure_ram_key', None)
-            self.audit_trail.append("ZEROIZED")
 
         return "ENGINE_ZEROIZED"
 
