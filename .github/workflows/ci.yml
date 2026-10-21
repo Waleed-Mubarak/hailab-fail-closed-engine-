@@ -23,24 +23,21 @@ jobs:
     - name: Ultimate File Path Purge Script
       run: |
         python -c '
-        import os
+        import os, subprocess
         target = "\u2060"
         for root, dirs, files in os.walk(".", topdown=False):
             for name in files:
-                if target in name:
+                if target in name or "\u200b" in name or "\ufeff" in name:
                     old_p = os.path.join(root, name)
-                    new_name = name.replace(target, "")
-                    new_p = os.path.join(root, new_name)
-                    os.rename(old_p, new_p)
-                    print(f"Renamed file: {old_p} -> {new_p}")
-            for name in dirs:
-                if target in name:
-                    old_p = os.path.join(root, name)
-                    new_name = name.replace(target, "")
-                    new_p = os.path.join(root, new_name)
-                    os.rename(old_p, new_p)
-                    print(f"Renamed dir: {old_p} -> {new_p}")
-        '
+                    clean_name = name.replace(target, "").replace("\u200b", "").replace("\ufeff", "")
+                    new_p = os.path.join(root, clean_name)
+                    try:
+                        subprocess.run(["git", "mv", old_p, new_p], check=False)
+                        print(f"Git moved: {old_p} -> {new_p}")
+                    except Exception as e:
+                        os.rename(old_p, new_p)
+                        print(f"Renamed: {old_p} -> {new_p}")
+        ' || true
 
     - name: Commit and Push Cleaned Repository State
       run: |
