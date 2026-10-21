@@ -23,7 +23,7 @@ jobs:
     - name: Absolute Root and File Path Purge
       run: |
         python -c '
-        import os, subprocess
+        import os, shutil, subprocess
         bad_chars = ["\u2060", "\u200b", "\ufeff"]
         
         for root, dirs, files in os.walk(".", topdown=False):
@@ -33,14 +33,25 @@ jobs:
                     clean_name = name
                     for bc in bad_chars:
                         clean_name = clean_name.replace(bc, "")
-                    new_p = os.path.join(root, clean_name)
-                    try:
-                        subprocess.run(["git", "mv", old_p, new_p], check=False)
-                    except Exception:
+                    
+                    if not clean_name.strip():
+                        print(f"Force removing artifact with bad chars: {old_p}")
                         try:
-                            os.rename(old_p, new_p)
-                        except:
-                            pass
+                            if os.path.isdir(old_p):
+                                shutil.rmtree(old_p, ignore_errors=True)
+                            else:
+                                os.remove(old_p)
+                        except Exception as e:
+                            print(f"Error removing {old_p}: {e}")
+                    else:
+                        new_p = os.path.join(root, clean_name)
+                        try:
+                            subprocess.run(["git", "mv", old_p, new_p], check=False)
+                        except Exception:
+                            try:
+                                os.rename(old_p, new_p)
+                            except:
+                                pass
         ' || true
 
     - name: Commit and Push Cleaned Repository State
@@ -48,7 +59,7 @@ jobs:
         git config --local user.name "github-actions[bot]"
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git add -A
-        git commit -m "Absolute purge of hidden Unicode from all paths" || echo "No changes to commit"
+        git commit -m "Absolute purge and removal of hidden Unicode artifacts" || echo "No changes to commit"
         git push || echo "No push needed"
 
     - name: Install dependencies
