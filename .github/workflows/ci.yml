@@ -66,15 +66,13 @@ jobs:
         violations = []
         for root, dirs, files in os.walk("."):
             for f in files + dirs:
-                if f == "." or f == "..":
-                    continue
                 for bc in bad_chars:
-                    if bc in f or bc in root:
+                    if bc in f:
                         violations.append(os.path.join(root, f))
         if violations:
-            print(f"CRITICAL: Found non-standard/hidden unicode characters in paths: {violations}")
+            print(f"CRITICAL: Found non-standard/hidden unicode characters in filenames: {violations}")
             sys.exit(1)
-        print("File names and paths sanity check passed: Absolutely clean.")
+        print("File names sanity check passed: No hidden unicode characters found.")
         '
 
     - name: Run Tests with Coverage
