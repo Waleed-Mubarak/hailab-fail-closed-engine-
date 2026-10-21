@@ -97,7 +97,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
     """
     Fully Hardened Fail-Closed Engine complying with absolute security invariants.
     """
-    __slots__ = ('_quorum_reached', '_FailClosedEngine__is_zeroized', '_FailClosedEngine__terminal_state_locked', 'system_locked', 'secure_ram_key_status', '_FailClosedEngine__secure_ram_key', 'audit_trail')
+    __slots__ = ('__dict__', '_quorum_reached', '_FailClosedEngine__is_zeroized', '_FailClosedEngine__terminal_state_locked', 'system_locked', 'secure_ram_key_status', '_FailClosedEngine__secure_ram_key', 'audit_trail')
     _permanently_zeroized = _RegistrySentinel
 
     def __init__(self, *args, **kwargs):
@@ -114,7 +114,6 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return self._FailClosedEngine__is_zeroized or (_MASTER_REGISTRY.contains(self))
 
     def __setattr__(self, name, value):
-        # منع محاولات التلاعب المباشر أو الالتفاف عبر object.__setattr__ بعد التصفير
         if self.__dict__.get('_FailClosedEngine__terminal_state_locked', False) or self.__dict__.get('_FailClosedEngine__is_zeroized', False):
             raise PermissionError(f"CRITICAL_BLOCK: P0-03 / E-03: Critical security violation. Engine is locked/zeroized, attribute '{name}' is immutable.")
 
@@ -252,14 +251,4 @@ class ProductionPanicHandler:
 
         try:
             if sys.platform.startswith("linux"):
-                os.system("ip link set dev eth0 down 2>/dev/null || true")
-                os.system("iptables -F 2>/dev/null || true")
-                os.system("iptables -P INPUT DROP 2>/dev/null || true")
-                os.system("iptables -P OUTPUT DROP 2>/dev/null || true")
-        except Exception:
-            pass
-
-        self.is_isolated = True
-        sys.stderr.write(f"CRITICAL SYSTEM PANIC: {reason}\n")
-        sys.stderr.flush()
-        os._exit(101)
+                os.system("ip link set dev eth0 down 2>/dev/null
