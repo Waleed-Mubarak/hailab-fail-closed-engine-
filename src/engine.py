@@ -28,15 +28,14 @@ class _ProtectedStateDescriptor:
 
     def __set__(self, instance, value):
         if instance is not None:
-            # Check if locked via descriptor or instance state
             locked = self._values.get(instance, False) if self._default is False else getattr(instance, '_locked', False)
-            if locked and self._default is False: # if it's the locked flag itself trying to change or registry when locked
+            if locked and self._default is False:
                 raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry is permanently locked.")
         self._values[instance] = value
 
 
 class _StrictImmutableRegistry:
-    __slots__ = ()  # No direct slots to prevent object.__setattr__ memory injection
+    __slots__ = ('__weakref__',)  # السماح بإنشاء مراجع ضعيفة لـ WeakKeyDictionary دون إخلال بالقفل
     
     _registry_set = _ProtectedStateDescriptor(default=None)
     _locked = _ProtectedStateDescriptor(default=False)
@@ -140,7 +139,6 @@ class EngineStateDescriptor:
 
     def __set__(self, instance, value):
         if instance is not None:
-            # Enforce terminal lockdown check
             try:
                 locked = object.__getattribute__(instance, '_FailClosedEngine__terminal_state_locked')
                 if locked:
