@@ -11,31 +11,38 @@ import socket
 from types import MappingProxyType
 
 # ==============================================================================
-# E-02: Immutable & Encapsulated Security Registry
+# E-02: Immutable & Encapsulated Security Registry (Hardened with __slots__)
 # ==============================================================================
 
 class _StrictImmutableRegistry:
+    __slots__ = ('_registry_set', '_locked')
+
     def __init__(self):
-        self._registry_set = set()
-        self._locked = False
+        object.__setattr__(self, '_registry_set', set())
+        object.__setattr__(self, '_locked', False)
 
     def add(self, item):
-        if self._locked:
+        if object.__getattribute__(self, '_locked'):
             raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry is permanently locked.")
-        self._registry_set.add(item)
+        object.__getattribute__(self, '_registry_set').add(item)
 
     def contains(self, item):
-        return item in self._registry_set
+        return item in object.__getattribute__(self, '_registry_set')
 
     def get_immutable_snapshot(self):
-        return tuple(self._registry_set)
+        return tuple(object.__getattribute__(self, '_registry_set'))
+
+    def __setattr__(self, name, value):
+        raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry attribute modification blocked.")
 
 _MASTER_REGISTRY = _StrictImmutableRegistry()
 
 
 class _SecureRegistrySet:
+    __slots__ = ('_owner_id',)
+
     def __init__(self, owner_id):
-        self._owner_id = owner_id
+        object.__setattr__(self, '_owner_id', owner_id)
 
     def add(self, item):
         _MASTER_REGISTRY.add(item)
@@ -52,7 +59,7 @@ class _SecureRegistrySet:
     def discard(self, item):
         raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry mutation strictly forbidden.")
 
-    def clear(self):
+    def clear(self, item=None):
         raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry clearing strictly forbidden.")
 
     def remove(self, item):
@@ -97,7 +104,16 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
     """
     Fully Hardened Fail-Closed Engine complying with absolute security invariants.
     """
-    __slots__ = ('__dict__', '_quorum_reached', '_FailClosedEngine__is_zeroized', '_FailClosedEngine__terminal_state_locked', 'system_locked', 'secure_ram_key_status', '_FailClosedEngine__secure_ram_key', 'audit_trail')
+    # تم إزالة '__dict__' من __slots__ لحل مشكلة E-05 جذرياً وضمان منع التخزين الخارجي
+    __slots__ = (
+        '_quorum_reached', 
+        '_FailClosedEngine__is_zeroized', 
+        '_FailClosedEngine__terminal_state_locked', 
+        'system_locked', 
+        'secure_ram_key_status', 
+        '_FailClosedEngine__secure_ram_key', 
+        'audit_trail'
+    )
     _permanently_zeroized = _RegistrySentinel
 
     def __init__(self, *args, **kwargs):
@@ -111,10 +127,10 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
 
     @property
     def is_zeroized(self):
-        return self._FailClosedEngine__is_zeroized or (_MASTER_REGISTRY.contains(self))
+        return object.__getattribute__(self, '_FailClosedEngine__is_zeroized') or (_MASTER_REGISTRY.contains(self))
 
     def __setattr__(self, name, value):
-        if self.__dict__.get('_FailClosedEngine__terminal_state_locked', False) or self.__dict__.get('_FailClosedEngine__is_zeroized', False):
+        if object.__getattribute__(self, '_FailClosedEngine__terminal_state_locked') or object.__getattribute__(self, '_FailClosedEngine__is_zeroized'):
             raise PermissionError(f"CRITICAL_BLOCK: P0-03 / E-03: Critical security violation. Engine is locked/zeroized, attribute '{name}' is immutable.")
 
         critical_state_vars = (
@@ -135,7 +151,12 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         raise PermissionError("CRITICAL_BLOCK: P0-03: Deletion of attributes prohibited.")
 
     def _check_admissibility(self):
-        key = self.__dict__.get('_FailClosedEngine__secure_ram_key', None)
+        # استخدام object.__getattribute__ بدلاً من __dict__.get للوصول للمفتاح المحمي في الـ slots
+        try:
+            key = object.__getattribute__(self, '_FailClosedEngine__secure_ram_key')
+        except AttributeError:
+            return False
+        
         if not key or all(b == 0 for b in key):
             return False
         return True
@@ -155,7 +176,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
 
         if quorum_flags and all(quorum_flags):
             object.__setattr__(self, '_quorum_reached', True)
-            self.audit_trail.append("QUORUM_REACHED")
+            object.__getattribute__(self, 'audit_trail').append("QUORUM_REACHED")
             return "OPERATION_SUCCESS: Quorum reached."
 
         self.zeroize()
@@ -165,13 +186,13 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         _MASTER_REGISTRY.add(self)
         
         try:
-            trail = self.__dict__.get('audit_trail')
+            trail = object.__getattribute__(self, 'audit_trail')
             if trail is not None:
                 trail.append("ZEROIZED")
         except Exception:
             pass
 
-        is_already_zeroized = self.__dict__.get('_FailClosedEngine__is_zeroized', False)
+        is_already_zeroized = object.__getattribute__(self, '_FailClosedEngine__is_zeroized')
 
         object.__setattr__(self, '_FailClosedEngine__is_zeroized', True)
         object.__setattr__(self, '_FailClosedEngine__terminal_state_locked', True)
@@ -179,7 +200,11 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         object.__setattr__(self, 'secure_ram_key_status', "ZEROIZED")
 
         if not is_already_zeroized:
-            key_buf = self.__dict__.get('_FailClosedEngine__secure_ram_key', None)
+            try:
+                key_buf = object.__getattribute__(self, '_FailClosedEngine__secure_ram_key')
+            except AttributeError:
+                key_buf = None
+
             if key_buf is not None:
                 try:
                     buf_len = len(key_buf)
@@ -201,10 +226,10 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
     def inspect_raw_memory_snapshot(self):
         return {
             "zeroized": self.is_zeroized,
-            "system_locked": self.__dict__.get('system_locked', True),
-            "quorum_reached": self.__dict__.get('_quorum_reached', False),
-            "secure_ram_key_status": self.__dict__.get('secure_ram_key_status', "ZEROIZED"),
-            "audit_trail": self.__dict__.get('audit_trail', [])
+            "system_locked": object.__getattribute__(self, 'system_locked'),
+            "quorum_reached": object.__getattribute__(self, '_quorum_reached'),
+            "secure_ram_key_status": object.__getattribute__(self, 'secure_ram_key_status'),
+            "audit_trail": object.__getattribute__(self, 'audit_trail')
         }
 
 
@@ -217,12 +242,14 @@ Layer5SecureEnforcementEngine = FailClosedEngine
 # ==============================================================================
 
 class Layer5Context:
+    __slots__ = ()
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
-            setattr(self, k, v)
+            object.__setattr__(self, k, v)
 
 
 class MockHSMInterface:
+    __slots__ = ()
     def __init__(self, *args, **kwargs):
         pass
 
@@ -241,21 +268,23 @@ class ProductionPanicHandler:
     """
     Enforces absolute OS-level and socket-level network isolation and uncatchable process termination.
     """
+    __slots__ = ('is_isolated', 'active_sockets')
+
     def __init__(self):
-        self.is_isolated = False
-        self.active_sockets = []
+        object.__setattr__(self, 'is_isolated', False)
+        object.__setattr__(self, 'active_sockets', [])
 
     def register_socket(self, sock):
-        self.active_sockets.append(sock)
+        object.__getattribute__(self, 'active_sockets').append(sock)
 
     def trigger_panic(self, reason="CRITICAL_VIOLATION"):
-        for s in self.active_sockets:
+        for s in object.__getattribute__(self, 'active_sockets'):
             try:
                 s.shutdown(socket.SHUT_RDWR)
                 s.close()
             except Exception:
                 pass
-        self.active_sockets.clear()
+        object.__getattribute__(self, 'active_sockets').clear()
 
         try:
             if sys.platform.startswith("linux"):
@@ -266,7 +295,7 @@ class ProductionPanicHandler:
         except Exception:
             pass
 
-        self.is_isolated = True
+        object.__setattr__(self, 'is_isolated', True)
         sys.stderr.write(f"CRITICAL SYSTEM PANIC: {reason}\n")
         sys.stderr.flush()
         os._exit(101)
