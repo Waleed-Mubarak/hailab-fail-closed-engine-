@@ -2,24 +2,25 @@
 TurkashEngine / FailClosedEngine Core Module
 Strict Production-Grade Implementation Closing E-02 through E-06
 Architectural Guarantees: Immutable Registry, Absolute State Lockdown, In-Place Purge & Real Socket Isolation
-Hardened against object.__setattr__ and __delete__ bypasses via true Descriptors and CI-compatible error messages.
+Hardened against instance_uid tampering and state bypasses via immutable Descriptors.
 """
 
 import os
 import sys
 import ctypes
 import socket
+import subprocess
 import itertools
 
-# Global atomic counter for unique instance IDs to prevent address recycling collisions
+# Global atomic counter for unique instance IDs
 _INSTANCE_ID_COUNTER = itertools.count(1)
 
 # ==============================================================================
-# E-02: Immutable & Encapsulated Security Registry (Hardened against object.__setattr__)
+# E-02: Immutable & Encapsulated Security Registry (Hardened)
 # ==============================================================================
 
 class _ProtectedStateDescriptor:
-    """Descriptor that intercepts all writes and deletions, using unique immutable instance IDs."""
+    """Descriptor that intercepts all writes and locks state permanently."""
     def __init__(self, default=None):
         self._values = {}
         self._default = default
@@ -45,7 +46,7 @@ class _ProtectedStateDescriptor:
             self._values[uid] = value
 
     def __delete__(self, instance):
-        raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry descriptor deletion strictly forbidden.")
+        raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Deletion forbidden.")
 
 
 class _StrictImmutableRegistry:
@@ -80,76 +81,38 @@ class _StrictImmutableRegistry:
         else:
             raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry attribute modification blocked.")
 
+
 StrictImmutableRegistry = _StrictImmutableRegistry
 _MASTER_REGISTRY = _StrictImmutableRegistry()
 
 
-class _SecureRegistrySet:
-    __slots__ = ('_owner_id',)
-
-    def __init__(self, owner_id):
-        object.__setattr__(self, '_owner_id', owner_id)
-
-    def add(self, item):
-        _MASTER_REGISTRY.add(item)
-
-    def __contains__(self, item):
-        return _MASTER_REGISTRY.contains(item)
-
-    def __iter__(self):
-        return iter(_MASTER_REGISTRY.get_immutable_snapshot())
-
-    def __len__(self):
-        return len(_MASTER_REGISTRY.get_immutable_snapshot())
-
-    def discard(self, item):
-        raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry mutation strictly forbidden.")
-
-    def clear(self, item=None):
-        raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry clearing strictly forbidden.")
-
-    def remove(self, item):
-        raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry removal strictly forbidden.")
-
-    def pop(self, item=None):
-        raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry pop strictly forbidden.")
-
-
-class _RegistrySentinelMeta(type):
-    def __setattr__(cls, name, value):
-        raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Metadata replacement strictly blocked.")
-    
-    def __contains__(cls, engine):
-        return _MASTER_REGISTRY.contains(engine)
-
-
-class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
-    @classmethod
-    def add(cls, engine):
-        _MASTER_REGISTRY.add(engine)
-
-    @classmethod
-    def discard(cls, engine):
-        raise PermissionError("CRITICAL_BLOCK: P0-05: Forbidden.")
-
-    @classmethod
-    def clear(cls):
-        raise PermissionError("CRITICAL_BLOCK: P0-05: Forbidden.")
-
-
 # ==============================================================================
-# E-03 & E-05: Fail-Closed Core Engine with Test-Compatible Descriptors
+# E-03 & E-05: Fail-Closed Core Engine with Immutable Instance ID & Descriptors
 # ==============================================================================
+
+class ImmutableInstanceIDDescriptor:
+    """Descriptor that guarantees _instance_uid can be set exactly once and never modified."""
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        return getattr(instance, '_frozen_uid', None)
+
+    def __set__(self, instance, value):
+        if instance is not None:
+            current = getattr(instance, '_frozen_uid', None)
+            if current is not None:
+                raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Tampering detected. _instance_uid is immutable.")
+            object.__setattr__(instance, '_frozen_uid', value)
+
+    def __delete__(self, instance):
+        raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Deletion of instance ID prohibited.")
+
 
 class EngineStateDescriptor:
-    """True data descriptor allowing adversarial state injection while master registry enforces fail-closed invariants."""
+    """True data descriptor protecting engine states and preventing un-zeroizing."""
     def __init__(self, default_value=False):
         self._values = {}
         self._default = default_value
-        self._name = None
-
-    def __set_name__(self, owner, name):
-        self._name = name
 
     def __get__(self, instance, owner):
         if instance is None:
@@ -165,7 +128,12 @@ class EngineStateDescriptor:
             if uid is None:
                 uid = next(_INSTANCE_ID_COUNTER)
                 object.__setattr__(instance, '_instance_uid', uid)
-            # Allow adversarial state injection (setting to False) so tests can proceed to execution check
+            
+            # Absolute lockdown: once locked/zeroized, cannot be reset to False
+            current_val = self._values.get(uid, self._default)
+            if current_val is True and value is False:
+                raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Terminal state locked. Cannot un-zeroize.")
+            
             self._values[uid] = value
 
     def __delete__(self, instance):
@@ -189,14 +157,15 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         'audit_trail'
     )
     
+    _instance_uid = ImmutableInstanceIDDescriptor()
     _FailClosedEngine__is_zeroized = EngineStateDescriptor(default_value=False)
     _FailClosedEngine__terminal_state_locked = EngineStateDescriptor(default_value=False)
     system_locked = EngineStateDescriptor(default_value=False)
 
-    _permanently_zeroized = _RegistrySentinel
-
     def __init__(self, *args, **kwargs):
-        object.__setattr__(self, '_instance_uid', next(_INSTANCE_ID_COUNTER))
+        uid = next(_INSTANCE_ID_COUNTER)
+        object.__setattr__(self, '_frozen_uid', uid)
+        object.__setattr__(self, '_instance_uid', uid)
         object.__setattr__(self, '_quorum_reached', False)
         self._FailClosedEngine__is_zeroized = False
         self._FailClosedEngine__terminal_state_locked = False
@@ -220,16 +189,19 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
 
     @property
     def is_zeroized(self):
-        return True if getattr(self, '_FailClosedEngine__terminal_state_locked', False) else (self._FailClosedEngine__is_zeroized or _MASTER_REGISTRY.contains(self))
+        return True if (self._FailClosedEngine__terminal_state_locked or self._FailClosedEngine__is_zeroized or _MASTER_REGISTRY.contains(self)) else False
 
     def __setattr__(self, name, value):
+        if self.is_zeroized:
+            raise PermissionError(f"CRITICAL_BLOCK: P0-03 / E-03: Critical security violation. Engine is zeroized, attribute '{name}' is immutable.")
+
         critical_state_vars = (
             '_FailClosedEngine__is_zeroized',
             '_FailClosedEngine__terminal_state_locked',
             'system_locked',
-            'secure_ram_key_status'
+            'secure_ram_key_status',
+            '_instance_uid'
         )
-        
         if name in critical_state_vars:
             super(FailClosedEngine, type(self)).__setattr__(self, name, value)
             return
@@ -240,7 +212,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         super().__setattr__(name, value)
 
     def __delattr__(self, name):
-        raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Deletion of attributes prohibited.")
+        raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Deletion prohibited.")
 
     def _check_admissibility(self):
         try:
@@ -253,15 +225,19 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return True
 
     def _verify_constitutional_integrity(self):
-        if type(self) is not FailClosedEngine and type(self) is not TurkashEngine:
+        if type(self) is not FailClosedEngine:
             raise PermissionError("CRITICAL_BLOCK: P0-03: Constitutional integrity violation.")
+        if self.is_zeroized:
+            raise PermissionError("CRITICAL_BLOCK: P0-03 - Engine is zeroized and permanently locked.")
         if not self._check_admissibility():
             raise PermissionError("CRITICAL_BLOCK: P0-04 - RAM key admissibility check failed.")
-        if self._FailClosedEngine__terminal_state_locked or _MASTER_REGISTRY.contains(self) or self._FailClosedEngine__is_zeroized:
-            raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Critical security violation. Engine is locked/zeroized.")
         return True
 
     def execute_critical_operation(self, *args, **kwargs):
+        # Absolute check: if zeroized at any level, reject immediately
+        if self.is_zeroized:
+            raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Operation denied. Engine is in terminal zeroized state.")
+        
         self._verify_constitutional_integrity()
         quorum_flags = kwargs.get('quorum_flags') or kwargs.get('quorum') or (args[0] if args else None)
 
@@ -274,7 +250,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return "DENY"
 
     def zeroize(self):
-        is_already_zeroized = self._FailClosedEngine__is_zeroized
+        is_already_zeroized = self.is_zeroized
         
         _MASTER_REGISTRY.add(self)
         
@@ -328,33 +304,12 @@ Layer5SecureEnforcementEngine = FailClosedEngine
 
 
 # ==============================================================================
-# Compatibility Layer for Tests
-# ==============================================================================
-
-class Layer5Context:
-    def __init__(self, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self, k, v)
-
-
-class MockHSMInterface:
-    def __init__(self, *args, **kwargs):
-        pass
-
-    def sign(self, data):
-        return b"mock_signature"
-
-    def verify(self, data, signature):
-        return True
-
-
-# ==============================================================================
-# E-06: Real Socket & OS-Level Panic Network Isolation Handler (With os._exit)
+# E-06: Real Socket & OS-Level Panic Network Isolation Handler (Robust Logging)
 # ==============================================================================
 
 class ProductionPanicHandler:
     """
-    Enforces absolute OS-level and socket-level network isolation and uncatchable process termination.
+    Enforces absolute OS-level and socket-level network isolation with explicit error tracing.
     """
     __slots__ = ('is_isolated', 'active_sockets')
 
@@ -376,12 +331,27 @@ class ProductionPanicHandler:
 
         try:
             if sys.platform.startswith("linux"):
-                os.system("ip link set dev eth0 down 2>/dev/null || true")
-                os.system("iptables -F 2>/dev/null || true")
-                os.system("iptables -P INPUT DROP 2>/dev/null || true")
-                os.system("iptables -P OUTPUT DROP 2>/dev/null || true")
-        except Exception:
-            pass
+                interfaces = ["eth0", "ens33", "enp3s0"]
+                for iface in interfaces:
+                    res = subprocess.run(
+                        ["ip", "link", "set", "dev", iface, "down"],
+                        capture_output=True,
+                        text=True,
+                        check=False
+                    )
+                    if res.returncode == 0:
+                        break
+
+                iptables_commands = [
+                    ["iptables", "-F"],
+                    ["iptables", "-P", "INPUT", "DROP"],
+                    ["iptables", "-P", "OUTPUT", "DROP"],
+                    ["iptables", "-P", "FORWARD", "DROP"]
+                ]
+                for cmd in iptables_commands:
+                    subprocess.run(cmd, capture_output=True, text=True, check=False)
+        except Exception as e:
+            sys.stderr.write(f"PANIC HANDLER WARNING: Network isolation encountered exception: {e}\n")
 
         object.__setattr__(self, 'is_isolated', True)
         sys.stderr.write(f"CRITICAL SYSTEM PANIC: {reason}\n")
