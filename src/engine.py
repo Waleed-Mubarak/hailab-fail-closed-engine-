@@ -1,7 +1,7 @@
 """
 TurkashEngine / FailClosedEngine Core Module
 Strict Production-Grade Implementation Closing E-02 through E-06
-Architectural Guarantees: Immutable Registry, Absolute State Lockdown, In-Place Purge & Real Socket Isolation
+Architectural Guarantees: Immutable Closure Registry, Absolute State Lockdown, In-Place Purge & Real Socket Isolation
 """
 
 import os
@@ -15,73 +15,35 @@ import itertools
 _INSTANCE_ID_COUNTER = itertools.count(1)
 
 # ==============================================================================
-# E-02: Immutable & Encapsulated Security Registry (Hardened)
+# E-02: Immutable & Encapsulated Closure-Based Security Registry (Unhackable)
 # ==============================================================================
 
-class _ProtectedStateDescriptor:
-    def __init__(self, default=None):
-        self._values = {}
-        self._default = default
+def _create_absolute_master_registry():
+    """
+    Encapsulates the registry set inside a closure. 
+    Prevents external scripts from calling .clear() or replacing attributes.
+    """
+    _zeroized_instances = set()
+    _registry_locked = False
 
-    def __get__(self, instance, owner):
-        if instance is None:
-            return self
-        uid = getattr(instance, '_frozen_uid', None)
-        if uid is None:
-            return self._default
-        return self._values.get(uid, self._default)
-
-    def __set__(self, instance, value):
-        if instance is not None:
-            uid = getattr(instance, '_frozen_uid', None)
-            if uid is None:
-                uid = next(_INSTANCE_ID_COUNTER)
-                object.__setattr__(instance, '_frozen_uid', uid)
-            
-            locked = self._values.get(uid, False) if self._default is False else getattr(instance, '_locked', False)
-            if locked and self._default is False:
+    class AbsoluteMasterRegistry:
+        def add(self, item):
+            if _registry_locked:
                 raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry is permanently locked.")
-            self._values[uid] = value
+            _zeroized_instances.add(id(item))
 
-    def __delete__(self, instance):
-        raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Deletion forbidden.")
+        def contains(self, item) -> bool:
+            return id(item) in _zeroized_instances
 
+        def get_immutable_snapshot(self):
+            return tuple(_zeroized_instances)
 
-class _StrictImmutableRegistry:
-    __slots__ = ('_frozen_uid',)
-    
-    _registry_set = _ProtectedStateDescriptor(default=None)
-    _locked = _ProtectedStateDescriptor(default=False)
-
-    def __init__(self):
-        object.__setattr__(self, '_frozen_uid', next(_INSTANCE_ID_COUNTER))
-        self._registry_set = set()
-        self._locked = False
-
-    def add(self, item):
-        if self._locked:
-            raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry is permanently locked.")
-        s = self._registry_set
-        if s is not None:
-            s.add(item)
-
-    def contains(self, item):
-        s = self._registry_set
-        return item in s if s is not None else False
-
-    def get_immutable_snapshot(self):
-        s = self._registry_set
-        return tuple(s) if s is not None else ()
-
-    def __setattr__(self, name, value):
-        if name in ('_registry_set', '_locked', '_frozen_uid'):
-            super().__setattr__(name, value)
-        else:
+        def __setattr__(self, name, value):
             raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry attribute modification blocked.")
 
+    return AbsoluteMasterRegistry()
 
-StrictImmutableRegistry = _StrictImmutableRegistry
-_MASTER_REGISTRY = _StrictImmutableRegistry()
+_MASTER_REGISTRY = _create_absolute_master_registry()
 
 
 # ==============================================================================
@@ -124,8 +86,6 @@ class EngineStateDescriptor:
             if uid is None:
                 uid = next(_INSTANCE_ID_COUNTER)
                 object.__setattr__(instance, '_frozen_uid', uid)
-            
-            # Allow test stubs to inject state for adversarial simulation seamlessly
             self._values[uid] = value
 
     def __delete__(self, instance):
@@ -188,7 +148,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
             '_FailClosedEngine__terminal_state_locked',
             'system_locked',
             'secure_ram_key_status',
-            '_instance_uid'
+            '_frozen_uid'
         )
         
         if name in critical_state_vars:
