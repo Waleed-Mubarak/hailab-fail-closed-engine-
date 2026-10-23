@@ -218,13 +218,6 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
                         key_buf[i] = 0x00
 
             object.__setattr__(self, '_FailClosedEngine__secure_ram_key', None)
-        else:
-            try:
-                trail = object.__getattribute__(self, 'audit_trail')
-                if trail is not None:
-                    trail.append("ZEROIZED")
-            except Exception:
-                pass
 
         return "ENGINE_ZEROIZED"
 
