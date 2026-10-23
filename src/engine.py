@@ -224,7 +224,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
 
     @property
     def is_zeroized(self):
-        return self._FailClosedEngine__is_zeroized or (_MASTER_REGISTRY.contains(self))
+        return True if getattr(self, '_FailClosedEngine__terminal_state_locked', False) else (self._FailClosedEngine__is_zeroized or _MASTER_REGISTRY.contains(self))
 
     def __setattr__(self, name, value):
         critical_state_vars = (
@@ -264,6 +264,8 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
             raise PermissionError("CRITICAL_BLOCK: P0-03: Constitutional integrity violation.")
         if not self._check_admissibility():
             raise PermissionError("CRITICAL_BLOCK: P0-04 - RAM key admissibility check failed.")
+        if self._FailClosedEngine__terminal_state_locked or _MASTER_REGISTRY.contains(self):
+            raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Critical security violation. Engine is locked/zeroized.")
         if self.is_zeroized:
             raise PermissionError("CRITICAL_BLOCK: P0-03 - Engine is zeroized.")
         return True
