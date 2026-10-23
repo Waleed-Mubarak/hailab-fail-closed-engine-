@@ -2,7 +2,7 @@
 TurkashEngine / FailClosedEngine Core Module
 Strict Production-Grade Implementation Closing E-02 through E-06
 Architectural Guarantees: Immutable Registry, Absolute State Lockdown, In-Place Purge & Real Socket Isolation
-Hardened against object.__setattr__ bypasses via true Descriptors and idempotent state handling.
+Hardened against object.__setattr__ bypasses via true Descriptors and exact test-compatible error messages.
 """
 
 import os
@@ -135,14 +135,18 @@ class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
 
 
 # ==============================================================================
-# E-03 & E-05: Fail-Closed Core Engine with Idempotent Descriptors
+# E-03 & E-05: Fail-Closed Core Engine with Test-Compatible Descriptors
 # ==============================================================================
 
 class EngineStateDescriptor:
-    """True data descriptor allowing idempotent locking while strictly blocking un-zeroizing."""
+    """True data descriptor with exact test-compatible error messages for immutability violations."""
     def __init__(self, default_value=False):
         self._values = {}
         self._default = default_value
+        self._name = None
+
+    def __set_name__(self, owner, name):
+        self._name = name
 
     def __get__(self, instance, owner):
         if instance is None:
@@ -160,8 +164,10 @@ class EngineStateDescriptor:
                 object.__setattr__(instance, '_instance_uid', uid)
             
             current_val = self._values.get(uid, self._default)
+            name = self._name or "state variable"
+            
             if current_val and value is False:
-                raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Terminal state locked. Cannot un-zeroize.")
+                raise PermissionError(f"CRITICAL_BLOCK: P0-03 / E-03: State variable '{name}' is strictly immutable.")
             
             self._values[uid] = value
 
