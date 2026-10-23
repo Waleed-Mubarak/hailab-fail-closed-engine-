@@ -182,16 +182,16 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return "DENY"
 
     def zeroize(self):
+        is_already_zeroized = object.__getattribute__(self, '_FailClosedEngine__is_zeroized')
+        
         _MASTER_REGISTRY.add(self)
         
         try:
             trail = object.__getattribute__(self, 'audit_trail')
-            if trail is not None:
+            if trail is not None and not is_already_zeroized:
                 trail.append("ZEROIZED")
         except Exception:
             pass
-
-        is_already_zeroized = object.__getattribute__(self, '_FailClosedEngine__is_zeroized')
 
         object.__setattr__(self, '_FailClosedEngine__is_zeroized', True)
         object.__setattr__(self, '_FailClosedEngine__terminal_state_locked', True)
@@ -218,6 +218,13 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
                         key_buf[i] = 0x00
 
             object.__setattr__(self, '_FailClosedEngine__secure_ram_key', None)
+        else:
+            try:
+                trail = object.__getattribute__(self, 'audit_trail')
+                if trail is not None:
+                    trail.append("ZEROIZED")
+            except Exception:
+                pass
 
         return "ENGINE_ZEROIZED"
 
