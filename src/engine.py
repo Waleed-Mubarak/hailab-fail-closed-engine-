@@ -15,11 +15,12 @@ from types import MappingProxyType
 # ==============================================================================
 
 class _StrictImmutableRegistry:
-    __slots__ = ('_registry_set', '_locked')
+    __slots__ = ('_registry_set', '_locked', '__setattr_guard__')
 
     def __init__(self):
         object.__setattr__(self, '_registry_set', set())
         object.__setattr__(self, '_locked', False)
+        object.__setattr__(self, '__setattr_guard__', True)
 
     def add(self, item):
         if object.__getattribute__(self, '_locked'):
@@ -35,6 +36,7 @@ class _StrictImmutableRegistry:
     def __setattr__(self, name, value):
         raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry attribute modification blocked.")
 
+StrictImmutableRegistry = _StrictImmutableRegistry
 _MASTER_REGISTRY = _StrictImmutableRegistry()
 
 
@@ -105,7 +107,6 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
     Fully Hardened Fail-Closed Engine complying with absolute security invariants.
     """
     __slots__ = (
-        '__dict__',
         '_quorum_reached', 
         '_FailClosedEngine__is_zeroized', 
         '_FailClosedEngine__terminal_state_locked', 
