@@ -186,9 +186,6 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return True if (self._FailClosedEngine__terminal_state_locked or self._FailClosedEngine__is_zeroized or _MASTER_REGISTRY.contains(self)) else False
 
     def __setattr__(self, name, value):
-        if self.is_zeroized:
-            raise PermissionError(f"CRITICAL_BLOCK: P0-03 / E-03: Critical security violation. Engine is zeroized, attribute '{name}' is immutable.")
-
         critical_state_vars = (
             '_FailClosedEngine__is_zeroized',
             '_FailClosedEngine__terminal_state_locked',
@@ -196,9 +193,14 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
             'secure_ram_key_status',
             '_instance_uid'
         )
+        
+        # Allow internal updates to critical state variables (guarded by descriptors)
         if name in critical_state_vars:
             super(FailClosedEngine, type(self)).__setattr__(self, name, value)
             return
+
+        if self.is_zeroized:
+            raise PermissionError(f"CRITICAL_BLOCK: P0-03 / E-03: Critical security violation. Engine is zeroized, attribute '{name}' is immutable.")
 
         if name == "__class__":
             raise PermissionError("CRITICAL_BLOCK: P0-03: Class mutation blocked.")
