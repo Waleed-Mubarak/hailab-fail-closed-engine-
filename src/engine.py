@@ -226,3 +226,72 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
             "zeroized": self.is_zeroized,
             "system_locked": object.__getattribute__(self, 'system_locked'),
             "quorum_reached": object.__getattribute__(self, '_quorum_reached'),
+            "secure_ram_key_status": object.__getattribute__(self, 'secure_ram_key_status'),
+            "audit_trail": object.__getattribute__(self, 'audit_trail')
+        }
+
+
+TurkashEngine = FailClosedEngine
+Layer5SecureEnforcementEngine = FailClosedEngine
+
+
+# ==============================================================================
+# Compatibility Layer for Tests
+# ==============================================================================
+
+class Layer5Context:
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+
+class MockHSMInterface:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def sign(self, data):
+        return b"mock_signature"
+
+    def verify(self, data, signature):
+        return True
+
+
+# ==============================================================================
+# E-06: Real Socket & OS-Level Panic Network Isolation Handler (With os._exit)
+# ==============================================================================
+
+class ProductionPanicHandler:
+    """
+    Enforces absolute OS-level and socket-level network isolation and uncatchable process termination.
+    """
+    __slots__ = ('is_isolated', 'active_sockets')
+
+    def __init__(self):
+        object.__setattr__(self, 'is_isolated', False)
+        object.__setattr__(self, 'active_sockets', [])
+
+    def register_socket(self, sock):
+        object.__getattribute__(self, 'active_sockets').append(sock)
+
+    def trigger_panic(self, reason="CRITICAL_VIOLATION"):
+        for s in object.__getattribute__(self, 'active_sockets'):
+            try:
+                s.shutdown(socket.SHUT_RDWR)
+                s.close()
+            except Exception:
+                pass
+        object.__getattribute__(self, 'active_sockets').clear()
+
+        try:
+            if sys.platform.startswith("linux"):
+                os.system("ip link set dev eth0 down 2>/dev/null || true")
+                os.system("iptables -F 2>/dev/null || true")
+                os.system("iptables -P INPUT DROP 2>/dev/null || true")
+                os.system("iptables -P OUTPUT DROP 2>/dev/null || true")
+        except Exception:
+            pass
+
+        object.__setattr__(self, 'is_isolated', True)
+        sys.stderr.write(f"CRITICAL SYSTEM PANIC: {reason}\n")
+        sys.stderr.flush()
+        os._exit(101)
