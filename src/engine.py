@@ -142,7 +142,7 @@ class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
 # ==============================================================================
 
 class EngineStateDescriptor:
-    """True data descriptor with CI-compatible error messages for immutability and deletion violations."""
+    """True data descriptor allowing idempotent locking while strictly blocking un-zeroizing."""
     def __init__(self, default_value=False):
         self._values = {}
         self._default = default_value
@@ -167,16 +167,13 @@ class EngineStateDescriptor:
                 object.__setattr__(instance, '_instance_uid', uid)
             
             current_val = self._values.get(uid, self._default)
-            name = self._name or "state variable"
-            
             if current_val and value is False:
-                raise PermissionError(f"CRITICAL_BLOCK: P0-03 / E-03: Critical security violation. Engine is locked/zeroized, attribute '{name}' is immutable.")
+                raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Terminal state locked. Cannot un-zeroize.")
             
             self._values[uid] = value
 
     def __delete__(self, instance):
-        name = self._name or "state variable"
-        raise PermissionError(f"CRITICAL_BLOCK: P0-03 / E-03: Critical security violation. Deletion of attribute '{name}' is strictly prohibited.")
+        raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Deletion of attributes prohibited.")
 
 
 class FailClosedEngineMeta(type):
@@ -242,7 +239,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
             return
 
         if self._FailClosedEngine__terminal_state_locked or self._FailClosedEngine__is_zeroized:
-            raise PermissionError(f"CRITICAL_BLOCK: P0-03 / E-03: Critical security violation. Engine is locked/zeroized, attribute '{name}' is immutable.")
+            raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Terminal state locked. Cannot un-zeroize.")
 
         if name == "__class__":
             raise PermissionError("CRITICAL_BLOCK: P0-03: Class mutation blocked.")
