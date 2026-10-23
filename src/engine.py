@@ -127,6 +127,20 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         object.__setattr__(self, 'audit_trail', [])
 
     @property
+    def __dict__(self):
+        """
+        Dynamic compatibility property for pytest checks expecting __dict__ 
+        without maintaining a separate mutable dictionary namespace.
+        """
+        result = {}
+        for slot in self.__slots__:
+            try:
+                result[slot] = object.__getattribute__(self, slot)
+            except AttributeError:
+                pass
+        return result
+
+    @property
     def is_zeroized(self):
         return object.__getattribute__(self, '_FailClosedEngine__is_zeroized') or (_MASTER_REGISTRY.contains(self))
 
