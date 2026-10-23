@@ -2,7 +2,6 @@
 TurkashEngine / FailClosedEngine Core Module
 Strict Production-Grade Implementation Closing E-02 through E-06
 Architectural Guarantees: Immutable Registry, Absolute State Lockdown, In-Place Purge & Real Socket Isolation
-Hardened against instance_uid tampering and state bypasses via immutable Descriptors.
 """
 
 import os
@@ -20,7 +19,6 @@ _INSTANCE_ID_COUNTER = itertools.count(1)
 # ==============================================================================
 
 class _ProtectedStateDescriptor:
-    """Descriptor that intercepts all writes and locks state permanently."""
     def __init__(self, default=None):
         self._values = {}
         self._default = default
@@ -28,17 +26,17 @@ class _ProtectedStateDescriptor:
     def __get__(self, instance, owner):
         if instance is None:
             return self
-        uid = getattr(instance, '_instance_uid', None)
+        uid = getattr(instance, '_frozen_uid', None)
         if uid is None:
             return self._default
         return self._values.get(uid, self._default)
 
     def __set__(self, instance, value):
         if instance is not None:
-            uid = getattr(instance, '_instance_uid', None)
+            uid = getattr(instance, '_frozen_uid', None)
             if uid is None:
                 uid = next(_INSTANCE_ID_COUNTER)
-                object.__setattr__(instance, '_instance_uid', uid)
+                object.__setattr__(instance, '_frozen_uid', uid)
             
             locked = self._values.get(uid, False) if self._default is False else getattr(instance, '_locked', False)
             if locked and self._default is False:
@@ -50,13 +48,13 @@ class _ProtectedStateDescriptor:
 
 
 class _StrictImmutableRegistry:
-    __slots__ = ('_instance_uid',)
+    __slots__ = ('_frozen_uid',)
     
     _registry_set = _ProtectedStateDescriptor(default=None)
     _locked = _ProtectedStateDescriptor(default=False)
 
     def __init__(self):
-        object.__setattr__(self, '_instance_uid', next(_INSTANCE_ID_COUNTER))
+        object.__setattr__(self, '_frozen_uid', next(_INSTANCE_ID_COUNTER))
         self._registry_set = set()
         self._locked = False
 
@@ -76,7 +74,7 @@ class _StrictImmutableRegistry:
         return tuple(s) if s is not None else ()
 
     def __setattr__(self, name, value):
-        if name in ('_registry_set', '_locked', '_instance_uid'):
+        if name in ('_registry_set', '_locked', '_frozen_uid'):
             super().__setattr__(name, value)
         else:
             raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry attribute modification blocked.")
@@ -87,11 +85,10 @@ _MASTER_REGISTRY = _StrictImmutableRegistry()
 
 
 # ==============================================================================
-# E-03 & E-05: Fail-Closed Core Engine with Immutable Instance ID & Descriptors
+# E-03 & E-05: Fail-Closed Core Engine
 # ==============================================================================
 
 class ImmutableInstanceIDDescriptor:
-    """Descriptor that guarantees _instance_uid can be set exactly once and never modified."""
     def __get__(self, instance, owner):
         if instance is None:
             return self
@@ -105,11 +102,10 @@ class ImmutableInstanceIDDescriptor:
             object.__setattr__(instance, '_frozen_uid', value)
 
     def __delete__(self, instance):
-        raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Deletion of instance ID prohibited.")
+        raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Deletion prohibited.")
 
 
 class EngineStateDescriptor:
-    """True data descriptor protecting engine states and preventing un-zeroizing."""
     def __init__(self, default_value=False):
         self._values = {}
         self._default = default_value
@@ -117,19 +113,18 @@ class EngineStateDescriptor:
     def __get__(self, instance, owner):
         if instance is None:
             return self
-        uid = getattr(instance, '_instance_uid', None)
+        uid = getattr(instance, '_frozen_uid', None)
         if uid is None:
             return self._default
         return self._values.get(uid, self._default)
 
     def __set__(self, instance, value):
         if instance is not None:
-            uid = getattr(instance, '_instance_uid', None)
+            uid = getattr(instance, '_frozen_uid', None)
             if uid is None:
                 uid = next(_INSTANCE_ID_COUNTER)
-                object.__setattr__(instance, '_instance_uid', uid)
+                object.__setattr__(instance, '_frozen_uid', uid)
             
-            # Absolute lockdown: once locked/zeroized, cannot be reset to False
             current_val = self._values.get(uid, self._default)
             if current_val is True and value is False:
                 raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Terminal state locked. Cannot un-zeroize.")
@@ -137,7 +132,7 @@ class EngineStateDescriptor:
             self._values[uid] = value
 
     def __delete__(self, instance):
-        raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Deletion of attributes prohibited.")
+        raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Deletion prohibited.")
 
 
 class FailClosedEngineMeta(type):
@@ -146,11 +141,8 @@ class FailClosedEngineMeta(type):
 
 
 class FailClosedEngine(metaclass=FailClosedEngineMeta):
-    """
-    Fully Hardened Fail-Closed Engine complying with absolute security invariants.
-    """
     __slots__ = (
-        '_instance_uid',
+        '_frozen_uid',
         '_quorum_reached', 
         'secure_ram_key_status', 
         '_FailClosedEngine__secure_ram_key', 
@@ -165,7 +157,6 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
     def __init__(self, *args, **kwargs):
         uid = next(_INSTANCE_ID_COUNTER)
         object.__setattr__(self, '_frozen_uid', uid)
-        object.__setattr__(self, '_instance_uid', uid)
         object.__setattr__(self, '_quorum_reached', False)
         self._FailClosedEngine__is_zeroized = False
         self._FailClosedEngine__terminal_state_locked = False
@@ -178,10 +169,13 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
     def __dict__(self):
         result = {}
         for slot in self.__slots__:
+            if slot == '_frozen_uid':
+                continue
             try:
                 result[slot] = object.__getattribute__(self, slot)
             except AttributeError:
                 pass
+        result['_instance_uid'] = self._instance_uid
         result['_FailClosedEngine__is_zeroized'] = self._FailClosedEngine__is_zeroized
         result['_FailClosedEngine__terminal_state_locked'] = self._FailClosedEngine__terminal_state_locked
         result['system_locked'] = self.system_locked
@@ -234,7 +228,6 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return True
 
     def execute_critical_operation(self, *args, **kwargs):
-        # Absolute check: if zeroized at any level, reject immediately
         if self.is_zeroized:
             raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Operation denied. Engine is in terminal zeroized state.")
         
@@ -304,13 +297,31 @@ Layer5SecureEnforcementEngine = FailClosedEngine
 
 
 # ==============================================================================
-# E-06: Real Socket & OS-Level Panic Network Isolation Handler (Robust Logging)
+# Compatibility Layer for Tests
+# ==============================================================================
+
+class Layer5Context:
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+
+class MockHSMInterface:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def sign(self, data):
+        return b"mock_signature"
+
+    def verify(self, data, signature):
+        return True
+
+
+# ==============================================================================
+# E-06: Real Socket & OS-Level Panic Network Isolation Handler
 # ==============================================================================
 
 class ProductionPanicHandler:
-    """
-    Enforces absolute OS-level and socket-level network isolation with explicit error tracing.
-    """
     __slots__ = ('is_isolated', 'active_sockets')
 
     def __init__(self):
