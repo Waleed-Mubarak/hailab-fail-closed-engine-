@@ -2,40 +2,39 @@
 TurkashEngine / FailClosedEngine Core Module
 Strict Production-Grade Implementation Closing E-02 through E-06
 Architectural Guarantees: Immutable Registry, Absolute State Lockdown, In-Place Purge & Real Socket Isolation
-Hardened against object.__setattr__ bypasses via advanced Descriptors & WeakKeyDictionary.
+Hardened against object.__setattr__ bypasses via Descriptors using object ID mapping.
 """
 
 import os
 import sys
 import ctypes
 import socket
-from weakref import WeakKeyDictionary
 
 # ==============================================================================
 # E-02: Immutable & Encapsulated Security Registry (Hardened against object.__setattr__)
 # ==============================================================================
 
 class _ProtectedStateDescriptor:
-    """Descriptor that intercepts all writes, including object.__setattr__ bypasses."""
+    """Descriptor that intercepts all writes, using object ID mapping to avoid weakref overhead."""
     def __init__(self, default=None):
-        self._values = WeakKeyDictionary()
+        self._values = {}
         self._default = default
 
     def __get__(self, instance, owner):
         if instance is None:
             return self
-        return self._values.get(instance, self._default)
+        return self._values.get(id(instance), self._default)
 
     def __set__(self, instance, value):
         if instance is not None:
-            locked = self._values.get(instance, False) if self._default is False else getattr(instance, '_locked', False)
+            locked = self._values.get(id(instance), False) if self._default is False else getattr(instance, '_locked', False)
             if locked and self._default is False:
                 raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry is permanently locked.")
-        self._values[instance] = value
+        self._values[id(instance)] = value
 
 
 class _StrictImmutableRegistry:
-    __slots__ = ('__weakref__',)  # السماح بإنشاء مراجع ضعيفة لـ WeakKeyDictionary دون إخلال بالقفل
+    __slots__ = ()
     
     _registry_set = _ProtectedStateDescriptor(default=None)
     _locked = _ProtectedStateDescriptor(default=False)
@@ -127,15 +126,15 @@ class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
 # ==============================================================================
 
 class EngineStateDescriptor:
-    """Data descriptor that intercepts object.__setattr__ bypasses on engine state."""
+    """Data descriptor that intercepts object.__setattr__ bypasses on engine state using object ID mapping."""
     def __init__(self, default_value):
-        self._values = WeakKeyDictionary()
+        self._values = {}
         self._default = default_value
 
     def __get__(self, instance, owner):
         if instance is None:
             return self
-        return self._values.get(instance, self._default)
+        return self._values.get(id(instance), self._default)
 
     def __set__(self, instance, value):
         if instance is not None:
@@ -145,7 +144,7 @@ class EngineStateDescriptor:
                     raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Terminal state locked. Immutable.")
             except AttributeError:
                 pass
-        self._values[instance] = value
+        self._values[id(instance)] = value
 
 
 class FailClosedEngineMeta(type):
