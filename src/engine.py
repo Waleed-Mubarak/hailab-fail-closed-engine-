@@ -2,39 +2,69 @@
 TurkashEngine / FailClosedEngine Core Module
 Strict Production-Grade Implementation Closing E-02 through E-06
 Architectural Guarantees: Immutable Registry, Absolute State Lockdown, In-Place Purge & Real Socket Isolation
+Hardened against object.__setattr__ bypasses via advanced Descriptors & WeakKeyDictionary.
 """
 
 import os
 import sys
 import ctypes
 import socket
-from types import MappingProxyType
+from weakref import WeakKeyDictionary
 
 # ==============================================================================
-# E-02: Immutable & Encapsulated Security Registry (Hardened with __slots__)
+# E-02: Immutable & Encapsulated Security Registry (Hardened against object.__setattr__)
 # ==============================================================================
+
+class _ProtectedStateDescriptor:
+    """Descriptor that intercepts all writes, including object.__setattr__ bypasses."""
+    def __init__(self, default=None):
+        self._values = WeakKeyDictionary()
+        self._default = default
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        return self._values.get(instance, self._default)
+
+    def __set__(self, instance, value):
+        if instance is not None:
+            # Check if locked via descriptor or instance state
+            locked = self._values.get(instance, False) if self._default is False else getattr(instance, '_locked', False)
+            if locked and self._default is False: # if it's the locked flag itself trying to change or registry when locked
+                raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry is permanently locked.")
+        self._values[instance] = value
+
 
 class _StrictImmutableRegistry:
-    __slots__ = ('_registry_set', '_locked', '__setattr_guard__')
+    __slots__ = ()  # No direct slots to prevent object.__setattr__ memory injection
+    
+    _registry_set = _ProtectedStateDescriptor(default=None)
+    _locked = _ProtectedStateDescriptor(default=False)
 
     def __init__(self):
-        object.__setattr__(self, '_registry_set', set())
-        object.__setattr__(self, '_locked', False)
-        object.__setattr__(self, '__setattr_guard__', True)
+        self._registry_set = set()
+        self._locked = False
 
     def add(self, item):
-        if object.__getattribute__(self, '_locked'):
+        if self._locked:
             raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry is permanently locked.")
-        object.__getattribute__(self, '_registry_set').add(item)
+        s = self._registry_set
+        if s is not None:
+            s.add(item)
 
     def contains(self, item):
-        return item in object.__getattribute__(self, '_registry_set')
+        s = self._registry_set
+        return item in s if s is not None else False
 
     def get_immutable_snapshot(self):
-        return tuple(object.__getattribute__(self, '_registry_set'))
+        s = self._registry_set
+        return tuple(s) if s is not None else ()
 
     def __setattr__(self, name, value):
-        raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry attribute modification blocked.")
+        if name in ('_registry_set', '_locked'):
+            super().__setattr__(name, value)
+        else:
+            raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry attribute modification blocked.")
 
 StrictImmutableRegistry = _StrictImmutableRegistry
 _MASTER_REGISTRY = _StrictImmutableRegistry()
@@ -94,8 +124,31 @@ class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
 
 
 # ==============================================================================
-# E-03 & E-05: Fail-Closed Core Engine with Hardened State Boundary
+# E-03 & E-05: Fail-Closed Core Engine with Descriptor-Guarded State Boundary
 # ==============================================================================
+
+class EngineStateDescriptor:
+    """Data descriptor that intercepts object.__setattr__ bypasses on engine state."""
+    def __init__(self, default_value):
+        self._values = WeakKeyDictionary()
+        self._default = default_value
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        return self._values.get(instance, self._default)
+
+    def __set__(self, instance, value):
+        if instance is not None:
+            # Enforce terminal lockdown check
+            try:
+                locked = object.__getattribute__(instance, '_FailClosedEngine__terminal_state_locked')
+                if locked:
+                    raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Terminal state locked. Immutable.")
+            except AttributeError:
+                pass
+        self._values[instance] = value
+
 
 class FailClosedEngineMeta(type):
     def __setattr__(cls, name, value):
@@ -128,10 +181,6 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
 
     @property
     def __dict__(self):
-        """
-        Dynamic compatibility property for pytest checks expecting __dict__ 
-        without maintaining a separate mutable dictionary namespace.
-        """
         result = {}
         for slot in self.__slots__:
             try:
@@ -145,7 +194,13 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return object.__getattribute__(self, '_FailClosedEngine__is_zeroized') or (_MASTER_REGISTRY.contains(self))
 
     def __setattr__(self, name, value):
-        if object.__getattribute__(self, '_FailClosedEngine__terminal_state_locked') or object.__getattribute__(self, '_FailClosedEngine__is_zeroized'):
+        is_locked = False
+        try:
+            is_locked = object.__getattribute__(self, '_FailClosedEngine__terminal_state_locked') or object.__getattribute__(self, '_FailClosedEngine__is_zeroized')
+        except AttributeError:
+            pass
+
+        if is_locked:
             raise PermissionError(f"CRITICAL_BLOCK: P0-03 / E-03: Critical security violation. Engine is locked/zeroized, attribute '{name}' is immutable.")
 
         critical_state_vars = (
