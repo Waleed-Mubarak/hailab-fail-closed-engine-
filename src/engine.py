@@ -2,7 +2,7 @@
 TurkashEngine / FailClosedEngine Core Module
 Strict Production-Grade Implementation Closing E-02 through E-06
 Architectural Guarantees: Immutable Registry, Absolute State Lockdown, In-Place Purge & Real Socket Isolation
-Hardened against object.__setattr__ bypasses via true Descriptors and CI-compatible error messages.
+Hardened against object.__setattr__ and __delete__ bypasses via true Descriptors and CI-compatible error messages.
 """
 
 import os
@@ -19,7 +19,7 @@ _INSTANCE_ID_COUNTER = itertools.count(1)
 # ==============================================================================
 
 class _ProtectedStateDescriptor:
-    """Descriptor that intercepts all writes, using unique immutable instance IDs."""
+    """Descriptor that intercepts all writes and deletions, using unique immutable instance IDs."""
     def __init__(self, default=None):
         self._values = {}
         self._default = default
@@ -43,6 +43,9 @@ class _ProtectedStateDescriptor:
             if locked and self._default is False:
                 raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry is permanently locked.")
             self._values[uid] = value
+
+    def __delete__(self, instance):
+        raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry descriptor deletion strictly forbidden.")
 
 
 class _StrictImmutableRegistry:
@@ -139,7 +142,7 @@ class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
 # ==============================================================================
 
 class EngineStateDescriptor:
-    """True data descriptor with CI-compatible error messages for immutability violations."""
+    """True data descriptor with CI-compatible error messages for immutability and deletion violations."""
     def __init__(self, default_value=False):
         self._values = {}
         self._default = default_value
@@ -170,6 +173,10 @@ class EngineStateDescriptor:
                 raise PermissionError(f"CRITICAL_BLOCK: P0-03 / E-03: Critical security violation. Engine is locked/zeroized, attribute '{name}' is immutable.")
             
             self._values[uid] = value
+
+    def __delete__(self, instance):
+        name = self._name or "state variable"
+        raise PermissionError(f"CRITICAL_BLOCK: P0-03 / E-03: Critical security violation. Deletion of attribute '{name}' is strictly prohibited.")
 
 
 class FailClosedEngineMeta(type):
@@ -243,7 +250,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         super().__setattr__(name, value)
 
     def __delattr__(self, name):
-        raise PermissionError("CRITICAL_BLOCK: P0-03: Deletion of attributes prohibited.")
+        raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Deletion of attributes prohibited.")
 
     def _check_admissibility(self):
         try:
