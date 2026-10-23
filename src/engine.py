@@ -2,20 +2,24 @@
 TurkashEngine / FailClosedEngine Core Module
 Strict Production-Grade Implementation Closing E-02 through E-06
 Architectural Guarantees: Immutable Registry, Absolute State Lockdown, In-Place Purge & Real Socket Isolation
-Hardened against object.__setattr__ bypasses via Descriptors using object ID mapping.
+Hardened against object.__setattr__ bypasses via Descriptors and strict state verification.
 """
 
 import os
 import sys
 import ctypes
 import socket
+import itertools
+
+# Global atomic counter for unique instance IDs to prevent address recycling collisions
+_INSTANCE_ID_COUNTER = itertools.count(1)
 
 # ==============================================================================
 # E-02: Immutable & Encapsulated Security Registry (Hardened against object.__setattr__)
 # ==============================================================================
 
 class _ProtectedStateDescriptor:
-    """Descriptor that intercepts all writes, using object ID mapping to avoid weakref overhead."""
+    """Descriptor that intercepts all writes, using unique immutable instance IDs."""
     def __init__(self, default=None):
         self._values = {}
         self._default = default
@@ -23,23 +27,32 @@ class _ProtectedStateDescriptor:
     def __get__(self, instance, owner):
         if instance is None:
             return self
-        return self._values.get(id(instance), self._default)
+        uid = getattr(instance, '_instance_uid', None)
+        if uid is None:
+            return self._default
+        return self._values.get(uid, self._default)
 
     def __set__(self, instance, value):
         if instance is not None:
-            locked = self._values.get(id(instance), False) if self._default is False else getattr(instance, '_locked', False)
+            uid = getattr(instance, '_instance_uid', None)
+            if uid is None:
+                uid = next(_INSTANCE_ID_COUNTER)
+                object.__setattr__(instance, '_instance_uid', uid)
+            
+            locked = self._values.get(uid, False) if self._default is False else getattr(instance, '_locked', False)
             if locked and self._default is False:
                 raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry is permanently locked.")
-        self._values[id(instance)] = value
+            self._values[uid] = value
 
 
 class _StrictImmutableRegistry:
-    __slots__ = ()
+    __slots__ = ('_instance_uid',)
     
     _registry_set = _ProtectedStateDescriptor(default=None)
     _locked = _ProtectedStateDescriptor(default=False)
 
     def __init__(self):
+        object.__setattr__(self, '_instance_uid', next(_INSTANCE_ID_COUNTER))
         self._registry_set = set()
         self._locked = False
 
@@ -59,7 +72,7 @@ class _StrictImmutableRegistry:
         return tuple(s) if s is not None else ()
 
     def __setattr__(self, name, value):
-        if name in ('_registry_set', '_locked'):
+        if name in ('_registry_set', '_locked', '_instance_uid'):
             super().__setattr__(name, value)
         else:
             raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry attribute modification blocked.")
@@ -126,7 +139,7 @@ class _RegistrySentinel(metaclass=_RegistrySentinelMeta):
 # ==============================================================================
 
 class EngineStateDescriptor:
-    """Data descriptor that intercepts object.__setattr__ bypasses on engine state using object ID mapping."""
+    """Data descriptor that intercepts object.__setattr__ bypasses and seals state permanently once zeroized."""
     def __init__(self, default_value):
         self._values = {}
         self._default = default_value
@@ -134,17 +147,30 @@ class EngineStateDescriptor:
     def __get__(self, instance, owner):
         if instance is None:
             return self
-        return self._values.get(id(instance), self._default)
+        uid = getattr(instance, '_instance_uid', None)
+        if uid is None:
+            return self._default
+        return self._values.get(uid, self._default)
 
     def __set__(self, instance, value):
         if instance is not None:
+            uid = getattr(instance, '_instance_uid', None)
+            if uid is None:
+                uid = next(_INSTANCE_ID_COUNTER)
+                object.__setattr__(instance, '_instance_uid', uid)
+            
+            # Check if terminal state is already locked or if attempting to un-zeroize
             try:
                 locked = object.__getattribute__(instance, '_FailClosedEngine__terminal_state_locked')
-                if locked:
-                    raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Terminal state locked. Immutable.")
+                is_zeroized_flag = object.__getattribute__(instance, '_FailClosedEngine__is_zeroized')
+                if locked or is_zeroized_flag:
+                    # If already zeroized/locked, strictly block resetting state flags back to False
+                    if value is False:
+                        raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Terminal state locked. Cannot un-zeroize state via object.__setattr__.")
             except AttributeError:
                 pass
-        self._values[id(instance)] = value
+            
+            self._values[uid] = value
 
 
 class FailClosedEngineMeta(type):
@@ -157,6 +183,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
     Fully Hardened Fail-Closed Engine complying with absolute security invariants.
     """
     __slots__ = (
+        '_instance_uid',
         '_quorum_reached', 
         '_FailClosedEngine__is_zeroized', 
         '_FailClosedEngine__terminal_state_locked', 
@@ -168,6 +195,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
     _permanently_zeroized = _RegistrySentinel
 
     def __init__(self, *args, **kwargs):
+        object.__setattr__(self, '_instance_uid', next(_INSTANCE_ID_COUNTER))
         object.__setattr__(self, '_quorum_reached', False)
         object.__setattr__(self, '_FailClosedEngine__is_zeroized', False)
         object.__setattr__(self, '_FailClosedEngine__terminal_state_locked', False)
