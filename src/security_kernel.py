@@ -55,6 +55,11 @@ class ZeroizationKernel:
                 ProductionPanicHandler.trigger_panic(f"Memory zeroization failure: {e}")
 
 
+def reset_kernel_state():
+    """إعادة ضبط حالة النواة العامة لضمان نظافة الاختبارات التراجعية"""
+    ZeroizationKernel._is_zeroized = False
+
+
 # =====================================================================
 # Integration & Verification Helper
 # =====================================================================
