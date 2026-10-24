@@ -1,5 +1,5 @@
 """
-Security Kernel Engine - Hardened Implementation
+Security Kernel Engine - Hardened Implementation (Fixed Registry Identity Recycling)
 Addressing Adversarial Findings E-02, E-03, E-05, E-06 with full test compatibility
 """
 
@@ -8,6 +8,7 @@ import sys
 import ctypes
 import subprocess
 import logging
+import uuid  # 👈 أضفنا مكتبة uuid لإنشاء معرفات فريدة غير قابلة لإعادة التدوير
 
 # =====================================================================
 # E-06: Production Panic Handler Implementation
@@ -109,18 +110,28 @@ class SecureRegistrySet:
     def seal(self):
         object.__setattr__(self, "_is_sealed", True)
 
-    def register(self, item):
+    def register(self, engine_instance):
         if object.__getattribute__(self, "_is_sealed") or ZeroizationKernel.is_zeroized():
             raise PermissionError("E-03 Violation: System is zeroized or in terminal state.")
-        self._stored_entries.add(item)
+        # اعتماد المعرف الفريد الثابت للمحرك بدل الـ id العشوائي للذاكرة
+        if hasattr(engine_instance, "instance_id"):
+            self._stored_entries.add(engine_instance.instance_id)
+        else:
+            self._stored_entries.add(engine_instance)
 
 
 class FailClosedEngine:
-    __slots__ = ("_key_material", "_is_zeroized")
+    __slots__ = ("_key_material", "_is_zeroized", "_instance_id")
 
     def __init__(self, key_material: bytes):
         object.__setattr__(self, "_key_material", bytearray(key_material))
         object.__setattr__(self, "_is_zeroized", False)
+        # 👈 توليد معرف فريد غير قابل لإعادة التدوير لكل محرك جديد
+        object.__setattr__(self, "_instance_id", uuid.uuid4().hex)
+
+    @property
+    def instance_id(self):
+        return object.__getattribute__(self, "_instance_id")
 
     def __setattr__(self, key, value):
         raise PermissionError("E-03 Violation: direct modification of engine state blocked.")
@@ -130,6 +141,9 @@ class FailClosedEngine:
         buf = object.__getattribute__(self, "_key_material")
         if buf:
             ZeroizationKernel.zeroize_buffer(ctypes.addressof((ctypes.c_char * len(buf)).from_buffer(buf)), len(buf))
+
+    def is_zeroized(self):
+        return object.__getattribute__(self, "_is_zeroized")
 
     def execute_critical_operation(self, quorum_flags):
         if object.__getattribute__(self, "_is_zeroized") or ZeroizationKernel.is_zeroized():
