@@ -1,3 +1,19 @@
+# Edge Zeroization Engine & Security Architecture
+
+> ⚠️ **CRITICAL SECURITY BOUNDARY & THREAT MODEL NOTICE**
+> 
+> *"Phase 5 of Hailab provides application-level fail-closed guarantees within a defined threat model under Scope A. It does not claim protection against arbitrary code execution or unrestrained runtime inspection within the same Python interpreter."*
+
+---
+
+## 🔒 Security Guarantee Boundaries (Threat Model)
+
+- **Scope A (Certified Application Level):** Guarantees zeroization, registry isolation, and terminal state lockdown against public API abuse and application-level attack vectors.
+- **Scope B (OS & Hardware Level - Future Roadmap):** In-process adversary memory protection requires OS-level process isolation (`seccomp`, containers) or hardware-enforced trusted execution environments (TEE/HSM).
+
+---
+
+
 # Edge Zeroization Engine & Security Agent
 
 > *"Software isolation is a myth; hardware state is the only truth."*
