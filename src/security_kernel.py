@@ -8,7 +8,7 @@ import sys
 import ctypes
 import subprocess
 import logging
-import uuid  # 👈 أضفنا مكتبة uuid لإنشاء معرفات فريدة غير قابلة لإعادة التدوير
+import uuid
 
 # =====================================================================
 # E-06: Production Panic Handler Implementation
@@ -113,7 +113,6 @@ class SecureRegistrySet:
     def register(self, engine_instance):
         if object.__getattribute__(self, "_is_sealed") or ZeroizationKernel.is_zeroized():
             raise PermissionError("E-03 Violation: System is zeroized or in terminal state.")
-        # اعتماد المعرف الفريد الثابت للمحرك بدل الـ id العشوائي للذاكرة
         if hasattr(engine_instance, "instance_id"):
             self._stored_entries.add(engine_instance.instance_id)
         else:
@@ -126,7 +125,6 @@ class FailClosedEngine:
     def __init__(self, key_material: bytes):
         object.__setattr__(self, "_key_material", bytearray(key_material))
         object.__setattr__(self, "_is_zeroized", False)
-        # 👈 توليد معرف فريد غير قابل لإعادة التدوير لكل محرك جديد
         object.__setattr__(self, "_instance_id", uuid.uuid4().hex)
 
     @property
