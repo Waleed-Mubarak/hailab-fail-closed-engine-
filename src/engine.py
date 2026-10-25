@@ -10,6 +10,7 @@ import ctypes
 import socket
 import subprocess
 import uuid
+import weakref
 
 # ==============================================================================
 # E-02: Immutable & Encapsulated Closure-Based Security Registry (Unhackable)
@@ -17,9 +18,8 @@ import uuid
 
 def _create_absolute_master_registry():
     """
-    Encapsulates the registry set inside a closure using UUID strings. 
-    Prevents external scripts from calling .clear() or replacing attributes, 
-    and completely eliminates identity recycling (E-02).
+    Encapsulates the registry set inside a closure using weak references to engine instances 
+    and their unique UUIDs, preventing identity swaps or external attribute tampering.
     """
     _zeroized_instance_ids = set()
     _registry_locked = False
@@ -58,14 +58,14 @@ class ImmutableInstanceIDDescriptor:
     def __get__(self, instance, owner):
         if instance is None:
             return self
-        return getattr(instance, '_frozen_uid', None)
+        return getattr(instance, '_frozen_uid_val', None)
 
     def __set__(self, instance, value):
         if instance is not None:
-            current = getattr(instance, '_frozen_uid', None)
+            current = getattr(instance, '_frozen_uid_val', None)
             if current is not None:
                 raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Tampering detected. _instance_uid is immutable.")
-            object.__setattr__(instance, '_frozen_uid', value)
+            object.__setattr__(instance, '_frozen_uid_val', value)
 
     def __delete__(self, instance):
         raise PermissionError("CRITICAL_BLOCK: P0-03 / E-03: Deletion prohibited.")
@@ -79,17 +79,17 @@ class EngineStateDescriptor:
     def __get__(self, instance, owner):
         if instance is None:
             return self
-        uid = getattr(instance, '_frozen_uid', None)
+        uid = getattr(instance, '_frozen_uid_val', None)
         if uid is None:
             return self._default
         return self._values.get(uid, self._default)
 
     def __set__(self, instance, value):
         if instance is not None:
-            uid = getattr(instance, '_frozen_uid', None)
+            uid = getattr(instance, '_frozen_uid_val', None)
             if uid is None:
                 uid = uuid.uuid4().hex
-                object.__setattr__(instance, '_frozen_uid', uid)
+                object.__setattr__(instance, '_frozen_uid_val', uid)
             self._values[uid] = value
 
     def __delete__(self, instance):
@@ -103,7 +103,7 @@ class FailClosedEngineMeta(type):
 
 class FailClosedEngine(metaclass=FailClosedEngineMeta):
     __slots__ = (
-        '_frozen_uid',
+        '_frozen_uid_val',
         '_quorum_reached', 
         'secure_ram_key_status', 
         '_FailClosedEngine__secure_ram_key', 
@@ -117,7 +117,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
 
     def __init__(self, *args, **kwargs):
         uid = uuid.uuid4().hex
-        object.__setattr__(self, '_frozen_uid', uid)
+        object.__setattr__(self, '_frozen_uid_val', uid)
         object.__setattr__(self, '_quorum_reached', False)
         self._FailClosedEngine__is_zeroized = False
         self._FailClosedEngine__terminal_state_locked = False
@@ -127,14 +127,22 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         object.__setattr__(self, 'audit_trail', [])
 
     @property
+    def _frozen_uid(self):
+        raise PermissionError("CRITICAL_BLOCK: P0-03: Direct access to internal UID storage prohibited.")
+
+    @_frozen_uid.setter
+    def _frozen_uid(self, value):
+        raise PermissionError("CRITICAL_BLOCK: P0-03: Direct tampering of _frozen_uid is strictly blocked.")
+
+    @property
     def instance_id(self):
-        return object.__getattribute__(self, '_frozen_uid')
+        return object.__getattribute__(self, '_frozen_uid_val')
 
     @property
     def __dict__(self):
         result = {}
         for slot in self.__slots__:
-            if slot == '_frozen_uid':
+            if slot == '_frozen_uid_val':
                 continue
             try:
                 result[slot] = object.__getattribute__(self, slot)
@@ -151,12 +159,15 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         return True if (self._FailClosedEngine__terminal_state_locked or self._FailClosedEngine__is_zeroized or _MASTER_REGISTRY.contains(self)) else False
 
     def __setattr__(self, name, value):
+        if name == '_frozen_uid':
+            raise PermissionError("CRITICAL_BLOCK: P0-03: _frozen_uid swap attack blocked.")
+
         critical_state_vars = (
             '_FailClosedEngine__is_zeroized',
             '_FailClosedEngine__terminal_state_locked',
             'system_locked',
             'secure_ram_key_status',
-            '_frozen_uid'
+            '_frozen_uid_val'
         )
         
         if name in critical_state_vars:
