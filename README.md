@@ -1,5 +1,6 @@
 Scope A – Application-Level Assurance (Pending Final Certification)
 
+
 # Edge Zeroization Engine & Security Architecture
 
 > ⚠️ **CRITICAL SECURITY BOUNDARY & THREAT MODEL NOTICE**
