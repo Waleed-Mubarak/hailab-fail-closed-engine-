@@ -85,3 +85,14 @@ To run the test suite smoothly without any import path issues:
 
 © 2026 Waleed Mubarak. All Rights Reserved.  
 This repository contains proprietary deep-tech architecture. Unauthorized commercial use, duplication, or integration is strictly prohibited. For licensing inquiries, contact the author directly.
+
+
+---
+
+## 📋 Compliance & Certification Documentation
+
+To inspect the full technical compliance and release verification artifacts for **Scope A (Pending Final Certification)**, please refer to the following documents:
+
+* 📊 **[Compliance Traceability Matrix (COMPLIANCE_MATRIX.md)](./COMPLIANCE_MATRIX.md):** Full mapping of Scope A requirements, including the 200-iteration registry identity recycling verification (`REQ-SCOPE-A-02`) and `iptables` boundary statements.
+* 📝 **[Release Notes & Verification Artifacts (RELEASE_NOTES.md)](./RELEASE_NOTES.md):** Detailed summary of Red-Team adversarial testing, fix validations (P0-03/P0-04), and final Scope A release boundaries.
+* 🛡️ **[Threat Model & Boundary Limits (THREAT_MODEL.md)](./THREAT_MODEL.md):** Updated threat actors, user-space limitations, and explicit OS-level network isolation exclusions.
