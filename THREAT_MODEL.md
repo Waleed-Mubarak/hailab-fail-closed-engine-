@@ -2,7 +2,7 @@
 
 ## Overview & Scope
 ## Scope A vs. Scope B Boundary Notice
-* **Scope A (Certified Application Level):** Guarantees zeroization, closure registry isolation, and immutable per-instance identifiers against application-level attack vectors.
+* **Scope A (Application-Level Assurance - Pending Final Certification):** Guarantees zeroization, closure registry isolation, and immutable per-instance identifiers against application-level attack vectors.
 * **Scope B (OS & Hardware Level):** Out-of-process memory protection, arbitrary code execution within the interpreter, and physical hardware tampering are explicitly excluded and deferred to Scope B.
 
 
@@ -72,6 +72,10 @@ This reference implementation demonstrates deterministic fail-closed state trans
 
 2. **Volatile Memory Persistence:**
    * Standard memory overwrites in high-level runtimes may leave residual traces due to garbage collection or swap space. Production builds require non-swappable pinned memory allocations (`mlock`).
+
+3. **Network Isolation Limitation (`is_isolated` & `iptables`):**
+   * Setting `is_isolated=True` within the application logic indicates the intended logical isolation state. 
+   * **Crucial Clarification:** This application-level flag **does not** automatically guarantee or establish successful OS-level network isolation unless concrete, verified execution results from `iptables` (or equivalent kernel-level packet filtering tools) are successfully validated and confirmed in the host environment. OS-level network isolation via `iptables` remains strictly outside the Scope A guarantee boundary.
 
 ---
 
