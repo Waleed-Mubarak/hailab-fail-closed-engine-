@@ -6,18 +6,6 @@ Scope A – Application-Level Assurance (Pending Final Certification)
 
 Security-first architecture for mission-critical edge nodes, designed to prevent data extraction and ensure deterministic destruction under duress.
 
----
-
-## 🔒 Security Guarantee Boundaries (Threat Model)
-
- 
- Scope A – Application-Level Assurance (Pending Final Certification)
-
-# Edge Zeroization Engine & Security Architecture
-
-> *"Software isolation is a myth; hardware state is the only truth."*
-
-Security-first architecture for mission-critical edge nodes, designed to prevent data extraction and ensure deterministic destruction under duress.
 
 ---
 
