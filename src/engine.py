@@ -9,10 +9,7 @@ import sys
 import ctypes
 import socket
 import subprocess
-import itertools
-
-# Global atomic counter for unique instance IDs
-_INSTANCE_ID_COUNTER = itertools.count(1)
+import uuid
 
 # ==============================================================================
 # E-02: Immutable & Encapsulated Closure-Based Security Registry (Unhackable)
@@ -20,23 +17,30 @@ _INSTANCE_ID_COUNTER = itertools.count(1)
 
 def _create_absolute_master_registry():
     """
-    Encapsulates the registry set inside a closure. 
-    Prevents external scripts from calling .clear() or replacing attributes.
+    Encapsulates the registry set inside a closure using UUID strings. 
+    Prevents external scripts from calling .clear() or replacing attributes, 
+    and completely eliminates identity recycling (E-02).
     """
-    _zeroized_instances = set()
+    _zeroized_instance_ids = set()
     _registry_locked = False
 
     class AbsoluteMasterRegistry:
         def add(self, item):
             if _registry_locked:
                 raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry is permanently locked.")
-            _zeroized_instances.add(id(item))
+            uid = getattr(item, 'instance_id', None)
+            if uid is None:
+                uid = getattr(item, '_frozen_uid', str(uuid.uuid4()))
+            _zeroized_instance_ids.add(str(uid))
 
         def contains(self, item) -> bool:
-            return id(item) in _zeroized_instances
+            uid = getattr(item, 'instance_id', None)
+            if uid is None:
+                uid = getattr(item, '_frozen_uid', None)
+            return str(uid) in _zeroized_instance_ids if uid is not None else False
 
         def get_immutable_snapshot(self):
-            return tuple(_zeroized_instances)
+            return tuple(_zeroized_instance_ids)
 
         def __setattr__(self, name, value):
             raise PermissionError("CRITICAL_BLOCK: P0-05 / E-02: Registry attribute modification blocked.")
@@ -84,7 +88,7 @@ class EngineStateDescriptor:
         if instance is not None:
             uid = getattr(instance, '_frozen_uid', None)
             if uid is None:
-                uid = next(_INSTANCE_ID_COUNTER)
+                uid = uuid.uuid4().hex
                 object.__setattr__(instance, '_frozen_uid', uid)
             self._values[uid] = value
 
@@ -112,7 +116,7 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
     system_locked = EngineStateDescriptor(default_value=False)
 
     def __init__(self, *args, **kwargs):
-        uid = next(_INSTANCE_ID_COUNTER)
+        uid = uuid.uuid4().hex
         object.__setattr__(self, '_frozen_uid', uid)
         object.__setattr__(self, '_quorum_reached', False)
         self._FailClosedEngine__is_zeroized = False
@@ -121,6 +125,10 @@ class FailClosedEngine(metaclass=FailClosedEngineMeta):
         object.__setattr__(self, 'secure_ram_key_status', "ACTIVE")
         object.__setattr__(self, '_FailClosedEngine__secure_ram_key', bytearray(os.urandom(32)))
         object.__setattr__(self, 'audit_trail', [])
+
+    @property
+    def instance_id(self):
+        return object.__getattribute__(self, '_frozen_uid')
 
     @property
     def __dict__(self):
