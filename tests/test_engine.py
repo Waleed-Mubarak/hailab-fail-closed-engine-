@@ -6,10 +6,47 @@ Adversarial Verification Suite: Dr. Hikmet Red-Team Invariant Tests
 
 import unittest
 import pytest
-from engine import FailClosedEngine, TurkashEngine
+import gc
+from src.engine import FailClosedEngine, TurkashEngine
+from src.security_kernel import SecureRegistrySet, reset_kernel_state
 
 class TestTurkashEngineDescriptorAuditing(unittest.TestCase):
     
+    def test_registry_identity_recycling_200_iterations(self):
+        """
+        Regression Test for Mandatory Finding 3 (Registry Identity Recycling).
+        Verifies that creating, zeroizing, and deleting 200 sequential engines
+        does NOT cause newly created engines to inherit terminal-state registrations.
+        """
+        # إعادة ضبط حالة النواة لضمان عدم تأثر الاختبار بأي حالة سابقة
+        reset_kernel_state()
+        
+        seen_ids = set()
+        registry = SecureRegistrySet()
+
+        for i in range(200):
+            engine = FailClosedEngine(b"test_key_material_32_bytes_long_!!")
+            
+            # التحقق من حالة التصفير بشكل آمن سواء كانت دالة أو خاصية
+            zero_state = engine.is_zeroized() if callable(getattr(engine, 'is_zeroized', None)) else engine.is_zeroized
+            assert not zero_state, f"Iteration {i}: New engine incorrectly inherited zeroized state!"
+            
+            # التأكد من عدم تكرار المعرف الفريد مطلقاً
+            assert engine.instance_id not in seen_ids, f"Iteration {i}: Reused instance identifier detected!"
+            seen_ids.add(engine.instance_id)
+            
+            # تسجيل المحرك
+            registry.register(engine)
+            
+            # تصفير المحرك وحذفه لتحفيز Garbage Collection
+            engine.zeroize()
+            
+            zero_state_after = engine.is_zeroized() if callable(getattr(engine, 'is_zeroized', None)) else engine.is_zeroized
+            assert zero_state_after, f"Iteration {i}: Engine failed to zeroize!"
+            
+            del engine
+            gc.collect()
+
     def test_p0_03_stub_deletion_fallback_bypass_denies_operation(self):
         engine = FailClosedEngine()
         engine.zeroize()
