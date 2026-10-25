@@ -9,13 +9,23 @@ Security-first architecture for mission-critical edge nodes, designed to prevent
 ---
 
 ## 🔒 Security Guarantee Boundaries (Threat Model)
-- **Scope A – Application-Level Assurance (Pending Final Certification):** Guarantees zeroization, registry isolation, and terminal state lockdown against public API abuse and application-level attack vectors. *(Note: OS-level network isolation via iptables is explicitly excluded).*
-
-* **Scope B (OS & Hardware Level - Future Roadmap):** In-process adversary memory protection requires OS-level process isolation (`seccomp`, containers) or hardware-enforced trusted execution environments (TEE/HSM).[span_5](start_span)[span_5](end_span)
 
  
- Guarantees zeroization, registry isolation, and terminal state lockdown against public API abuse and application-level attack vectors.
-- **Scope B (OS & Hardware Level - Future Roadmap):** In-process adversary memory protection requires OS-level process isolation (`seccomp`, containers) or hardware-enforced trusted execution environments (TEE/HSM).
+ Scope A – Application-Level Assurance (Pending Final Certification)
+
+# Edge Zeroization Engine & Security Architecture
+
+> *"Software isolation is a myth; hardware state is the only truth."*
+
+Security-first architecture for mission-critical edge nodes, designed to prevent data extraction and ensure deterministic destruction under duress.
+
+---
+
+## 🔒 Security Guarantee Boundaries (Threat Model)
+
+* **Scope A – Application-Level Assurance (Pending Final Certification):** Guarantees zeroization, registry isolation, and terminal state lockdown against public API abuse and application-level attack vectors. *(Note: OS-level network isolation via iptables is explicitly excluded from the current Scope A guarantee).*
+* **Scope B (OS & Hardware Level - Future Roadmap):** In-process adversary memory protection requires OS-level process isolation (`seccomp`, containers) or hardware-enforced trusted execution environments (TEE/HSM).[span_2](start_span)[span_2](end_span)
+
 
 ---
 
