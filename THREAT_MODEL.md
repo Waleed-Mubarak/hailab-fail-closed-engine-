@@ -1,6 +1,11 @@
 # THREAT_MODEL.md
 
 ## Overview & Scope
+## Scope A vs. Scope B Boundary Notice
+* **Scope A (Certified Application Level):** Guarantees zeroization, closure registry isolation, and immutable per-instance identifiers against application-level attack vectors.
+* **Scope B (OS & Hardware Level):** Out-of-process memory protection, arbitrary code execution within the interpreter, and physical hardware tampering are explicitly excluded and deferred to Scope B.
+
+
 This document outlines the threat modeling, security assumptions, attack vectors, and mitigation strategies for the HAI Lab Fail-Closed & Zeroization Engine (hailab-fail-closed-engine).
 
 The engine is a reference architecture designed for high-risk edge computing environments where physical security cannot be guaranteed, and persistent cloud connectivity is unavailable or untrusted.
