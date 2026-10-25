@@ -9,8 +9,8 @@ Security-first architecture for mission-critical edge nodes, designed to prevent
 ---
 
 ## 🔒 Security Guarantee Boundaries (Threat Model)
+- **Scope A – Application-Level Assurance (Pending Final Certification):** Guarantees zeroization, registry isolation, and terminal state lockdown against public API abuse and application-level attack vectors. *(Note: OS-level network isolation via iptables is explicitly excluded).*
 
-* **Scope A – Application-Level Assurance (Pending Final Certification):** Guarantees zeroization, registry isolation, and terminal state lockdown against public API abuse and application-level attack vectors. *(Note: OS-level network isolation via iptables is explicitly excluded from the current Scope A guarantee).*[span_3](start_span)[span_3](end_span)[span_4](start_span)[span_4](end_span)
 * **Scope B (OS & Hardware Level - Future Roadmap):** In-process adversary memory protection requires OS-level process isolation (`seccomp`, containers) or hardware-enforced trusted execution environments (TEE/HSM).[span_5](start_span)[span_5](end_span)
 
  
