@@ -11,10 +11,10 @@ This document provides the full traceability matrix for **Scope A - Application-
 | **REQ-SCOPE-A-03** | Adversarial Sentinel Reconstruction (P0-03) | **PASSED** - Denies access under stub deletion, class-swapping, and attribute tampering. | `test_engine.py` (`test_p0_03_...` series) |
 | **REQ-SCOPE-A-04** | Fail-Closed Layer 5 Enforcement | **PASSED** - Locks execution path deterministically upon contract or admissibility violation. | `test_engine.py` (`test_p0_05_layer5_fail_closed_enforcement`) |
 | **REQ-SCOPE-A-05** | OS Network Isolation Boundary Clarification | **EXCLUDED FROM SCOPE A** - Application-level flag (`is_isolated=True`) does not guarantee OS-level network isolation without verified `iptables` execution. | Explicitly documented in `README.md` & `THREAT_MODEL.md` |
+| **REQ-SCOPE-A-06** | Low-level `object.__setattr__` on engine slots (including identity storage) | **EXCLUDED FROM SCOPE A (Scope B)** — In-process runtime memory manipulation via low-level attribute overrides falls under Scope B and requires OS/container isolation. | Documented in THREAT_MODEL.md & RELEASE_NOTES.md |
 
 ---
 
 ## Certification Boundary Statement
 * **Scope A Status:** Fully Verified via Automated Regression & Adversarial Test Suites. Final Certification Pending Documentation Closure.
 * **Scope B Status:** Deferred to Future Roadmap (Requires OS-level `seccomp`/containers or hardware-backed TEE/HSM).
-
