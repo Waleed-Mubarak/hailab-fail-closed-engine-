@@ -18,7 +18,7 @@ import uuid
 def _create_absolute_master_registry():
     """
     Encapsulates the registry set inside a closure using unique UUIDs, 
-    preventing identity swaps or external attribute tampering.
+    ensuring state isolation and external attribute tampering protection.
     """
     _zeroized_instance_ids = set()
     _registry_locked = False
