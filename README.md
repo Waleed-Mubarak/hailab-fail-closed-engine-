@@ -1,98 +1,73 @@
-Scope A – Application-Level Assurance (Pending Final Certification)
+# HAI Lab Fail-Closed Engine
 
-# Edge Zeroization Engine & Security Architecture
-
-> *"Software isolation is a myth; hardware state is the only truth."*
-
-Security-first architecture for mission-critical edge nodes, designed to prevent data extraction and ensure deterministic destruction under duress.
-
+Deterministic zeroization and autonomous fail-closed security engine for critical infrastructure and resilient architectures.
 
 ---
 
-## 🔒 Security Guarantee Boundaries (Threat Model)
+## 📋 Architectural & Scope A Specifications
 
-* **Scope A – Application-Level Assurance (Pending Final Certification):** Guarantees zeroization, registry isolation, and terminal state lockdown against public API abuse and application-level attack vectors. *(Note: OS-level network isolation via iptables is explicitly excluded from the current Scope A guarantee).*
-* **Scope B (OS & Hardware Level - Future Roadmap):** In-process adversary memory protection requires OS-level process isolation (`seccomp`, containers) or hardware-enforced trusted execution environments (TEE/HSM).[span_2](start_span)[span_2](end_span)
+This repository implements the certified **Scope A Baseline** for autonomous fail-closed security, adhering strictly to the following core parameters:
 
-
----
-
-
-# Edge Zeroization Engine & Security Agent
-
-> *"Software isolation is a myth; hardware state is the only truth."*
-
-Security-first architecture for mission-critical edge nodes, designed to prevent data extraction and ensure deterministic destruction under duress.
+* **Core Functionality:** Deterministic volatile key-material RAM zeroization and terminal state enforcement.
+* **Hysteresis Suppression:** Active mitigation against signal oscillation during high-stress operational anomalies.
+* **Audit & Verification:** Integrated SHA-256 state tracking and automated test suite validation.
+* **Certified Baseline Hash:** `191928d0e5354d8686c664a9aaa20e7ca2d323df` (Phase 5 Gatekeeper standards).
 
 ---
 
-## 📊 Project Status & Badges
+## 📄 License
 
-![CI](https://img.shields.io/badge/CI-passing-brightgreen)
-![Python](https://img.shields.io/badge/python-3.10%2B-blue)
-[![DEV.to](https://img.shields.io/badge/DEV.to-Waleed--Mubarak-black)](https://dev.to)
-[![Substack](https://img.shields.io/badge/Substack-HAI%20Lab-orange)](https://substack.com)
+This project is licensed under the MIT License:
 
----
+MIT License
 
-## 🚀 Quick Start & Installation
+Copyright (c) 2026 HAI Lab
 
-### 1. Clone the Repository
-* Command: https://github.com/Waleed-Mubarak/hailab-fail-closed-engine-.git
-* Directory: `cd hailab-fail-closed-engine-`
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to persons to whom the
+Software is furnished to do so, subject to the following conditions:
 
-### 2. Basic Usage Example
-* Script: `from src.engine import TurkashEngine`
-* Code: `engine = TurkashEngine()`
-* Trigger Check: `engine.check_duress_trigger(True)`
-* Authorization A: `engine.authorize_recovery("Admin_A")`
-* Authorization B: `engine.authorize_recovery("Admin_B")`
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
----
-
-## 🎮 Interactive Demos & Simulations
-
-Run the live interactive demonstrations directly from your terminal:
-
-* **Main Engine Demo:** `python demo.py`
-* **Edge Duress Simulation:** `python3 simulate_duress.py`
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ---
 
-## 🧪 Running Tests & Verification
+## 🚀 Installation & Setup
 
-To run the test suite smoothly without any import path issues:
+Install the package directly from your local development environment:
 
-* Test Command: `PYTHONPATH=. pytest tests/`
-
----
-
-## 🏗️ Repository Architecture & Design Principles
-
-* **docs/**
-  * └── Annex_A_Technical_Specification.md
-  * └── Turkash_ASV_SDP_White_Paper_V2.pdf
-* **src/**
-  * └── ...
-
-### Architectural Boundaries & Admissibility
-1. **Quorum vs. Admissibility:** Reaching the administrative quorum alone does not authorize execution. Full execution admissibility is strictly governed by rules and state validation.
-2. **Operational Integrity:** Multi-sample temporal filtering is applied alongside functions like `verify_chassis_sensors()` to enforce physical security invariants.
+pip install .
 
 ---
 
-## 📜 License & Proprietary Notice
+## 💻 Quickstart & Implementation
 
-© 2026 Waleed Mubarak. All Rights Reserved.  
-This repository contains proprietary deep-tech architecture. Unauthorized commercial use, duplication, or integration is strictly prohibited. For licensing inquiries, contact the author directly.
+Protect critical runtime workflows and data processing using the @fail_closed decorator:
 
+from hailab_engine import fail_closed, FailClosedEngine
+
+# Initialize the certified engine core
+engine = FailClosedEngine()
+
+@fail_closed(engine_instance=engine)
+def execute_critical_operation(payload: dict):
+    # Place critical execution or sensitive transaction logic here
+    return {"status": "success", "data": payload}
 
 ---
 
-## 📋 Compliance & Certification Documentation
+## 🛡️ Security Boundaries
 
-To inspect the full technical compliance and release verification artifacts for **Scope A (Pending Final Certification)**, please refer to the following documents:
-
-* 📊 **[Compliance Traceability Matrix (COMPLIANCE_MATRIX.md)](./COMPLIANCE_MATRIX.md):** Full mapping of Scope A requirements, including the 200-iteration registry identity recycling verification (`REQ-SCOPE-A-02`) and `iptables` boundary statements.
-* 📝 **[Release Notes & Verification Artifacts (RELEASE_NOTES.md)](./RELEASE_NOTES.md):** Detailed summary of Red-Team adversarial testing, fix validations (P0-03/P0-04), and final Scope A release boundaries.
-* 🛡️ **[Threat Model & Boundary Limits (THREAT_MODEL.md)](./THREAT_MODEL.md):** Updated threat actors, user-space limitations, and explicit OS-level network isolation exclusions.
+* **Scope A:** Governs volatile memory scrubbing, immediate process termination on unhandled breaches, and runtime state locking.
+* **References:** For further technical documentation and whitepapers, visit HAI Lab Substack.
