@@ -10,7 +10,6 @@ import ctypes
 import socket
 import subprocess
 import uuid
-import weakref
 
 # ==============================================================================
 # E-02: Immutable & Encapsulated Closure-Based Security Registry (Unhackable)
@@ -18,8 +17,8 @@ import weakref
 
 def _create_absolute_master_registry():
     """
-    Encapsulates the registry set inside a closure using weak references to engine instances 
-    and their unique UUIDs, preventing identity swaps or external attribute tampering.
+    Encapsulates the registry set inside a closure using unique UUIDs, 
+    preventing identity swaps or external attribute tampering.
     """
     _zeroized_instance_ids = set()
     _registry_locked = False
