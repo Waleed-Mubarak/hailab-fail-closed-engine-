@@ -4,8 +4,12 @@ import sys
 import os
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
+src_dir = os.path.join(current_dir, 'src')
+
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
 
 app = Flask(__name__)
 
@@ -38,7 +42,9 @@ def get_status():
 def run_pytest():
     try:
         env = os.environ.copy()
-        env["PYTHONPATH"] = current_dir
+        # إضافة مجلد src ومجلد المشروع الحالي معاً إلى مسار PYTHONPATH
+        env["PYTHONPATH"] = f"{src_dir}:{current_dir}"
+        
         result = subprocess.run([sys.executable, '-m', 'pytest', 'tests/', '-v'], capture_output=True, text=True, timeout=60, env=env)
         output = result.stdout if result.stdout else result.stderr
         return jsonify({'status': 'SUCCESS' if result.returncode == 0 else 'FAILURE', 'result': output})
@@ -49,7 +55,9 @@ def run_pytest():
 def run_fuzz():
     try:
         env = os.environ.copy()
-        env["PYTHONPATH"] = current_dir
+        # إضافة مجلد src ومجلد المشروع الحالي معاً إلى مسار PYTHONPATH
+        env["PYTHONPATH"] = f"{src_dir}:{current_dir}"
+        
         result = subprocess.run([sys.executable, '-m', 'pytest', '-k', 'fuzz', '-v'], capture_output=True, text=True, timeout=60, env=env)
         output = result.stdout if result.stdout else result.stderr
         return jsonify({'status': 'SUCCESS', 'result': output if output else 'Fuzz tests executed successfully.'})
