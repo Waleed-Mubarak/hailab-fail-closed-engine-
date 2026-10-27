@@ -4,7 +4,7 @@ Verifies deterministic zeroization, hysteresis suppression, and decorator protec
 """
 
 import time
-from hailab_engine import fail_closed, FailClosedEngine
+from edge_security_agent import fail_closed, FailClosedEngine
 
 # Initialize the certified engine core
 engine = FailClosedEngine()
@@ -36,4 +36,3 @@ if __name__ == "__main__":
         print(f"Caught expected fail-closed termination: {e}")
 
     print("\n[Pilot Test Completed] Terminal state and RAM zeroization verified successfully.")
-
