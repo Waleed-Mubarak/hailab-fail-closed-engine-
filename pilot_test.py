@@ -6,11 +6,24 @@ Verifies deterministic zeroization, hysteresis suppression, and decorator protec
 import sys
 import os
 
-# إضافة مجلد src إلى مسار البحث لضمان نجاح الاستيراد
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
+# ضمان إضافة مجلد src للمسار بشكل مطلق وثابت لجميع حالات التشغيل
+current_dir = os.path.dirname(os.path.abspath(__file__))
+src_dir = os.path.join(current_dir, 'src')
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
 
 import time
-from fail_closed_engine import fail_closed, FailClosedEngine
+
+# محاولة الاستيراد بنظام Fallback لضمان نجاحه مهما كانت مسارات pytest
+try:
+    from fail_closed_engine import fail_closed, FailClosedEngine
+except ImportError:
+    try:
+        from src.fail_closed_engine import fail_closed, FailClosedEngine
+    except ImportError:
+        # إضافة الجذر الرئيسي أيضاً كاحتياط إضافي
+        sys.path.insert(0, current_dir)
+        from fail_closed_engine import fail_closed, FailClosedEngine
 
 # Initialize the certified engine core
 engine = FailClosedEngine()
