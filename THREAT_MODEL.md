@@ -1,89 +1,72 @@
-# THREAT_MODEL.md
+# THREAT MODEL: Scope B – OS-Level Privilege & Memory Boundary Isolation
 
-## Overview & Scope
-## Scope A vs. Scope B Boundary Notice
-* **Scope A (Application-Level Assurance - Pending Final Certification):** Guarantees zeroization, closure registry isolation, and immutable per-instance identifiers against application-level attack vectors.
-* **Scope B (OS & Hardware Level):** Out-of-process memory protection, arbitrary code execution within antihere, and physical hardware tampering are explicitly excluded and deferred to Scope B.
+## 1. System Overview & Scope Definition
+This threat model defines the security boundaries, attack vectors, and operational invariants for **Scope B (OS-Level Privilege & Isolation Guarantee)** within the HAI Lab Fail-Closed & Zeroization Engine.
 
-
-This document outlines the threat modeling, security assumptions, attack vectors, and mitigation strategies for the HAI Lab Fail-Closed & Zeroization Engine (hailab-fail-closed-engine).
-
-The engine is a reference architecture designed for high-risk edge computing environments where physical security cannot be guaranteed, and persistent cloud connectivity is unavailable or untrusted.
+> **Scope A Boundary Disclaimer:**  
+> Scope A guarantees are strictly limited to application-level managed buffer zeroization and process termination via `os._exit(101)` under commit `191928d0e5354d8686c664a9aaa20e7ca2d323df` (`REQ-SCOPE-A-01` through `REQ-SCOPE-A-04`). Scope B extends containment beyond the Python interpreter boundary to enforcing process privilege drop, kernel-enforced syscall filtering, and process boundary isolation.
 
 ---
 
-## 1. System Asset Identification
-The primary assets protected by the engine include:
-* **Volatile Cryptographic Material:** Encryption keys, session tokens, and ephemeral identity credentials held in RAM.
-* **Sensitive Execution State:** In-memory application state and cached telemetry logs.
-* **Hardware Integrity:** Prevention of unauthorized physical or logical device takeover.
+## 2. Protected Assets & Adversary Profiles
+
+### 2.1 Protected Assets
+* **PA-01 (Primary Key Material & Derived Secrets):** Plaintext cryptographic keys, ephemeral seeds, and intermediate states.
+* **PA-02 (Volatile Buffer Replicas):** Any copies or lingering representations of key material in process memory or swap space.
+* **PA-03 (Zeroization State Registers):** Execution status and confirmation signals indicating successful memory scrubbing.
+* **PA-04 (Audit Trails & Verification Logs):** Immutable hash logs (`SHA-256`) documenting privilege changes and fail-closed events.
+
+### 2.2 Adversary Profiles & Scope Boundaries
+* **Adversary B1 (In-Process Malicious/Compromised Code):** Code executing within the same CPython runtime attempting memory inspection or attribute tampering (e.g., via `__object.__setattr__` or `ctypes`).
+  * *Status:* **IN-SCOPE** via Decision B1 (Dedicated privilege-separated process boundary).
+* **Adversary B2 (Co-located Local Unprivileged Attacker):** Unprivileged local processes attempting memory reads via `/proc/<pid>/mem` or attachment via `ptrace`.
+  * *Status:* **IN-SCOPE** (Mitigated via `PR_SET_DUMPABLE=0` and `yama.ptrace_scope=3`).
+* **Adversary B3 (Kernel Exploit / Ring-0 Attacker):** Adversaries exploiting OS kernel vulnerabilities to subvert process boundaries.
+  * *Status:* **EXCLUDED FROM SCOPE B** (Explicitly out of scope).
+* **Adversary B4 (Physical / Cold-Boot / Hardware Attacker):** Physical probing, RAM freeze/cold-boot extraction, or hardware-level bus sniffing.
+  * *Status:* **EXCLUDED FROM SCOPE B** (Requires dedicated TEE/HSM integration).
+* **Adversary B5 (Runtime Invariant Manipulator):** Injecting asynchronous cancellations or unhandled exceptions to force a Fail-Open state.
+  * *Status:* **IN-SCOPE** (Mitigated via out-of-event-loop watchdog monitoring).
 
 ---
 
-## 2. Threat Actor Profiles
+## 3. Trust Boundaries & Isolation Primitives
 
-### Actor Profile: Physical Interceptor
-* **Capabilities & Resources:** Direct physical access, chassis disassembly, logic probes, cold-boot equipment.
-* **Primary Objective:** Extract cryptographic keys from volatile memory.
+### 3.1 Decision B1: Process Isolation & Key Offloading Design
+To eliminate vulnerabilities stemming from CPython immutable object behavior (where `bytes`/`str` objects allocated by CPython cannot be guaranteed zeroed in-place due to interpreter free-lists), Scope B strictly enforces **Decision B1**:
+1. All key handling and sensitive cryptography are offloaded to a dedicated, isolated worker process (Native C extension or privilege-dropped daemon).
+2. The main application process communicates with the worker strictly via restricted IPC.
+3. In-process CPython state tampering (`REQ-SCOPE-A-06`) cannot inspect or modify key buffers residing inside the isolated worker process memory space.
 
-### Actor Profile: Network Adversary
-* **Capabilities & Resources:** Signal jamming, man-in-the-middle (MitM), packet injection, network isolation.
-* **Primary Objective:** Prevent security alerts from reaching command centers while exploiting the device.
-
-### Actor Profile: Malicious Insider
-* **Capabilities & Resources:** Local unprivileged access, physical proximity, physical sensor manipulation.
-* **Primary Objective:** Induce denial-of-service (DoS) or trick system into executing unprovoked zeroization.
-
----
-
-## 3. Attack Vectors & Mitigation Strategies
-
-### Threat 1: Physical Chassis Breach (Side-Channel & Cold Boot)
-* **Description:** An attacker opens the hardware enclosure to perform direct physical inspection or cold-boot memory attacks.
-* **Impact:** High (Potential full key/data compromise).
-* **Mitigation:**
-  * Physical chassis tamper switches monitor enclosure status.
-  * Detection triggers immediate deterministic transition to FAIL-CLOSED state.
-  * Engine executes instant volatile memory zeroization (overwriting memory locations before halting).
-
-### Threat 2: Signal Jamming / Network Isolation
-* **Description:** Adversaries sever wireless or wired network interfaces to isolate the node from central monitoring orchestrators.
-* **Impact:** Medium to High (Loss of centralized command and control).
-* **Mitigation:**
-  * Autonomous local telemetry loop continuously evaluates network availability.
-  * System does not rely on remote kill switch commands; decisions are evaluated and executed locally at the edge.
-
-### Threat 3: Denial-of-Service via Forced Zeroization
-* **Description:** An attacker deliberately introduces environmental noise or brief sensor anomalies to trick the system into triggering a destructive zeroization cycle.
-* **Impact:** Medium (Service interruption and data loss).
-* **Mitigation:**
-  * Multi-sample temporal verification filtering ensures sensor anomalies are validated across consecutive polling cycles before executing destructive actions.
+### 3.2 System Call Filtering & Capability Stripping
+* **Syscall Whitelisting (`seccomp-bpf`):** The isolated engine process applies a strict `seccomp` filter allowing only essential I/O and `sys_exit_group`. Any unwhitelisted syscall (e.g., `execve`, `socket`) causes immediate kernel termination.
+* **Capability Dropping Sequence:** Order of privilege stripping is strictly enforced:
+  1. Lock memory buffers (`mlockall` / `RLIMIT_MEMLOCK`).
+  2. Drop capabilities (`CAP_SYS_PTRACE`, `CAP_NET_RAW`, etc.).
+  3. Drop `CAP_SETPCAP` last to prevent capability regaining.
+  4. Audit capability status via `/proc/self/status` (`CapBnd`, `CapEff`).
 
 ---
 
-## 4. Trust Boundaries & Architectural Limitations
+## 4. Compliance & Verification Matrix (`REQ-SCOPE-B-xx`)
 
-**Crucial Implementation Note:**
-This reference implementation demonstrates deterministic fail-closed state transitions in user-space code.
-
-1. **User Space vs. Kernel/Hardware Execution:**
-   * In production deployments, user-space execution can be bypassed if an attacker achieves early root-level privilege.
-   * **Production Requirement:** The deterministic state logic and zeroization triggers must be integrated into secure hardware enclaves (e.g., TPM, HSM) or kernel-level anti-tamper modules.
-
-2. **Volatile Memory Persistence:**
-   * Standard memory overwrites in high-level runtimes may leave residual traces due to garbage collection or swap space. Production builds require non-swappable pinned memory allocations (`mlock`).
-
-3. **Network Isolation Limitation (`is_isolated` & `iptables`):**
-   * Setting `is_isolated=True` within the application logic indicates the intended logical isolation state. 
-   * **Crucial Clarification:** This application-level flag **does not** automatically guarantee or establish successful OS-level network isolation unless concrete, verified execution results from `iptables` (or equivalent kernel-level packet filtering tools) are successfully validated and confirmed in the host environment. OS-level network isolation via `iptables` remains strictly outside the Scope A guarantee boundary.
-
-4. **Low-Level Runtime Manipulation (`REQ-SCOPE-A-06`):**
-   * Low-level in-process attribute overrides via `object.__setattr__` targeting internal engine slots (including identity storage) are explicitly **excluded from Scope A** and deferred to **Scope B**. Mitigating arbitrary memory manipulation within the Python interpreter requires OS-level process sandboxing or container security mechanisms.
+| Requirement ID | Security Constraint | Verification Method | Audit Evidence |
+| :--- | :--- | :--- | :--- |
+| **REQ-SCOPE-B-01** | **Process Boundary Isolation:** Cryptographic operations must execute in a separate process space isolated from the main CPython runtime. | Test inter-process memory isolation under induced CPython attribute tampering. | Process tree status & IPC boundary inspection logs. |
+| **REQ-SCOPE-B-02** | **Ptrace & Dump Protection:** Process memory must block `/proc/<pid>/mem` access and `ptrace` attachment (`PR_SET_DUMPABLE=0`). | Attempt `ptrace(PTRACE_ATTACH)` and `/proc/self/mem` read operations during execution. | `EPERM` return code verification logs. |
+| **REQ-SCOPE-B-03** | **Memory Swapping Prevention:** Key buffers must be locked in RAM using `mlockall(MCL_CURRENT \| MCL_FUTURE)`. | Verify `VmLck` status field in `/proc/self/status` during key lifecycle. | Non-zero `VmLck` audit verification report. |
+| **REQ-SCOPE-B-04** | **Kernel Syscall Restriction:** Restrict available syscalls to an explicit whitelist via `seccomp-bpf`. | Trigger prohibited syscalls (`execve`, `socket`) within test harness. | Kernel SIGSYS signal & `sys_exit_group` audit log. |
+| **REQ-SCOPE-B-05** | **Async Boundary Containment:** Asynchronous task timeouts or cancellations must trigger out-of-loop fail-closed sequence. | Inject uncaught `asyncio.CancelledError` and delay signals. | Watchdog termination log independent of CPython event loop. |
 
 ---
 
-## 5. Security Audit & Testing
-The state engine logic is validated using automated deterministic test suites (`test_engine.py`) covering:
-* Positive breach detection scenarios.
-* Transient fault filtering (false-positive suppression).
-* State transition immutability once FAIL-CLOSED is reached.
+## 5. Formal Execution Invariants
+1. **INV-B-01 (Kernel-Enforced Failure Termination):** Any breach of security invariants triggers immediate termination via `sys_exit_group`, bypassing CPython signal handlers.
+2. **INV-B-02 (Zero Residual Memory Footprint in Isolated Process):** All native buffers in the isolated process are overwritten (`0x00`) before page release.
+3. **INV-B-03 (Audit Trail Integrity):** Immutable SHA-256 hashes record all privilege drop states and execution transitions.
+
+---
+
+## 6. Audit & Acceptance Criteria
+* **Automated Integration Suite:** Must verify `seccomp` violation termination, `ptrace` blockage, `VmLck` verification, and memory non-leakage under induced `SIGSEGV`/`SIGBUS`.
+* **Repository Placement:** Formally tracked under `THREAT_MODEL.md` and `SCOPE_B_REQUIREMENTS.md` in the repository root.
