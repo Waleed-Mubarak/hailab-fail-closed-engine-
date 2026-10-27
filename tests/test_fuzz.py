@@ -5,23 +5,15 @@ Compliance: Adversarial Resilience & Automated Edge-Case Verification
 
 import sys
 import os
-import importlib.util
-import pytest
-from hypothesis import given, strategies as st
 
-# تحميل المحرك ديناميكياً بغض النظر عن مكان وجوده (سواء في الجذر أو في src)
+# إضافة جذر المشروع (الذي يحتوي على fail_closed_engine.py مباشرة) إلى مسار بايثون
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.abspath(os.path.join(current_dir, ".."))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
 
-engine_path = os.path.join(root_dir, "fail_closed_engine.py")
-if not os.path.exists(engine_path):
-    engine_path = os.path.join(root_dir, "src", "fail_closed_engine.py")
-
-spec = importlib.util.spec_from_file_location("fail_closed_engine", engine_path)
-fail_closed_module = importlib.util.module_from_spec(spec)
-sys.modules["fail_closed_engine"] = fail_closed_module
-spec.loader.exec_module(fail_closed_module)
-
+from hypothesis import given, strategies as st
+import pytest
 from fail_closed_engine import FailClosedEngine
 
 @given(
