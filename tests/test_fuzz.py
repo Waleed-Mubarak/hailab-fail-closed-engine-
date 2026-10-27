@@ -6,17 +6,15 @@ Compliance: Adversarial Resilience & Automated Edge-Case Verification
 import sys
 import os
 
-# إضافة مجلد src إلى مسار النظام تلقائياً لضمان التعرف على المحرك في كل بيئات التشغيل
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+# إضافة مجلد src مباشرة إلى مسار بايثون لضمان رؤية fail_closed_engine دون أي تعقيد
+current_dir = os.path.dirname(os.path.abspath(__file__))
+src_dir = os.path.abspath(os.path.join(current_dir, "../src"))
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
 
 from hypothesis import given, strategies as st
 import pytest
-
-# استيراد المحرك بنظام احتياطي آمن
-try:
-    from fail_closed_engine import FailClosedEngine
-except ImportError:
-    from src.fail_closed_engine import FailClosedEngine
+from fail_closed_engine import FailClosedEngine
 
 @given(
     action=st.text(min_size=0, max_size=100),
