@@ -3,6 +3,12 @@ TurkashEngine Fuzz Testing Suite
 Compliance: Adversarial Resilience & Automated Edge-Case Verification
 """
 
+import sys
+import os
+
+# إضافة جذر المشروع يدوياً لمسار بايثون لضمان العثور على fail_closed_engine فوراً
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from hypothesis import given, strategies as st
 import pytest
 from fail_closed_engine import FailClosedEngine
