@@ -6,11 +6,14 @@ Compliance: Adversarial Resilience & Automated Edge-Case Verification
 import sys
 import os
 
-# إضافة جذر المشروع (الذي يحتوي على fail_closed_engine.py مباشرة) إلى مسار بايثون
+# إضافة جميع المسارات المحتملة (الجذر ومجلد src) إلى مسار بايثون لتجنب أي خطأ استيراد
 current_dir = os.path.dirname(os.path.abspath(__file__))
-root_dir = os.path.abspath(os.path.join(current_dir, ".."))
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
+parent_dir = os.path.abspath(os.path.join(current_dir, ".."))
+src_dir = os.path.abspath(os.path.join(parent_dir, "src"))
+
+for path in [parent_dir, src_dir, current_dir]:
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 from hypothesis import given, strategies as st
 import pytest
