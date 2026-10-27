@@ -3,8 +3,14 @@ Pilot Test Implementation for HAI Lab Fail-Closed Engine
 Verifies deterministic zeroization, hysteresis suppression, and decorator protection.
 """
 
+import sys
+import os
+
+# إضافة مجلد src إلى مسار البحث لضمان نجاح الاستيراد
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
+
 import time
-from edge_security_agent import fail_closed, FailClosedEngine
+from fail_closed_engine import fail_closed, FailClosedEngine
 
 # Initialize the certified engine core
 engine = FailClosedEngine()
