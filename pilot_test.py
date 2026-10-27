@@ -20,9 +20,21 @@ import time
 
 # الاستيراد الصحيح المباشر من ملف engine داخل مجلد src
 try:
-    from engine import fail_closed, FailClosedEngine
+    from engine import FailClosedEngine
 except ImportError:
-    from src.engine import fail_closed, FailClosedEngine
+    from src.engine import FailClosedEngine
+
+# تعريف Decorator محلي للتحقق من عمل المحرك (إذا لم يكن معرفاً داخل engine.py)
+def fail_closed(engine_instance):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                engine_instance.zeroize()
+                raise e
+        return wrapper
+    return decorator
 
 # Initialize the certified engine core
 engine = FailClosedEngine()
