@@ -6,8 +6,11 @@ Compliance: Adversarial Resilience & Automated Edge-Case Verification
 import sys
 import os
 
-# إضافة جذر المشروع يدوياً لمسار بايثون لضمان العثور على fail_closed_engine فوراً
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# ضبط المسار بدقة ليتوافق مع هيكلة المستودع الحالية على GitHub
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.abspath(os.path.join(current_dir, '..'))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
 
 from hypothesis import given, strategies as st
 import pytest
