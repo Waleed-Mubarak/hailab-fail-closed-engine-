@@ -6,21 +6,16 @@ Compliance: Adversarial Resilience & Automated Edge-Case Verification
 import sys
 import os
 
-# التوجيه الجذري الثابت والمباشر (نفس الطريقة الناجحة في ملف pilot_test.py)
+# إضافة مجلد src مباشرة إلى بداية مسار بايثون
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.abspath(os.path.join(current_dir, ".."))
 src_dir = os.path.abspath(os.path.join(parent_dir, "src"))
 
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
 
-# نظام استيراد آمن ومباشر
-try:
-    from fail_closed_engine import FailClosedEngine
-except ImportError:
-    from src.fail_closed_engine import FailClosedEngine
+# الاستيراد المباشر والصحيح للملف من داخل مجلد src
+from fail_closed_engine import FailClosedEngine
 
 from hypothesis import given, strategies as st
 import pytest
