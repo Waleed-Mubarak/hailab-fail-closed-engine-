@@ -9,7 +9,7 @@ Deterministic zeroization and autonomous fail-closed security engine for critica
 This repository implements the certified Scope A Baseline for autonomous fail-closed security, adhering strictly to the following core parameters:
 
 * Core Functionality: Deterministic volatile key-material RAM zeroization and terminal state enforcement.
-* Certified Baseline Commit: 191928d0e5354d8686c664a9aaa20e7ca2d323df (Phase 5 Gatekeeper standards)[span_3](start_span)[span_3](end_span).
+* Certified Baseline Commit: 191928d0e5354d8686c664a9aaa20e7ca2d323df (Phase 5 Gatekeeper standards).
 
 > Note on Certification Boundaries: Features such as Hysteresis Suppression and Integrated SHA-256 state tracking are experimental/extension mechanisms and are not part of the certified Scope A Baseline.
 
@@ -23,7 +23,7 @@ This repository implements the certified Scope A Baseline for autonomous fail-cl
   * REQ-SCOPE-A-06: Low-level in-process runtime memory and attribute manipulation (e.g., object.__setattr__, closure or frame introspection, and ctypes overrides).
 * General Exclusions: 
   * Physical RAM extraction and hardware/cold-boot attacks are strictly excluded from both Scope A and Scope B.
-  * Multi-process isolation boundaries are addressed separately under Scope B development[span_4](start_span)[span_4](end_span).
+  * Multi-process isolation boundaries are addressed separately under Scope B development.
 
 ---
 
@@ -37,7 +37,7 @@ pip install .
 
 ## Quickstart & Implementation
 
-Protect critical runtime workflows and data processing using the certified engine core (src/engine.py)[span_5](start_span)[span_5](end_span):
+Protect critical runtime workflows and data processing using the certified engine core (src/engine.py):
 
 from src.engine import FailClosedEngine
 
@@ -45,10 +45,10 @@ from src.engine import FailClosedEngine
 engine = FailClosedEngine()
 
 try:
-    # Execute critical operations securely using the certified public API[span_6](start_span)[span_6](end_span)
+    # Execute critical operations securely using the certified public API
     engine.execute_critical_operation()
 except Exception:
-    # Enforce immediate volatile buffer zeroization in the exception path[span_7](start_span)[span_7](end_span)
+    # Enforce immediate volatile buffer zeroization in the exception path
     engine.zeroize()
     assert engine.is_zeroized()
 
