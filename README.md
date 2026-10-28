@@ -17,8 +17,11 @@ This repository implements the certified **Scope A Baseline** for autonomous fai
 
 ## 🛡️ Security Boundaries & Scope Exclusions
 
-* **Scope A Coverage:** Governs volatile memory scrubbing (`ctypes`/`mlock`), immediate process termination on unhandled breaches, and runtime state locking within `src/fail_closed_engine.py`.
-* **Scope A Exclusions:** Kernel-level compromises, hardware/physical RAM extraction, multi-process isolation boundaries (addressed under Scope B development), and asynchronous application-level interceptors are explicitly excluded from Scope A certification.
+* **Scope A Coverage:** Governs volatile memory scrubbing (`ctypes`), immediate process termination on unhandled breaches, and runtime state locking within `src/engine.py`.
+* **Scope A Exclusions:** The Scope A certificate explicitly excludes:
+  * **REQ-SCOPE-A-05:** OS-level network isolation boundaries.
+  * **REQ-SCOPE-A-06:** Low-level in-process runtime memory and attribute manipulation (e.g., `object.__setattr__`, closure or frame introspection, and `ctypes` overrides).
+  * Kernel-level compromises, hardware/physical RAM extraction, and multi-process isolation boundaries (addressed under Scope B development) are also strictly excluded.
 
 ---
 
