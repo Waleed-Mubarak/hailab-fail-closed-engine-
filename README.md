@@ -4,28 +4,28 @@ Deterministic zeroization and autonomous fail-closed security engine for critica
 
 ---
 
-## 📋 Architectural & Scope A Specifications
+## Architectural & Scope A Specifications
 
-This repository implements the certified **Scope A Baseline** for autonomous fail-closed security, adhering strictly to the following core parameters:
+This repository implements the certified Scope A Baseline for autonomous fail-closed security, adhering strictly to the following core parameters:
 
-* **Core Functionality:** Deterministic volatile key-material RAM zeroization and terminal state enforcement.
-* **Certified Baseline Commit:** `191928d0e5354d8686c664a9aaa20e7ca2d323df` (Phase 5 Gatekeeper standards).
+* Core Functionality: Deterministic volatile key-material RAM zeroization and terminal state enforcement.
+* Certified Baseline Commit: 191928d0e5354d8686c664a9aaa20e7ca2d323df (Phase 5 Gatekeeper standards).
 
-> **Note on Certification Boundaries:** Features such as *Hysteresis Suppression* and *Integrated SHA-256 state tracking* are experimental/extension mechanisms and are **not** part of the certified Scope A Baseline.
-
----
-
-## 🛡️ Security Boundaries & Scope Exclusions
-
-* **Scope A Coverage:** Governs volatile memory scrubbing (`ctypes`), immediate process termination on unhandled breaches, and runtime state locking within `src/engine.py`.
-* **Scope A Exclusions:** The Scope A certificate explicitly excludes:
-  * **REQ-SCOPE-A-05:** OS-level network isolation boundaries.
-  * **REQ-SCOPE-A-06:** Low-level in-process runtime memory and attribute manipulation (e.g., `object.__setattr__`, closure or frame introspection, and `ctypes` overrides).
-  * Kernel-level compromises, hardware/physical RAM extraction, and multi-process isolation boundaries (addressed under Scope B development) are also strictly excluded.
+> Note on Certification Boundaries: Features such as Hysteresis Suppression and Integrated SHA-256 state tracking are experimental/extension mechanisms and are not part of the certified Scope A Baseline.
 
 ---
 
-## 🚀 Installation & Setup
+## Security Boundaries & Scope Exclusions
+
+* Scope A Coverage: Governs volatile memory scrubbing (ctypes), immediate process termination on unhandled breaches (os._exit(101)), and runtime state locking strictly within src/engine.py.
+* Scope A Exclusions: The Scope A certificate explicitly excludes:
+  * REQ-SCOPE-A-05: OS-level network isolation boundaries.
+  * REQ-SCOPE-A-06: Low-level in-process runtime memory and attribute manipulation (e.g., object.__setattr__, closure or frame introspection, and ctypes overrides).
+  * Physical RAM extraction, hardware/cold-boot attacks, and multi-process isolation boundaries (addressed separately under Scope B development) are also strictly excluded.
+
+---
+
+## Installation & Setup
 
 Install the package directly from your local development environment:
 
@@ -33,23 +33,25 @@ pip install .
 
 ---
 
-## 💻 Quickstart & Implementation
+## Quickstart & Implementation
 
-Protect critical runtime workflows and data processing using the `@fail_closed` decorator:
+Protect critical runtime workflows and data processing using the certified engine core (src/engine.py):
 
-from fail_closed_engine import FailClosedEngine, fail_closed
+from src.engine import FailClosedEngine
 
-# Initialize the certified engine core
+# Initialize the certified engine core (Scope A Baseline)
 engine = FailClosedEngine()
 
-@fail_closed(engine_instance=engine)
-def execute_critical_operation(payload: dict):
+try:
     # Place critical execution or sensitive transaction logic here
-    return {"status": "success", "data": payload}
+    pass
+except Exception:
+    # Enforce immediate fail-closed state and volatile buffer zeroization
+    engine.enforce_fail_closed()
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License:
 
