@@ -39,13 +39,17 @@ pip install .
 
 Protect critical runtime workflows and data processing using the certified engine core (src/engine.py):
 
+```python
 from src.engine import FailClosedEngine
 
+# Initialize the certified engine core (Scope A Baseline)
 engine = FailClosedEngine()
 
 try:
+    # Execute critical operations securely using the certified public API
     engine.execute_critical_operation()
 except Exception:
+    # Enforce immediate volatile buffer zeroization in the exception path
     engine.zeroize()
     assert engine.is_zeroized()
 
