@@ -1,8 +1,8 @@
 # Compliance Matrix: Phase 5 & Scope A Baseline
 
 ## 1. Certification Status & Baseline
-* **Current Status:** Certified (Phase 5 Scope A Baseline certified on 26 October 2026)[span_7](start_span)[span_7](end_span).
-* **Certified Baseline Commit:** `191928d0e5354d8686c664a9aaa20e7ca2d323df`[span_8](start_span)[span_8](end_span).
+* **Current Status:** Certified (Phase 5 Scope A Baseline certified on 26 October 2026).
+* **Certified Baseline Commit:** `191928d0e5354d8686c664a9aaa20e7ca2d323df`.
 * **Governing Scope:** Application-level managed buffer zeroization (`ctypes`) and autonomous immediate process termination (`os._exit(101)`) as implemented strictly in `src/engine.py`.
 
 ## 2. Scope A Requirements Traceability Matrix
