@@ -9,9 +9,40 @@ Deterministic zeroization and autonomous fail-closed security engine for critica
 This repository implements the certified **Scope A Baseline** for autonomous fail-closed security, adhering strictly to the following core parameters:
 
 * **Core Functionality:** Deterministic volatile key-material RAM zeroization and terminal state enforcement.
-* **Hysteresis Suppression:** Active mitigation against signal oscillation during high-stress operational anomalies.
-* **Audit & Verification:** Integrated SHA-256 state tracking and automated test suite validation.
-* **Certified Baseline Hash:** `191928d0e5354d8686c664a9aaa20e7ca2d323df` (Phase 5 Gatekeeper standards).
+* **Certified Baseline Commit:** `191928d0e5354d8686c664a9aaa20e7ca2d323df` (Phase 5 Gatekeeper standards).
+
+> **Note on Certification Boundaries:** Features such as *Hysteresis Suppression* and *Integrated SHA-256 state tracking* are experimental/extension mechanisms and are **not** part of the certified Scope A Baseline.
+
+---
+
+## 🛡️ Security Boundaries & Scope Exclusions
+
+* **Scope A Coverage:** Governs volatile memory scrubbing (`ctypes`/`mlock`), immediate process termination on unhandled breaches, and runtime state locking within `src/fail_closed_engine.py`.
+* **Scope A Exclusions:** Kernel-level compromises, hardware/physical RAM extraction, multi-process isolation boundaries (addressed under Scope B development), and asynchronous application-level interceptors are explicitly excluded from Scope A certification.
+
+---
+
+## 🚀 Installation & Setup
+
+Install the package directly from your local development environment:
+
+pip install .
+
+---
+
+## 💻 Quickstart & Implementation
+
+Protect critical runtime workflows and data processing using the `@fail_closed` decorator:
+
+from fail_closed_engine import FailClosedEngine, fail_closed
+
+# Initialize the certified engine core
+engine = FailClosedEngine()
+
+@fail_closed(engine_instance=engine)
+def execute_critical_operation(payload: dict):
+    # Place critical execution or sensitive transaction logic here
+    return {"status": "success", "data": payload}
 
 ---
 
@@ -40,35 +71,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-## 🚀 Installation & Setup
-
-Install the package directly from your local development environment:
-
-pip install .
-
----
-
-## 💻 Quickstart & Implementation
-
-Protect critical runtime workflows and data processing using the @fail_closed decorator:
-
-from hailab_engine import fail_closed, FailClosedEngine
-
-# Initialize the certified engine core
-engine = FailClosedEngine()
-
-@fail_closed(engine_instance=engine)
-def execute_critical_operation(payload: dict):
-    # Place critical execution or sensitive transaction logic here
-    return {"status": "success", "data": payload}
-
----
-
-## 🛡️ Security Boundaries
-
-* **Scope A:** Governs volatile memory scrubbing, immediate process termination on unhandled breaches, and runtime state locking.
-* **References:** For further technical documentation and whitepapers, visit HAI Lab Substack.
--
