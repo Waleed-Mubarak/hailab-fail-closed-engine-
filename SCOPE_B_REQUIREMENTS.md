@@ -1,4 +1,4 @@
-# SCOPE B TECHNICAL REQUIREMENTS & ACCEPTANCE SPECIFICATIONS (Revision 6)
+# SCOPE B TECHNICAL REQUIREMENTS & ACCEPTANCE SPECIFICATIONS (Revision 7)
 
 ## 1. Scope & System Dependencies
 This document specifies the exact requirements for Phase 3 / Scope B implementation. Scope B is evaluated independently from Scope A certification and establishes process boundary isolation and privileged operations security.
@@ -48,7 +48,7 @@ This document specifies the exact requirements for Phase 3 / Scope B implementat
 - Req-B-Audit (Audit Integrity vs. Git Versioning): 
   - Git Commit Identifiers: Tracked exclusively using SHA-1 commit hashes.
   - Audit Trail Integrity (PA-04 / INV-B-03): Audit logs and runtime integrity hashes must utilize SHA-256 (or stronger collision-resistant hashing algorithms) paired with external append-only sinks or asymmetric signatures inaccessible to the main process.
-- Req-B-Async (Out-of-Loop Watchdog): The asynchronous watchdog monitor operates as an independent containment and monitoring mechanism within the worker daemon process, tracked via a dedicated acceptance row (REQ-SCOPE-B-07).
+- Req-B-Async (Out-of-Loop Dedicated Watchdog): The asynchronous watchdog monitor operates as an **independent, dedicated watchdog process** (separate from the worker daemon) with restricted UID permissions and explicit signaling rights to monitor main-loop stalls or worker death, tracked via acceptance row (REQ-SCOPE-B-07).
 
 ---
 
@@ -67,4 +67,5 @@ This document specifies the exact requirements for Phase 3 / Scope B implementat
 | REQ-SCOPE-B-03 | Unauthorized system call execution inside worker process | Kernel terminates process immediately via SECCOMP_RET_KILL_PROCESS | Seccomp filter validation test logs |
 | REQ-SCOPE-B-04 | Abrupt crash of main CPython interpreter process | Worker detects socket EOF/PDEATHSIG and zeroizes memory | Process crash integration test logs |
 | REQ-SCOPE-B-05 | Privilege drop or capability verification bypass attempt | Startup halts immediately if CapEff > 0 or CapBnd > 0 | /proc/self/status capability audit log |
-| REQ-SCOPE-B-06
+| REQ-SCOPE-B-06 | Memory swap exposure or replica leakage attempt | mlockall failure halts startup immediately; Swap disabled or encrypted | Memory lock verification and mlockall failure test logs |
+| REQ-SCOPE-B-07 | Asynchronous worker stall or unresponsive loop | Independent watchdog process detects timeout and triggers containment | Watchdog isolation and termination test logs |
