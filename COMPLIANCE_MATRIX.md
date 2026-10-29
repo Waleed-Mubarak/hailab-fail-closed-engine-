@@ -1,19 +1,15 @@
-# Certified Scope A Compliance Matrix (Baseline Commit 191928d)
+# Certified Scope A Compliance Matrix
 
-## Scope A Requirements Verification & Traceability
-
-This matrix tracks the certified Scope A baseline requirements against the verification suite under commit `191928d0e5354d8686c664a9aaa20e7ca2d323df`.
-
-| Requirement ID | Certified Meaning & Baseline Definition (Commit 191928d) | Test / Verification Reference | Certification Status |
+| ID | Certified Requirement | Test / Verification Reference | Status |
 | :--- | :--- | :--- | :--- |
-| **A-01** | Zeroization and transition to terminal state: Buffer zeroization via `ctypes` only | `tests/test_engine.py::test_zeroize_memory` | **PASSED (Certified)** |
-| **A-02** | Registry identity recycling (200 iterations) / Process termination (`os._exit`) | `E-06 (partial) - process termination via os._exit(101)` | **PASSED (Certified)** |
-| **A-03** | Post-zeroization denial under tampering: Exception bypass during critical state failure | `tests/test_engine.py::test_tamper_after_zeroize` | **PASSED (Certified)** |
-| **A-04** | Fail-closed on admissibility/contract: General runtime state locking violation | `tests/test_engine.py::test_contract_violation` | **PASSED (Certified)** |
-| **A-05** | OS-level network isolation boundaries | *Excluded from Scope A (Deferred to Scope B)* | **DEFERRED** |
-| **A-06** | Low-level in-process runtime and attribute manipulation | *Excluded from Scope A (Deferred to Scope B)* | **DEFERRED** |
+| **A-01** | Application-Level Zeroization & State Isolation | *Certified in baseline 191928d* | **PASSED** |
+| **A-02** | Registry Identity Recycling — Mandatory Finding | *Certified in baseline 191928d* | **PASSED** |
+| **A-03** | Adversarial Sentinel Reconstruction — P0-03 | *Certified in baseline 191928d* | **PASSED** |
+| **A-04** | Fail-Closed Layer 5 Enforcement | *Certified in baseline 191928d* | **PASSED** |
+| **A-05** | OS Network Isolation Boundary Clarification — EXCLUDED FROM SCOPE A | *N/A* | **EXCLUDED** |
+| **A-06** | Low-level object.__setattr__ on engine slots — EXCLUDED FROM SCOPE A | *N/A* | **EXCLUDED** |
 
 ---
 
-> **Note on Scope Separation:**  
-> Scope A certification strictly attests to the CPython in-process runtime guarantees at commit `191928d`. Process-level isolation, seccomp filters, and Linux namespace boundaries are independently specified under **Scope B**.
+> **Note on Baseline & Scope Separation:**  
+> This matrix reflects the exact certified baseline from commit `191928d0e5354d8686c664a9aaa20e7ca2d323df`[span_5](start_span)[span_5](end_span). Process termination via `os._exit(101)` is recorded separately under **E-06 (partial)**[span_6](start_span)[span_6](end_span)[span_7](start_span)[span_7](end_span). OS-level network isolation and process-level boundary controls are specified under **Scope B**[span_8](start_span)[span_8](end_span).
