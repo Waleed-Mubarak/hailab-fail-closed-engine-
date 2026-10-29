@@ -12,4 +12,4 @@
 ---
 
 > **Note on Baseline & Scope Separation:**  
-> This matrix reflects the exact certified baseline from commit `191928d0e5354d8686c664a9aaa20e7ca2d323df`[span_5](start_span)[span_5](end_span). Process termination via `os._exit(101)` is recorded separately under **E-06 (partial)**[span_6](start_span)[span_6](end_span)[span_7](start_span)[span_7](end_span). OS-level network isolation and process-level boundary controls are specified under **Scope B**[span_8](start_span)[span_8](end_span).
+> This matrix reflects the exact certified baseline from commit `191928d0e5354d8686c664a9aaa20e7ca2d323df`. Process termination via `os._exit(101)` is recorded separately under **E-06 (partial)**. OS-level network isolation and process-level boundary controls are specified under **Scope B**.
