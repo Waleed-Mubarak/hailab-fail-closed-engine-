@@ -1,5 +1,5 @@
 import unittest
-from src.scope_b.engine import ScopeBEngine
+from scope_b.engine import ScopeBEngine
 
 class TestScopeBEngine(unittest.TestCase):
     def setUp(self):
@@ -25,4 +25,3 @@ class TestScopeBEngine(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
