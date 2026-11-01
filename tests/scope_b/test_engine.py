@@ -1,5 +1,5 @@
 import unittest
-from scope_b.engine import ScopeBEngine
+from src.scope_b.engine import ScopeBEngine
 
 class TestScopeBEngine(unittest.TestCase):
     def setUp(self):
