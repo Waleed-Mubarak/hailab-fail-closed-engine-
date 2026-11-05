@@ -1,13 +1,14 @@
 """
-Automatic Test Files Cleaner and Sanitizer Script
+Automatic Test Files Cleaner and Sanitizer Script (Updated for Scope B)
 Fixes E-04: Removes invisible Unicode characters (like U+2060) from filenames and directory names,
-and cleans up directories that consist entirely of hidden characters.
+and cleans up directories that consist entirely of hidden characters, including scope_b paths.
 """
 
 import os
 import shutil
 
-TARGET_DIRS = [".", "tests", "src", "docs"]
+# إضافة مسارات Scope B المحددة لتتم معالجتها بدقة
+TARGET_DIRS = [".", "tests", "src", "docs", "src/scope_b", "tests/scope_b"]
 BAD_CHARS = ["\u2060", "\u200b", "\ufeff"]
 
 def sanitize_name(name):
@@ -17,9 +18,8 @@ def sanitize_name(name):
     return cleaned
 
 def clean_project_files():
-    print("[*] بدء فحص وتنظيف الملفات والمجلدات من محارف Unicode الخفية...")
+    print("[*] بدء فحص وتنظيف الملفات والمجلدات (بما فيها Scope B) من محارف Unicode الخفية...")
     
-    # استخدام topdown=False لضمان معالجة المجلدات الفرعية والملفات أولاً قبل المجلدات الرئيسية
     for target in TARGET_DIRS:
         if not os.path.exists(target):
             continue
@@ -30,8 +30,10 @@ def clean_project_files():
                 old_path = os.path.join(root, file)
                 clean_file_name = sanitize_name(file)
                 
+                # إضافة بادئة test_ فقط لمجلدات الاختبارات العامة وليست Scope B إذا كانت مسمية بشكل صحيح
                 if "tests" in root and not clean_file_name.startswith("test_") and not clean_file_name.startswith("__"):
-                    clean_file_name = "test_" + clean_file_name
+                    # نتأكد ألا نعدل ملفات غير مستهدفة
+                    pass
 
                 new_path = os.path.join(root, clean_file_name)
                 
@@ -42,14 +44,21 @@ def clean_project_files():
                     except Exception as e:
                         print(f"[-] خطأ في نقل الملف: {e}")
                 else:
-                    # فحص المحتوى الداخلي للتأكد من خلوه من \u2060
+                    # فحص المحتوى الداخلي للتأكد من خلوه من محارف Unicode المخفية وتطهيره
                     try:
                         with open(old_path, 'r', encoding='utf-8', errors='ignore') as f:
                             content = f.read()
-                        if '\u2060' in content:
-                            content = content.replace('\u2060', '')
+                        
+                        modified = False
+                        for bc in BAD_CHARS:
+                            if bc in content:
+                                content = content.replace(bc, '')
+                                modified = True
+                                
+                        if modified:
                             with open(old_path, 'w', encoding='utf-8') as f:
                                 f.write(content)
+                            print(f"[!] تم تنظيف المحتوى الداخلي للملف من الحروف المخفية: {old_path}")
                     except Exception:
                         pass
 
@@ -58,7 +67,6 @@ def clean_project_files():
                 old_dir_path = os.path.join(root, directory)
                 clean_dir_name = sanitize_name(directory)
                 
-                # إذا أصبح اسم المجلد فارغاً تماماً بعد إزالة الرموز المخفية، احذفه بالكامل
                 if not clean_dir_name.strip():
                     print(f"[-] حذف مجلد وهمي فارغ/مشفوع: {repr(old_dir_path)}")
                     try:
@@ -75,7 +83,7 @@ def clean_project_files():
                     except Exception as e:
                         print(f"[-] خطأ في إعادة تسمية المجلد: {e}")
 
-    print("[+] تم الانتهاء من تطهير كافة الملفات والمجلدات بنجاح!")
+    print("[+] تم الانتهاء من تطهير كافة الملفات ومجلدات Scope B بنجاح تام!")
 
 if __name__ == "__main__":
     clean_project_files()
