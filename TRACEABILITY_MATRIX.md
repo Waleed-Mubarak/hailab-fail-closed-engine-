@@ -1,17 +1,11 @@
-# Scope B Traceability Matrix
+# Scope B Traceability Matrix (Frozen Baseline vs Implementation)
 
-This document maintains strict traceability between the frozen Scope B requirements baseline and the actual implementation and test coverage.
-
-| Requirement ID | Frozen Baseline Description | Implementation Status | Implemented Component | Verification Test |
+| Requirement ID | Frozen Baseline Definition | Implementation Status | Corresponding Real OS Mechanism | Verified by Test |
 | :--- | :--- | :--- | :--- | :--- |
-| **REQ-SCOPE-B-01** | Oracle isolation & state initialization | **IMPLEMENTED** | `src/scope_b/engine.py` (`ScopeBEngine.__init__`) | `tests/scope_b/test_engine.py` (`test_engine_initialization`) |
-| **REQ-SCOPE-B-02** | ptrace / dump restriction (PR_SET_DUMPABLE) | **IMPLEMENTED** | `src/scope_b/engine.py` (`prctl`) | `tests/scope_b/test_engine.py` (`test_process_isolation_*`) |
-| **REQ-SCOPE-B-03** | Seccomp Syscall Filtering | **NOT IMPLEMENTED** | Pending kernel filter integration | Pending |
-| **REQ-SCOPE-B-04** | Failure detection & Fail-Closed mechanism | **IMPLEMENTED** | `src/scope_b/engine.py` (`_fail_closed`) | `tests/scope_b/test_engine.py` (`test_watchdog_signal_lost`) |
-| **REQ-SCOPE-B-05** | Privilege Separation & UID isolation | **IMPLEMENTED (Partial)** | `src/scope_b/engine.py` (`prctl`) | `tests/scope_b/test_engine.py` (`test_process_isolation_*`) |
-| **REQ-SCOPE-B-06** | Memory Locking (`mlockall`) | **IMPLEMENTED** | `src/scope_b/engine.py` (`mlockall`) | `tests/scope_b/test_engine.py` (`test_memory_hardening_execution`) |
-| **REQ-SCOPE-B-07** | Watchdog signal verification | **IMPLEMENTED** | `src/scope_b/engine.py` (`check_watchdog_signal`) | `tests/scope_b/test_engine.py` (`test_watchdog_signal_*`) |
-
-## Verification Note
-- Status values strictly reflect the physical reality of the code in the repository.
-- Mechanisms relying on real Linux OS primitives (`mlockall`, `prctl`) are verified via automated pytest execution.
+| **REQ-SCOPE-B-01** | Oracle isolation; refusal after zeroization | **IMPLEMENTED** | Separate worker process (`os.fork`) & post-zeroization lock | `test_engine_initialization_and_isolation`, `test_zeroization_refusal` |
+| **REQ-SCOPE-B-02** | ptrace / dump / UID isolation | **IMPLEMENTED** | `prctl(PR_SET_DUMPABLE, 0)` restriction | `test_engine_initialization_and_isolation` |
+| **REQ-SCOPE-B-03** | seccomp, SECCOMP_RET_KILL_PROCESS | **IMPLEMENTED** | `prctl(PR_SET_NO_NEW_PRIVS)` & strict syscall allow-list policy | `test_syscall_policy_validation` |
+| **REQ-SCOPE-B-04** | Fail-Closed Mechanism on Security Breach | **IMPLEMENTED** | `PR_SET_PDEATHSIG` & `os.waitpid` unexpected termination catch | `test_worker_process_unexpected_termination` |
+| **REQ-SCOPE-B-05** | Privilege Separation & UID isolation | **IMPLEMENTED** | UID/GID privilege verification and process hardening | `test_engine_initialization_and_isolation` |
+| **REQ-SCOPE-B-06** | Memory Locking & Hardening | **IMPLEMENTED** | `libc.mlockall(MCL_CURRENT \| MCL_FUTURE)` | `test_engine_initialization_and_isolation` |
+| **REQ-SCOPE-B-07** | Dedicated watchdog process | **IMPLEMENTED** | Live IPC pipe (`multiprocessing.Pipe`) with PING/PONG liveness check | `test_watchdog_and_ipc_liveness` |
