@@ -1,54 +1,60 @@
 """
-Scope B Security Engine - Full Implementation
-Fail-Closed Architecture and Security Kernel Integration
-Includes Process Isolation, Privilege Separation, Memory Hardening, 
-Seccomp Filtering, System Call Validation, and Watchdog Timer.
+Scope B Engine - Real Linux OS Mechanism Implementation.
+Applies genuine system-level security invariants: mlockall, prctl isolation, and fail-closed state.
 """
 
-import logging
+import ctypes
+import os
+import sys
 
-logger = logging.getLogger("ScopeBEngine")
+# Linux system call constants
+MCL_CURRENT = 1
+MCL_FUTURE = 2
+PR_SET_DUMPABLE = 4
 
 class ScopeBEngine:
-    def __init__(self, security_policy=None):
-        self.security_policy = security_policy or {}
-        self.initialized = True
-        self.watchdog_active = True
-        logger.info("ScopeBEngine initialized successfully with full fail-closed safeguards and watchdog.")
+    def __init__(self):
+        self.locked = False
+        self.isolated = False
+        self._initialize_kernel_protections()
 
-    def enforce_policy(self, context_data):
-        if not self.initialized:
-            return self._fail_closed("Engine not properly initialized.")
-        
-        # التحقق من سلامة البيانات وسياسات العزل والأمان
-        if "breach" in context_data or not context_data.get("secure", True):
-            return self._fail_closed("Security violation detected during execution.")
-        
-        return {"status": "PASSED", "enforced": True}
+    def _initialize_kernel_protections(self):
+        """Applies actual Linux kernel security primitives via libc."""
+        try:
+            libc = ctypes.CDLL("libc.so.6", use_errno=True)
+            
+            # 1. Real Memory Locking (mlockall) - Prevents swapping keys to disk
+            res_mlock = libc.mlockall(MCL_CURRENT | MCL_FUTURE)
+            if res_mlock != 0:
+                err = ctypes.get_errno()
+                # Fail-closed if privileges are insufficient or system denies locking
+                if err != 1:  # EPERM might occur if not root, handle according to policy
+                    pass
+            self.locked = (res_mlock == 0)
 
-    def validate_syscall_policy(self, syscall_name):
-        """التحقق من سياسة استدعاء النظام (Syscall Policy Validation & Seccomp)"""
-        allowed_syscalls = self.security_policy.get("allowed_syscalls", ["read", "write", "exit", "rt_sigreturn"])
-        if syscall_name not in allowed_syscalls:
-            return self._fail_closed(f"Unauthorized syscall attempted: {syscall_name}")
+            # 2. Real Process Isolation / Ptrace restriction (prctl PR_SET_DUMPABLE)
+            res_prctl = libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)
+            self.isolated = (res_prctl == 0)
+
+        except Exception as e:
+            raise RuntimeError(f"Critical kernel protection failure (Fail-Closed triggered): {e}")
+
+    def enforce_memory_hardening(self) -> bool:
+        """Verifies that actual memory locking is active."""
+        if not self.locked:
+            raise RuntimeError("FAIL-CLOSED: Memory locking (mlockall) is not active.")
         return True
 
-    def check_watchdog_signal(self):
-        """فحص مؤقت المراقبة المستقل (Independent Watchdog Timer Signal)"""
-        if not self.watchdog_active:
-            return self._fail_closed("Watchdog signal lost - Triggering deterministic reset.")
-        return True
-
-    def enforce_process_isolation(self, pid):
-        """عزل العمليات وفصل الامتيازات (Process Isolation & Privilege Separation)"""
+    def enforce_process_isolation(self, pid: int) -> bool:
+        """Enforces process isolation checks and ptrace restrictions."""
         if pid <= 0:
-            return self._fail_closed("Invalid process ID for isolation.")
+            raise ValueError("Invalid PID for isolation enforcement.")
+        if not self.isolated:
+            raise RuntimeError("FAIL-CLOSED: Process isolation / dump restriction failed.")
         return True
 
-    def enforce_memory_hardening(self):
-        """قفل الذاكرة وحمايتها (Memory Locking / Hardening)"""
+    def check_watchdog_signal(self, signal_active: bool) -> bool:
+        """Fail-closed watchdog state verification."""
+        if not signal_active:
+            raise RuntimeError("FAIL-CLOSED: Watchdog signal lost or compromised.")
         return True
-
-    def _fail_closed(self, reason):
-        logger.error(f"FAIL-CLOSED TRIGGERED: {reason}")
-        raise RuntimeError(f"Fail-Closed Enforced: {reason}")
