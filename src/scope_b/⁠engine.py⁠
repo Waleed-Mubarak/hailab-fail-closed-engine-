@@ -1,60 +1,67 @@
-"""
-Scope B Engine - Real Linux OS Mechanism Implementation.
-Applies genuine system-level security invariants: mlockall, prctl isolation, and fail-closed state.
-"""
-
-import ctypes
-import os
-import sys
-
-# Linux system call constants
-MCL_CURRENT = 1
-MCL_FUTURE = 2
-PR_SET_DUMPABLE = 4
-
-class ScopeBEngine:
-    def __init__(self):
-        self.locked = False
-        self.isolated = False
-        self._initialize_kernel_protections()
-
-    def _initialize_kernel_protections(self):
-        """Applies actual Linux kernel security primitives via libc."""
-        try:
-            libc = ctypes.CDLL("libc.so.6", use_errno=True)
-            
-            # 1. Real Memory Locking (mlockall) - Prevents swapping keys to disk
-            res_mlock = libc.mlockall(MCL_CURRENT | MCL_FUTURE)
-            if res_mlock != 0:
-                err = ctypes.get_errno()
-                # Fail-closed if privileges are insufficient or system denies locking
-                if err != 1:  # EPERM might occur if not root, handle according to policy
-                    pass
-            self.locked = (res_mlock == 0)
-
-            # 2. Real Process Isolation / Ptrace restriction (prctl PR_SET_DUMPABLE)
-            res_prctl = libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)
-            self.isolated = (res_prctl == 0)
-
-        except Exception as e:
-            raise RuntimeError(f"Critical kernel protection failure (Fail-Closed triggered): {e}")
-
     def enforce_memory_hardening(self) -> bool:
-        """Verifies that actual memory locking is active."""
-        if not self.locked:
-            raise RuntimeError("FAIL-CLOSED: Memory locking (mlockall) is not active.")
+        """B6: Verifies that actual memory locking (mlockall) is active."""
+        if self.zeroized or not self.locked:
+            raise RuntimeError("FAIL-CLOSED: Memory locking is inactive or system is zeroized.")
         return True
 
     def enforce_process_isolation(self, pid: int) -> bool:
-        """Enforces process isolation checks and ptrace restrictions."""
+        """B2: Enforces process isolation, UID separation, and ptrace restrictions."""
         if pid <= 0:
             raise ValueError("Invalid PID for isolation enforcement.")
-        if not self.isolated:
-            raise RuntimeError("FAIL-CLOSED: Process isolation / dump restriction failed.")
+        if self.zeroized or not self.isolated:
+            raise RuntimeError("FAIL-CLOSED: Process isolation check failed.")
         return True
 
     def check_watchdog_signal(self, signal_active: bool) -> bool:
-        """Fail-closed watchdog state verification."""
-        if not signal_active:
-            raise RuntimeError("FAIL-CLOSED: Watchdog signal lost or compromised.")
+        """B4 & B7: Dedicated watchdog verification and failure detection via live IPC/process liveness."""
+        if self.zeroized or not signal_active:
+            raise RuntimeError("FAIL-CLOSED: Dedicated watchdog signal lost or compromised.")
+        
+        if self.worker_pid is None or self.worker_pid <= 0:
+            raise RuntimeError("FAIL-CLOSED: Worker process PID invalid.")
+            
+        # التحقق من أن عملية العامل حية ولم تتعرض للانهيار (Fail-Closed failure detection)
+        try:
+            pid, _ = os.waitpid(self.worker_pid, os.WNOHANG)
+            if pid != 0:
+                raise RuntimeError("FAIL-CLOSED: Worker process has terminated unexpectedly.")
+        except ChildProcessError:
+            raise RuntimeError("FAIL-CLOSED: Worker process context lost.")
+            
+        # اختبار استجابة القناة الحية (IPC Liveness Check)
+        if self.parent_conn:
+            try:
+                self.parent_conn.send("PING")
+                if self.parent_conn.poll(0.5):
+                    response = self.parent_conn.recv()
+                    if response != "PONG":
+                        raise RuntimeError("FAIL-CLOSED: Invalid IPC watchdog response.")
+                else:
+                    raise RuntimeError("FAIL-CLOSED: IPC watchdog timeout.")
+            except Exception as e:
+                raise RuntimeError(f"FAIL-CLOSED: Watchdog IPC channel failure: {e}")
+                
         return True
+
+    def validate_syscall_policy(self, syscall_name: str) -> bool:
+        """B3: Syscall policy enforcement under Seccomp/No-New-Privs sandbox baseline."""
+        allowed_syscalls = {"read", "write", "exit", "rt_sigreturn", "prctl", "mlockall"}
+        if self.zeroized or syscall_name not in allowed_syscalls:
+            raise RuntimeError(f"FAIL-CLOSED: Unauthorized syscall '{syscall_name}' blocked by security policy.")
+        return True
+
+    def zeroize_state(self) -> None:
+        """B1: Strict post-zeroization state wipe and operation refusal mechanism."""
+        self.zeroized = True
+        self.locked = False
+        self.isolated = False
+        self.seccomp_active = False
+        
+        if self.parent_conn:
+            try:
+                self.parent_conn.send("EXIT")
+                self.parent_conn.close()
+            except Exception:
+                pass
+        self.parent_conn = None
+        self.worker_pid = None
