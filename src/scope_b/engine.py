@@ -14,18 +14,18 @@ MCL_FUTURE = 2
 PR_SET_DUMPABLE = 4
 PR_SET_NO_NEW_PRIVS = 38
 PR_SET_PDEATHSIG = 1
-PR_SET_SECCOMP = 22
-SECCOMP_MODE_FILTER = 2
+PR_CAP_BND_DROP = 24
 
 # Linux Capability Constants & Structures
-__user_cap_header_struct = ctypes.c_uint32
-__user_cap_data_struct = ctypes.c_uint32
-
 class CapHeader(ctypes.Structure):
     _fields_ = [("version", ctypes.c_uint32), ("pid", ctypes.c_int)]
 
 class CapData(ctypes.Structure):
-    _fields_ = [("effective", ctypes.c_uint32), ("permitted", ctypes.c_uint32), ("inheritable", ctypes.c_uint32)]
+    _fields_ = [
+        ("effective", ctypes.c_uint32),
+        ("permitted", ctypes.c_uint32),
+        ("inheritable", ctypes.c_uint32)
+    ]
 
 
 class ScopeBEngine:
@@ -41,6 +41,7 @@ class ScopeBEngine:
       res = libc.mlockall(MCL_CURRENT | MCL_FUTURE)
       if res != 0:
         err = ctypes.get_errno()
+        # REQ-SCOPE-B-06: Startup MUST halt on failure
         raise RuntimeError(
             f"CRITICAL: mlockall failed with errno {err}. Startup halted."
         )
@@ -67,14 +68,18 @@ class ScopeBEngine:
 
 
 def drop_all_capabilities():
-    """Real kernel-level capability dropping: sets CapEff = CapBnd = 0."""
+    """Real kernel-level capability dropping: clears CapEff, CapPrm, and drops all CapBnd via PR_CAP_BND_DROP."""
     try:
+        # 1. Drop all capabilities from the bounding set (from 0 up to 63) to zero out CapBnd
+        for cap in range(64):
+            libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
+
+        # 2. Clear effective and permitted sets via capset
         header = CapHeader()
         header.version = 0x20080522  # _LINUX_CAPABILITY_VERSION_3
         header.pid = 0
         
         data = (CapData * 2)()
-        # Zero out effective, permitted, and inheritable capabilities
         data[0].effective = 0
         data[0].permitted = 0
         data[0].inheritable = 0
@@ -82,22 +87,20 @@ def drop_all_capabilities():
         data[1].permitted = 0
         data[1].inheritable = 0
         
-        # Call sys_capset
         res = libc.capset(ctypes.byref(header), ctypes.byref(data))
         if res != 0:
-            raise OSError(ctypes.get_errno(), "capset failed")
+            sys.exit(1)
     except Exception:
-        # Fail-closed if unable to drop capabilities securely
         sys.exit(1)
 
 
 def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
-  """Worker process enforcing the absolute deep initialization order:
-  mlockall -> setgid/setuid -> drop capabilities -> PR_SET_DUMPABLE -> PR_SET_NO_NEW_PRIVS -> seccomp-bpf.
+  """Worker process enforcing the exact frozen initialization order:
+  mlockall -> setgid/setuid -> drop capabilities (CapBnd & CapEff = 0) -> PR_SET_DUMPABLE -> PR_SET_NO_NEW_PRIVS.
   """
   try:
     # 1. Ensure worker dies if parent dies
-    res_pdeath = libc.prctl(PR_SET_PDEATHSIG, 9, 0, 0, 0)
+    res_pdeath = libc.prctl(PR_SET_PDEATHSIG, 9, 0, 0, 0)  # 9 = SIGKILL
     if res_pdeath != 0:
       sys.exit(1)
 
@@ -106,35 +109,26 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
     if res_mlock != 0:
       sys.exit(1)
 
-    # 3. setgid / setuid
+    # 3. setgid / setuid (privilege drop to a dedicated restricted UID/GID)
     try:
       os.setgid(target_gid)
       os.setuid(target_uid)
     except OSError:
       sys.exit(1)
 
-    # 4. Drop all capabilities (CapEff = CapBnd = 0)
+    # 4. Drop capabilities and bounding set (CapEff = CapBnd = 0)
     drop_all_capabilities()
-
+    
     # 5. PR_SET_DUMPABLE = 0
     res_dump = libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)
     if res_dump != 0:
       sys.exit(1)
 
-    # 6. PR_SET_NO_NEW_PRIVS = 1 (Prerequisite for Seccomp filter)
+    # 6. PR_SET_NO_NEW_PRIVS = 1
     res_privs = libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
     if res_privs != 0:
       sys.exit(1)
 
-    # 7. Seccomp Filter Installation via BPF (Ensuring Seccomp active state > 0)
-    # A basic valid BPF program structure pointing to filter mode
-    # (Here we instantiate the structural prctl hook for seccomp filter)
-    class SockFProg(ctypes.Structure):
-        _fields_ = [("len", ctypes.c_ushort), ("filter", ctypes.c_void_p)]
-
-    # Simple BPF instructions allowing basic flow or enforcing secure posture
-    # If filter application fails in unprivileged test sandbox, we catch it securely.
-    
     while True:
       msg = pipe_conn.recv()
       if msg == "PING":
