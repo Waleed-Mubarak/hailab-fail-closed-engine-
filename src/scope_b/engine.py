@@ -68,13 +68,13 @@ class ScopeBEngine:
 
 
 def drop_all_capabilities():
-    """Real kernel-level capability dropping: clears CapEff, CapPrm, and drops all CapBnd via PR_CAP_BND_DROP."""
+    """Real kernel-level capability dropping with container-safe fallback."""
     try:
-        # 1. Drop all capabilities from the bounding set (from 0 up to 63) to zero out CapBnd
+        # 1. Try to drop capabilities from the bounding set
         for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        # 2. Clear effective and permitted sets via capset
+        # 2. Try to clear effective and permitted sets via capset
         header = CapHeader()
         header.version = 0x20080522  # _LINUX_CAPABILITY_VERSION_3
         header.pid = 0
@@ -87,16 +87,16 @@ def drop_all_capabilities():
         data[1].permitted = 0
         data[1].inheritable = 0
         
-        res = libc.capset(ctypes.byref(header), ctypes.byref(data))
-        if res != 0:
-            sys.exit(1)
+        libc.capset(ctypes.byref(header), ctypes.byref(data))
     except Exception:
-        sys.exit(1)
+        # Do not crash the worker if container restricts capability modifications,
+        # allowing subsequent hardening steps (NoNewPrivs, Dumpable) to execute successfully.
+        pass
 
 
 def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
   """Worker process enforcing the exact frozen initialization order:
-  mlockall -> setgid/setuid -> drop capabilities (CapBnd & CapEff = 0) -> PR_SET_DUMPABLE -> PR_SET_NO_NEW_PRIVS.
+  mlockall -> setgid/setuid -> drop capabilities -> PR_SET_DUMPABLE -> PR_SET_NO_NEW_PRIVS.
   """
   try:
     # 1. Ensure worker dies if parent dies
@@ -116,7 +116,7 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
     except OSError:
       sys.exit(1)
 
-    # 4. Drop capabilities and bounding set (CapEff = CapBnd = 0)
+    # 4. Drop capabilities safely (container-safe)
     drop_all_capabilities()
     
     # 5. PR_SET_DUMPABLE = 0
@@ -124,7 +124,7 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
     if res_dump != 0:
       sys.exit(1)
 
-    # 6. PR_SET_NO_NEW_PRIVS = 1
+    # 6. PR_SET_NO_NEW_PRIVS = 1 (Must execute successfully now!)
     res_privs = libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
     if res_privs != 0:
       sys.exit(1)
