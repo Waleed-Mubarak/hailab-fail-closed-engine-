@@ -111,51 +111,45 @@ def verify_capabilities_zeroed():
 
 
 def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
-    """Worker process enforcing Dr. Hikmet's exact frozen initialization order strictly when root,
-       with robust adaptation for non-root CI runners.
+    """Worker process strictly enforcing Dr. Hikmet's exact frozen initialization order 
+       and absolute Fail-Closed semantics without soft bypasses.
     """
-    is_root = (os.getuid() == 0)
     try:
         # Ensure worker dies if parent dies
-        if libc.prctl(PR_SET_PDEATHSIG, 9, 0, 0, 0) != 0 and is_root:
+        if libc.prctl(PR_SET_PDEATHSIG, 9, 0, 0, 0) != 0:
             sys.exit(1)
 
-        # 1. mlockall
-        res_mlock = libc.mlockall(MCL_CURRENT | MCL_FUTURE)
-        if res_mlock != 0 and is_root:
+        # 1. mlockall (Strict Fail-Closed)
+        if libc.mlockall(MCL_CURRENT | MCL_FUTURE) != 0:
             sys.exit(1)
 
-        # 2. setgid / setuid (Mandatory if root, bypassed safely if non-root CI)
+        # 2. setgid / setuid to dedicated UID
         try:
-            if is_root:
-                os.setgid(target_gid)
-                os.setuid(target_uid)
+            os.setgid(target_gid)
+            os.setuid(target_uid)
         except OSError:
-            if is_root:
-                sys.exit(1)
+            sys.exit(1)
 
-        # 3. Drop capabilities (If root)
-        try:
-            if is_root:
-                drop_all_capabilities()
-        except Exception:
-            if is_root:
-                sys.exit(1)
+        # 3. Drop capabilities and bounding set
+        drop_all_capabilities()
 
-        # 4. Verify capabilities zeroed if root
-        if is_root and not verify_capabilities_zeroed():
+        # 4. Verify capabilities zeroed (CapEff = CapBnd = 0)
+        if not verify_capabilities_zeroed():
             sys.exit(1)
 
         # 5. PR_SET_DUMPABLE = 0
-        libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)
+        if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
+            sys.exit(1)
 
         # 6. PR_SET_NO_NEW_PRIVS = 1
-        libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
+        if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
+            sys.exit(1)
 
-        # 7. Seccomp filter installation
+        # 7. Seccomp filter installation (SECCOMP_RET_KILL_PROCESS)
         bpf_insn = ctypes.c_uint64(0x7fff000000000035)
         prog = SockFprog(len=1, filter=ctypes.addressof(bpf_insn))
-        libc.prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, ctypes.byref(prog))
+        if libc.prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, ctypes.byref(prog)) != 0:
+            sys.exit(1)
 
         # Communication loop with parent (Deadlock-free)
         while True:
@@ -172,5 +166,4 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
                 if os.getppid() == 1:
                     break
     except Exception:
-        if is_root:
-            sys.exit(1)
+        sys.exit(1)
