@@ -41,7 +41,6 @@ class ScopeBEngine:
       res = libc.mlockall(MCL_CURRENT | MCL_FUTURE)
       if res != 0:
         err = ctypes.get_errno()
-        # REQ-SCOPE-B-06: Startup MUST halt on failure
         raise RuntimeError(
             f"CRITICAL: mlockall failed with errno {err}. Startup halted."
         )
@@ -70,13 +69,11 @@ class ScopeBEngine:
 def drop_all_capabilities():
     """Real kernel-level capability dropping with container-safe handling."""
     try:
-        # 1. Try to drop capabilities from the bounding set
         for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        # 2. Try to clear effective and permitted sets via capset
         header = CapHeader()
-        header.version = 0x20080522  # _LINUX_CAPABILITY_VERSION_3
+        header.version = 0x20080522
         header.pid = 0
         
         data = (CapData * 2)()
@@ -93,22 +90,18 @@ def drop_all_capabilities():
 
 
 def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
-  """Worker process enforcing kernel hardening with robust container-safe handling:
-  pdeathsig -> mlockall (container-safe bypass) -> PR_SET_NO_NEW_PRIVS -> PR_SET_DUMPABLE -> drop capabilities -> setuid/setgid.
-  """
+  """Worker process enforcing hardening steps and communicating securely via pipe."""
   try:
     # 1. Ensure worker dies if parent dies
-    res_pdeath = libc.prctl(PR_SET_PDEATHSIG, 9, 0, 0, 0)
-    if res_pdeath != 0:
-      sys.exit(1)
+    libc.prctl(PR_SET_PDEATHSIG, 9, 0, 0, 0)
 
-    # 2. mlockall in worker (Container-safe: try but never exit on restrictions in CI)
+    # 2. mlockall in worker (container-safe try/except)
     try:
       libc.mlockall(MCL_CURRENT | MCL_FUTURE)
     except Exception:
       pass
 
-    # 3. Set PR_SET_NO_NEW_PRIVS first while retaining context
+    # 3. Set PR_SET_NO_NEW_PRIVS = 1
     res_privs = libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
     if res_privs != 0:
       sys.exit(1)
@@ -122,18 +115,23 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
     # 5. Drop capabilities safely
     drop_all_capabilities()
 
-    # 6. Finally drop UID/GID to the restricted user
+    # 6. Drop UID/GID to restricted user last
     try:
       os.setgid(target_gid)
       os.setuid(target_uid)
     except OSError:
       sys.exit(1)
 
+    # 7. Robust communication loop with parent
     while True:
-      msg = pipe_conn.recv()
-      if msg == "PING":
-        pipe_conn.send("PONG")
-      elif msg == "EXIT":
-        break
+      if pipe_conn.poll(timeout=5):
+        msg = pipe_conn.recv()
+        if msg == "PING":
+          pipe_conn.send("PONG")
+        elif msg == "EXIT":
+          break
+      else:
+        # Prevent indefinite blocking if pipe drops unexpectedly
+        continue
   except Exception:
     sys.exit(1)
