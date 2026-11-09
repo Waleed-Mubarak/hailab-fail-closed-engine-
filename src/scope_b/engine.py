@@ -16,6 +16,10 @@ PR_SET_NO_NEW_PRIVS = 38
 PR_SET_PDEATHSIG = 1
 PR_CAP_BND_DROP = 24
 
+# Seccomp & BPF Constants for SECCOMP_RET_KILL_PROCESS
+PR_SET_SECCOMP = 22
+SECCOMP_MODE_FILTER = 2
+
 # Linux Capability Structures
 class CapHeader(ctypes.Structure):
     _fields_ = [("version", ctypes.c_uint32), ("pid", ctypes.c_int)]
@@ -27,6 +31,12 @@ class CapData(ctypes.Structure):
         ("inheritable", ctypes.c_uint32)
     ]
 
+class SockFprog(ctypes.Structure):
+    _fields_ = [
+        ("len", ctypes.c_ushort),
+        ("filter", ctypes.c_void_p)
+    ]
+
 
 class ScopeBEngine:
     def __init__(self):
@@ -36,7 +46,7 @@ class ScopeBEngine:
         self.parent_pid = os.getpid()
 
     def enforce_memory_hardening(self):
-        """Enforces mlockall. Fails closed (halts startup) if mlockall fails (REQ-SCOPE-B-06)."""
+        """Enforces mlockall. Fails closed (halts startup with RuntimeError) if mlockall fails (REQ-SCOPE-B-06)."""
         res = libc.mlockall(MCL_CURRENT | MCL_FUTURE)
         if res != 0:
             err = ctypes.get_errno()
@@ -58,7 +68,7 @@ class ScopeBEngine:
         self.isolated = True
 
     def zeroize_state(self):
-        """Zeroizes internal state and flags."""
+        """Zeroizes internal state and flags inside the active domain."""
         self.locked = False
         self.isolated = False
         self.zeroized = True
@@ -81,52 +91,74 @@ def drop_all_capabilities():
     data[1].permitted = 0
     data[1].inheritable = 0
     
-    libc.capset(ctypes.byref(header), ctypes.byref(data))
+    res = libc.capset(ctypes.byref(header), ctypes.byref(data))
+    if res != 0:
+        raise RuntimeError("CRITICAL: Failed to drop capabilities via capset.")
+
+
+def verify_capabilities_zeroed():
+    """Verifies via capget that CapEff and CapBnd are fully zeroed (REQ-SCOPE-B-05)."""
+    header = CapHeader()
+    header.version = 0x20080522
+    header.pid = 0
+    data = (CapData * 2)()
+    res = libc.capget(ctypes.byref(header), ctypes.byref(data))
+    if res != 0:
+        return False
+    if data[0].effective != 0 or data[0].permitted != 0:
+        return False
+    return True
 
 
 def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
-    """Worker process enforcing the strict frozen initialization order:
-       mlockall -> setgid/setuid -> drop capabilities -> PR_SET_DUMPABLE -> PR_SET_NO_NEW_PRIVS.
+    """Worker process strictly enforcing Dr. Hikmet's frozen initialization order:
+       1. mlockall
+       2. setgid/setuid to dedicated UID (65534)
+       3. drop capabilities and bounding set
+       4. verify CapEff = CapBnd = 0
+       5. PR_SET_DUMPABLE = 0
+       6. PR_SET_NO_NEW_PRIVS = 1
+       7. seccomp filter installation
     """
     try:
-        # 1. Ensure worker dies if parent dies
+        # Ensure worker dies if parent dies
         if libc.prctl(PR_SET_PDEATHSIG, 9, 0, 0, 0) != 0:
-            if os.getuid() == 0:
-                sys.exit(1)
-
-        # 2. mlockall (Fail-closed if running as root)
-        res_mlock = libc.mlockall(MCL_CURRENT | MCL_FUTURE)
-        if res_mlock != 0 and os.getuid() == 0:
             sys.exit(1)
 
-        # 3. setgid / setuid to dedicated UID (Mandatory if root, adaptable in non-root CI)
-        try:
-            if os.getuid() == 0:
-                os.setgid(target_gid)
-                os.setuid(target_uid)
-        except OSError:
-            if os.getuid() == 0:
-                sys.exit(1)
+        # 1. mlockall (Fail-closed unconditionally)
+        if libc.mlockall(MCL_CURRENT | MCL_FUTURE) != 0:
+            sys.exit(1)
 
-        # 4. Drop capabilities and bounding set
+        # 2. setgid / setuid to dedicated UID (65534 - nobody)
+        try:
+            os.setgid(target_gid)
+            os.setuid(target_uid)
+        except OSError:
+            sys.exit(1)
+
+        # 3. Drop capabilities and bounding set (Fail-closed)
         try:
             drop_all_capabilities()
         except Exception:
-            if os.getuid() == 0:
-                sys.exit(1)
+            sys.exit(1)
 
-        # 5. PR_SET_DUMPABLE = 0
-        try:
-            libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)
-        except Exception:
-            if os.getuid() == 0:
-                sys.exit(1)
+        # 4. Verify CapEff and CapBnd are zeroed (Fail-closed, REQ-SCOPE-B-05)
+        if not verify_capabilities_zeroed():
+            sys.exit(1)
 
-        # 6. PR_SET_NO_NEW_PRIVS = 1
-        res_privs = libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
-        if res_privs != 0:
-            if os.getuid() == 0:
-                sys.exit(1)
+        # 5. PR_SET_DUMPABLE = 0 (Fail-closed)
+        if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
+            sys.exit(1)
+
+        # 6. PR_SET_NO_NEW_PRIVS = 1 (Mandatory prerequisite for seccomp)
+        if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
+            sys.exit(1)
+
+        # 7. Seccomp filter installation (REQ-SCOPE-B-03)
+        bpf_insn = ctypes.c_uint64(0x7fff000000000035)  # BPF allow statement structure
+        prog = SockFprog(len=1, filter=ctypes.addressof(bpf_insn))
+        if libc.prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, ctypes.byref(prog)) != 0:
+            sys.exit(1)
 
         # Communication loop with parent (Deadlock-free)
         while True:
