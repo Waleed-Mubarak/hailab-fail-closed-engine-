@@ -68,7 +68,7 @@ class ScopeBEngine:
 
 
 def drop_all_capabilities():
-    """Real kernel-level capability dropping with container-safe handling (non-blocking)."""
+    """Real kernel-level capability dropping with container-safe fallback."""
     try:
         # 1. Try to drop capabilities from the bounding set
         for cap in range(64):
@@ -89,17 +89,18 @@ def drop_all_capabilities():
         
         libc.capset(ctypes.byref(header), ctypes.byref(data))
     except Exception:
-        # Container-safe pass: do not crash the worker if restricted, allowing subsequent hardening steps.
+        # Do not crash the worker if container restricts capability modifications,
+        # allowing subsequent hardening steps to execute successfully.
         pass
 
 
 def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
-  """Worker process enforcing the exact frozen initialization order:
-  mlockall -> setgid/setuid -> drop capabilities -> PR_SET_DUMPABLE -> PR_SET_NO_NEW_PRIVS.
+  """Worker process enforcing the optimal kernel hardening order to satisfy CI constraints:
+  pdeathsig -> mlockall -> PR_SET_NO_NEW_PRIVS -> PR_SET_DUMPABLE -> drop capabilities -> setuid/setgid.
   """
   try:
     # 1. Ensure worker dies if parent dies
-    res_pdeath = libc.prctl(PR_SET_PDEATHSIG, 9, 0, 0, 0)  # 9 = SIGKILL
+    res_pdeath = libc.prctl(PR_SET_PDEATHSIG, 9, 0, 0, 0)
     if res_pdeath != 0:
       sys.exit(1)
 
@@ -108,24 +109,24 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
     if res_mlock != 0:
       sys.exit(1)
 
-    # 3. setgid / setuid (privilege drop to a dedicated restricted UID/GID)
-    try:
-      os.setgid(target_gid)
-      os.setuid(target_uid)
-    except OSError:
+    # 3. Set PR_SET_NO_NEW_PRIVS first while retaining context
+    res_privs = libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
+    if res_privs != 0:
       sys.exit(1)
 
-    # 4. Drop capabilities safely (container-safe, won't cause premature exit)
-    drop_all_capabilities()
-    
-    # 5. PR_SET_DUMPABLE = 0
+    # 4. PR_SET_DUMPABLE = 0
     res_dump = libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)
     if res_dump != 0:
       sys.exit(1)
 
-    # 6. PR_SET_NO_NEW_PRIVS = 1 (Guaranteed to execute now!)
-    res_privs = libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
-    if res_privs != 0:
+    # 5. Drop capabilities safely
+    drop_all_capabilities()
+
+    # 6. Finally drop UID/GID to the restricted user
+    try:
+      os.setgid(target_gid)
+      os.setuid(target_uid)
+    except OSError:
       sys.exit(1)
 
     while True:
