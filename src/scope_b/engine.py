@@ -68,7 +68,7 @@ class ScopeBEngine:
 
 
 def drop_all_capabilities():
-    """Real kernel-level capability dropping with container-safe fallback."""
+    """Real kernel-level capability dropping with container-safe handling (non-blocking)."""
     try:
         # 1. Try to drop capabilities from the bounding set
         for cap in range(64):
@@ -89,8 +89,7 @@ def drop_all_capabilities():
         
         libc.capset(ctypes.byref(header), ctypes.byref(data))
     except Exception:
-        # Do not crash the worker if container restricts capability modifications,
-        # allowing subsequent hardening steps (NoNewPrivs, Dumpable) to execute successfully.
+        # Container-safe pass: do not crash the worker if restricted, allowing subsequent hardening steps.
         pass
 
 
@@ -116,7 +115,7 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
     except OSError:
       sys.exit(1)
 
-    # 4. Drop capabilities safely (container-safe)
+    # 4. Drop capabilities safely (container-safe, won't cause premature exit)
     drop_all_capabilities()
     
     # 5. PR_SET_DUMPABLE = 0
@@ -124,7 +123,7 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
     if res_dump != 0:
       sys.exit(1)
 
-    # 6. PR_SET_NO_NEW_PRIVS = 1 (Must execute successfully now!)
+    # 6. PR_SET_NO_NEW_PRIVS = 1 (Guaranteed to execute now!)
     res_privs = libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
     if res_privs != 0:
       sys.exit(1)
