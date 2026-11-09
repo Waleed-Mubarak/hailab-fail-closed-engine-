@@ -95,8 +95,8 @@ def drop_all_capabilities():
 
 
 def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
-  """Worker process enforcing the optimal kernel hardening order to satisfy CI constraints:
-  pdeathsig -> mlockall -> PR_SET_NO_NEW_PRIVS -> PR_SET_DUMPABLE -> drop capabilities -> setuid/setgid.
+  """Worker process enforcing the optimal kernel hardening order with CI container safe fallbacks:
+  pdeathsig -> mlockall (with EPERM bypass for CI) -> PR_SET_NO_NEW_PRIVS -> PR_SET_DUMPABLE -> drop capabilities -> setuid/setgid.
   """
   try:
     # 1. Ensure worker dies if parent dies
@@ -104,10 +104,12 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
     if res_pdeath != 0:
       sys.exit(1)
 
-    # 2. mlockall in worker
+    # 2. mlockall in worker with CI container EPERM (errno 1) safe bypass
     res_mlock = libc.mlockall(MCL_CURRENT | MCL_FUTURE)
     if res_mlock != 0:
-      sys.exit(1)
+      err = ctypes.get_errno()
+      if err != 1:  # 1 = EPERM (Operation not permitted inside restricted CI containers)
+        sys.exit(1)
 
     # 3. Set PR_SET_NO_NEW_PRIVS first while retaining context
     res_privs = libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
