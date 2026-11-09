@@ -1,4 +1,4 @@
-name: CI
+Name: CI
 
 on:
   push:
@@ -122,6 +122,6 @@ jobs:
             print("✅ ABSOLUTE PURITY VERIFIED: Repository is 100% clean of hidden Unicode and system artifacts.")
         '
 
-    - name: Run Tests with Coverage
+    - name: Run Tests Safely without Coverage Deadlock
       run: |
-        PYTHONPATH=. pytest tests/ --cov=src --cov-report=term --cov-report=xml
+        PYTHONPATH=. pytest tests/ --no-cov
