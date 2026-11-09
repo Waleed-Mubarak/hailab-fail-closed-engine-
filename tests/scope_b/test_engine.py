@@ -21,11 +21,11 @@ def read_proc_status(pid):
 
 def test_scope_b_kernel_state_enforcement():
     """Verifies actual kernel states via /proc/<pid>/status for the worker process
-    with non-blocking communication to prevent any CI deadlocks.
+    in strict compliance with Dr. Hikmet's frozen baseline requirements.
     """
     parent_conn, child_conn = multiprocessing.Pipe()
     
-    # Start worker process
+    # Start worker process enforcing the strict frozen initialization order
     p = multiprocessing.Process(target=worker_process_target, args=(child_conn,))
     p.start()
     
@@ -38,20 +38,17 @@ def test_scope_b_kernel_state_enforcement():
         status = read_proc_status(worker_pid)
         assert status, f"Failed to read /proc/{worker_pid}/status"
         
-        # 1. Verify UID has dropped to the dedicated restricted user (65534)
+        # 1. Verify UID has dropped strictly to the dedicated restricted user (65534 / nobody)
         uid_line = status.get("Uid", "")
         uids = [int(x) for x in uid_line.split() if x.isdigit()]
         assert len(uids) >= 1, "Uid line malformed in /proc status"
-        assert uids[0] == 65534 or uids[0] != 0, f"Worker failed to drop UID, current Uid: {uid_line}"
+        assert uids[0] == 65534, f"Worker failed to drop UID to 65534 (nobody), current Uid: {uid_line}"
 
-        # 2. Verify CapEff is zeroized
+        # 2. Verify CapEff (Effective Capabilities) is completely zeroized
         cap_eff = status.get("CapEff", "0")
         assert int(cap_eff, 16) == 0, f"CapEff is not zeroed: {cap_eff}"
-        
-        cap_bnd = status.get("CapBnd", "0")
-        assert cap_bnd != "", "CapBnd status missing"
 
-        # 3. Verify NoNewPrivs is set to 1
+        # 3. Verify NoNewPrivs is strictly set to 1
         no_new_privs = status.get("NoNewPrivs", "0")
         assert no_new_privs == "1", f"NoNewPrivs is not enabled, got: {no_new_privs}"
 
@@ -79,7 +76,7 @@ def test_scope_b_kernel_state_enforcement():
 
 
 def test_mlockall_fail_closed_behavior(monkeypatch):
-    """Verifies that engine halts startup (raises RuntimeError) if mlockall fails."""
+    """Verifies that engine halts startup (raises RuntimeError) if mlockall fails (REQ-SCOPE-B-06)."""
     engine = ScopeBEngine()
     import src.scope_b.engine as eng_module
     monkeypatch.setattr(eng_module.libc, "mlockall", lambda flags: -1)
