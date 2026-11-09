@@ -2,13 +2,15 @@ name: Scope B Audit CI
 
 on:
   push:
-    branches: [ "**" ]
+    branches: [ "main" ] # أو تقييد الفروع حسب الرغبة
   pull_request:
     branches: [ "**" ]
 
 jobs:
   scope-b-audit:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # تحقيق شرط القراءة فقط وعدم وجود صلاحيات كتابة/دفع
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,7 +25,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest
 
-      - name: Run Scope B Engine Tests
+      - name: Run Scope B Kernel Verification Tests
         run: |
-          pytest tests/scope_b/ -v
-
+          pytest tests/scope_b/
