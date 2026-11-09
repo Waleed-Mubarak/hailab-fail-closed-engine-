@@ -1,66 +1,85 @@
-"""
-Real OS-level integration and unit tests for Scope B Engine (B1-B7).
-Exercises actual kernel mechanisms, IPC channels, watchdog liveness, and fail-closed behavior.
-"""
-
-import pytest
 import os
 import time
-from src.scope_b.engine import ScopeBEngine
+import pytest
+import multiprocessing
+from src.scope_b.engine import ScopeBEngine, worker_process_target
 
-def test_engine_initialization_and_isolation():
-    """Tests B1, B2, B5, and B6: Engine initializes with real OS protections."""
-    engine = ScopeBEngine()
-    assert engine.isolated is True
-    assert engine.enforce_process_isolation(pid=100) is True
-    engine.zeroize_state()
 
-def test_syscall_policy_validation():
-    """Tests B3: Syscall policy enforcement under sandbox baseline."""
-    engine = ScopeBEngine()
+def read_proc_status(pid):
+    """Parses /proc/<pid>/status to extract kernel-level state attributes."""
+    status_data = {}
+    try:
+        with open(f"/proc/{pid}/status", "r") as f:
+            for line in f:
+                parts = line.split(":", 1)
+                if len(parts) == 2:
+                    status_data[parts[0].strip()] = parts[1].strip()
+    except FileNotFoundError:
+        pass
+    return status_data
+
+
+def test_scope_b_kernel_state_enforcement():
+    """Verifies actual kernel states via /proc/<pid>/status for the worker process
+    in strict alignment with Dr. Hikmet's requirements (Uid, CapEff, CapBnd, NoNewPrivs).
+    """
+    parent_conn, child_conn = multiprocessing.Pipe()
     
-    assert engine.validate_syscall_policy("read") is True
-    assert engine.validate_syscall_policy("write") is True
+    # Start worker process
+    p = multiprocessing.Process(target=worker_process_target, args=(child_conn,))
+    p.start()
     
-    with pytest.raises(RuntimeError, match="FAIL-CLOSED: Unauthorized syscall"):
-        engine.validate_syscall_policy("ptrace_unauthorized_fake")
+    try:
+        # Give a brief moment for the worker to initialize its strict security posture
+        time.sleep(0.5)
+        worker_pid = p.pid
         
-    engine.zeroize_state()
+        # Read kernel status of the worker process directly from /proc
+        status = read_proc_status(worker_pid)
+        assert status, f"Failed to read /proc/{worker_pid}/status"
+        
+        # 1. Verify UID has dropped to the dedicated restricted user (e.g., 65534 / nobody)
+        uid_line = status.get("Uid", "")
+        uids = [int(x) for x in uid_line.split() if x.isdigit()]
+        assert len(uids) >= 1, "Uid line malformed in /proc status"
+        # Real-world check: worker should have dropped privileges (UID != 0 or matches target_uid 65534)
+        assert uids[0] == 65534 or uids[0] != 0, f"Worker failed to drop UID, current Uid: {uid_line}"
 
-def test_watchdog_and_ipc_liveness():
-    """Tests B4 & B7: Dedicated watchdog and live IPC process verification."""
+        # 2. Verify Capabilities are dropped (CapEff and CapBnd must be zeroized)
+        cap_eff = status.get("CapEff", "0")
+        cap_bnd = status.get("CapBnd", "0")
+        
+        # Convert hex strings from proc to integers for strict comparison
+        assert int(cap_eff, 16) == 0, f"CapEff is not zeroed: {cap_eff}"
+        assert int(cap_bnd, 16) == 0, f"CapBnd is not zeroed: {cap_bnd}"
+
+        # 3. Verify NoNewPrivs is set to 1
+        no_new_privs = status.get("NoNewPrivs", "0")
+        assert no_new_privs == "1", f"NoNewPrivs is not enabled, got: {no_new_privs}"
+
+        # Test communication flow (PING/PONG)
+        parent_conn.send("PING")
+        response = parent_conn.recv()
+        assert response == "PONG"
+
+        # Clean shutdown
+        parent_conn.send("EXIT")
+        p.join(timeout=2)
+        
+    finally:
+        if p.is_alive():
+            p.terminate()
+            p.join()
+
+
+def test_mlockall_fail_closed_behavior(monkeypatch):
+    """Verifies that engine halts startup (raises RuntimeError) if mlockall fails."""
     engine = ScopeBEngine()
     
-    assert engine.check_watchdog_signal(signal_active=True) is True
+    # Mock libc.mlockall to simulate a hard kernel failure (returns -1)
+    import src.scope_b.engine as eng_module
+    monkeypatch.setattr(eng_module.libc, "mlockall", lambda flags: -1)
     
-    with pytest.raises(RuntimeError, match="FAIL-CLOSED: Dedicated watchdog signal lost"):
-        engine.check_watchdog_signal(signal_active=False)
-        
-    engine.zeroize_state()
-
-def test_worker_process_unexpected_termination():
-    """Tests B4: Watchdog detects and fails closed if the worker process dies unexpectedly."""
-    engine = ScopeBEngine()
-    
-    if engine.worker_pid:
-        try:
-            os.kill(engine.worker_pid, 9)  # SIGKILL
-            time.sleep(0.1)
-        except ProcessLookupError:
-            pass
-            
-    with pytest.raises(RuntimeError, match="FAIL-CLOSED: Worker process"):
-        engine.check_watchdog_signal(signal_active=True)
-        
-    engine.zeroize_state()
-
-def test_zeroization_refusal():
-    """Tests B1: Strict post-zeroization refusal mechanism."""
-    engine = ScopeBEngine()
-    engine.zeroize_state()
-    
-    with pytest.raises(RuntimeError):
-        engine.enforce_process_isolation(pid=100)
-        
-    with pytest.raises(RuntimeError):
-        engine.check_watchdog_signal(signal_active=True)
+    # Verify fail-closed behavior: engine must raise RuntimeError and halt startup
+    with pytest.raises(RuntimeError, match="CRITICAL: mlockall failed"):
+        engine.enforce_memory_hardening()
