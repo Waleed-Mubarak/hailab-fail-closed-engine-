@@ -20,7 +20,7 @@ def read_proc_status(pid):
 
 
 def test_scope_b_kernel_state_enforcement():
-    """Verifies actual kernel states via /proc/<pid>/status for the worker process."""
+    """Verifies actual kernel states via /proc/<pid>/status for the worker process (REQ-SCOPE-B-05, REQ-SCOPE-B-03)."""
     parent_conn, child_conn = multiprocessing.Pipe()
     
     p = multiprocessing.Process(target=worker_process_target, args=(child_conn,))
@@ -33,16 +33,29 @@ def test_scope_b_kernel_state_enforcement():
         status = read_proc_status(worker_pid)
         assert status, f"Failed to read /proc/{worker_pid}/status"
         
-        # 1. Verify UID
+        # 1. Verify UID / GID isolation (REQ-SCOPE-B-02)
         uid_line = status.get("Uid", "")
         uids = [int(x) for x in uid_line.split() if x.isdigit()]
         assert len(uids) >= 1, "Uid line malformed in /proc status"
-        assert uids[0] == 65534 or uids[0] != 0, f"Worker running with unsafe UID: {uid_line}"
+        assert uids[0] == 65534, f"Worker running with unsafe UID: {uid_line}"
 
-        # 2. Verify NoNewPrivs status line exists and is tracked
+        # 2. Verify Capabilities are fully dropped (CapEff and CapBnd = 0) (REQ-SCOPE-B-05)
+        cap_eff = status.get("CapEff", "0000000000000000")
+        cap_bnd = status.get("CapBnd", "0000000000000000")
+        
+        # Convert hex string representations to integer values for absolute check
+        assert int(cap_eff, 16) == 0, f"Critical: CapEff is not zeroed: {cap_eff}"
+        assert int(cap_bnd, 16) == 0, f"Critical: CapBnd is not zeroed: {cap_bnd}"
+
+        # 3. Verify NoNewPrivs is active (= 1)
         no_new_privs = status.get("NoNewPrivs", "0")
-        assert no_new_privs in ["0", "1"], f"Invalid NoNewPrivs value: {no_new_privs}"
+        assert no_new_privs == "1", f"NoNewPrivs is not enforced: {no_new_privs}"
 
+        # 4. Verify Seccomp filter status is active (> 0) (REQ-SCOPE-B-03)
+        seccomp_status = status.get("Seccomp", "0")
+        assert int(seccomp_status) > 0, f"Seccomp filter is not active: {seccomp_status}"
+
+        # Clean shutdown sequence over pipe
         try:
             if parent_conn.poll(timeout=1.0):
                 parent_conn.send("PING")
