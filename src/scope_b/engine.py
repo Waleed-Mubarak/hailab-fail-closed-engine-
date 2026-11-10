@@ -100,8 +100,11 @@ def install_strict_seccomp():
     """Installs a valid BPF seccomp filter allowing necessary python/system calls 
        and defaulting to SECCOMP_RET_KILL_PROCESS (REQ-SCOPE-B-03).
     """
-    # Allowed syscall numbers for x86_64 startup and IPC
-    allowed_syscalls = {0, 1, 9, 11, 14, 15, 16, 32, 56, 60, 202, 231, 318}
+    # Comprehensive allowed syscall numbers for Python runtime on x86_64
+    allowed_syscalls = {
+        0, 1, 3, 9, 10, 11, 12, 13, 14, 15, 16, 21, 
+        39, 56, 60, 102, 104, 107, 108, 202, 231, 257, 262, 269, 318
+    }
     
     bpf_code = []
     # 1. Check architecture (AUDIT_ARCH_X86_64 = 0xC000003E)
