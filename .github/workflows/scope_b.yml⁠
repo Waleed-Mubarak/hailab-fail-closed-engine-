@@ -23,8 +23,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest
 
-      - name: Run Scope B Tests Safely
+      - name: Run Scope B Tests as Root (for mlockall)
         run: |
-          # رفع حدود الـ memlock مؤقتاً لتجنب خطأ ENOMEM (12) عند تنفيذ mlockall
-          ulimit -l unlimited || true
-          pytest -v -s tests/scope_b/test_engine.py
+          # تشغيل الاختبارات باستخدام sudo لمنح صلاحية CAP_IPC_LOCK وتجنب ENOMEM
+          sudo -E pytest -v -s tests/scope_b/test_engine.py
