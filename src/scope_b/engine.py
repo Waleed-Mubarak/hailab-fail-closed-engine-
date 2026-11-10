@@ -100,9 +100,11 @@ def install_strict_seccomp():
     """Installs a valid BPF seccomp filter allowing necessary python/system calls 
        and defaulting to SECCOMP_RET_KILL_PROCESS (REQ-SCOPE-B-03).
     """
+    # Expanded allowed syscalls including standard runtime, file operations, and multiprocessing IPC/socket syscalls
     allowed_syscalls = {
-        0, 1, 3, 9, 10, 11, 12, 13, 14, 15, 16, 21, 
-        39, 56, 60, 102, 104, 107, 108, 202, 231, 257, 262, 269, 318
+        0, 1, 3, 7, 9, 10, 11, 12, 13, 14, 15, 16, 21, 
+        39, 41, 42, 43, 44, 45, 46, 47, 53, 56, 60, 
+        102, 104, 107, 108, 202, 231, 232, 257, 262, 269, 318
     }
     
     bpf_code = []
