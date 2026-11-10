@@ -100,29 +100,21 @@ def install_strict_seccomp():
     """Installs a valid BPF seccomp filter allowing necessary python/system calls 
        and defaulting to SECCOMP_RET_KILL_PROCESS (REQ-SCOPE-B-03).
     """
-    # Comprehensive allowed syscall numbers for Python runtime on x86_64
     allowed_syscalls = {
         0, 1, 3, 9, 10, 11, 12, 13, 14, 15, 16, 21, 
         39, 56, 60, 102, 104, 107, 108, 202, 231, 257, 262, 269, 318
     }
     
     bpf_code = []
-    # 1. Check architecture (AUDIT_ARCH_X86_64 = 0xC000003E)
     bpf_code.append(SockFilter(code=0x20, jt=0, jf=0, k=4))
     bpf_code.append(SockFilter(code=0x15, jt=0, jf=len(allowed_syscalls) + 1, k=0xC000003E))
-    
-    # 2. Load syscall number offset
     bpf_code.append(SockFilter(code=0x20, jt=0, jf=0, k=0))
     
-    # 3. Add jump conditions for each allowed syscall
     for i, sc in enumerate(sorted(allowed_syscalls)):
         jt_val = len(allowed_syscalls) - i
         bpf_code.append(SockFilter(code=0x15, jt=jt_val, jf=0, k=sc))
         
-    # 4. Default action: SECCOMP_RET_KILL_PROCESS
     bpf_code.append(SockFilter(code=0x06, jt=0, jf=0, k=0x80000000))
-    
-    # 5. Allow action: SECCOMP_RET_ALLOW
     bpf_code.append(SockFilter(code=0x06, jt=0, jf=0, k=0x7fff0000))
     
     filter_array = (SockFilter * len(bpf_code))(*bpf_code)
@@ -130,7 +122,7 @@ def install_strict_seccomp():
     
     res = libc.prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, ctypes.byref(prog))
     if res != 0:
-        sys.exit(1)
+        raise RuntimeError(f"seccomp prctl failed with errno {ctypes.get_errno()}")
 
 
 def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
@@ -140,11 +132,12 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
     try:
         # 1. Ensure worker dies if parent dies
         if libc.prctl(PR_SET_PDEATHSIG, 9, 0, 0, 0) != 0:
-            sys.exit(1)
+            raise RuntimeError("PDEATHSIG failed")
 
         # 2. mlockall (Strict Fail-Closed)
         if libc.mlockall(MCL_CURRENT | MCL_FUTURE) != 0:
-            sys.exit(1)
+            err = ctypes.get_errno()
+            raise RuntimeError(f"mlockall failed with errno {err}")
 
         # 3. Drop bounding set via prctl while still root
         for cap in range(65):
@@ -154,20 +147,20 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
         try:
             os.setgid(target_gid)
             os.setuid(target_uid)
-        except OSError:
-            sys.exit(1)
+        except OSError as e:
+            raise RuntimeError(f"setuid/setgid failed: {e}")
 
-        # 5. Verify capabilities zeroed strictly (No UID 0 bypass)
+        # 5. Verify capabilities zeroed strictly
         if not verify_capabilities_zeroed():
-            sys.exit(1)
+            raise RuntimeError("Capabilities verification failed")
 
         # 6. PR_SET_DUMPABLE = 0
         if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
-            sys.exit(1)
+            raise RuntimeError("PR_SET_DUMPABLE failed")
 
         # 7. PR_SET_NO_NEW_PRIVS = 1
         if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
-            sys.exit(1)
+            raise RuntimeError("PR_SET_NO_NEW_PRIVS failed")
 
         # 8. Install strict Seccomp BPF filter
         install_strict_seccomp()
@@ -175,7 +168,7 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
         # Signal parent that initialization completed successfully and worker is ALIVE
         pipe_conn.send("READY")
 
-        # Communication loop with parent (Deadlock-free & active)
+        # Communication loop with parent
         while True:
             if pipe_conn.poll(timeout=2.0):
                 try:
@@ -189,5 +182,7 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
             else:
                 if os.getppid() == 1:
                     break
-    except Exception:
+    except Exception as e:
+        import sys as _sys
+        print(f"WORKER CRASHED DUE TO: {e}", file=_sys.stderr)
         sys.exit(1)
