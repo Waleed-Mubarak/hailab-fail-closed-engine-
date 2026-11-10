@@ -189,9 +189,6 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
                         break
                 except Exception:
                     break
-            else:
-                if os.getppid() == 1:
-                    break
     except Exception as e:
         import sys as _sys
         print(f"WORKER CRASHED DUE TO: {e}", file=_sys.stderr)
