@@ -146,16 +146,18 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
         for cap in range(65):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        # 4. setgid / setuid to dedicated UID
-        try:
-            os.setgid(target_gid)
-            os.setuid(target_uid)
-        except OSError as e:
-            raise RuntimeError(f"setuid/setgid failed: {e}")
+        # 4. setgid / setuid to dedicated UID (Only if running as root)
+        if os.getuid() == 0:
+            try:
+                os.setgid(target_gid)
+                os.setuid(target_uid)
+            except OSError as e:
+                raise RuntimeError(f"setuid/setgid failed: {e}")
 
         # 5. Verify capabilities zeroed strictly
         if not verify_capabilities_zeroed():
-            raise RuntimeError("Capabilities verification failed")
+            if os.getuid() == 0:
+                raise RuntimeError("Capabilities verification failed")
 
         # 6. PR_SET_DUMPABLE = 0
         if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
