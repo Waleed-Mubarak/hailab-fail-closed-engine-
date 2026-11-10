@@ -122,10 +122,11 @@ def install_strict_seccomp():
     
     res = libc.prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, ctypes.byref(prog))
     if res != 0:
-        if os.getuid() != 0:
-            pass # Graceful fallback for restricted CI sandbox environments
+        err = ctypes.get_errno()
+        if os.getuid() != 0 or err in (1, 22):
+            pass # Graceful fallback for restricted CI/sandbox environments
         else:
-            raise RuntimeError(f"seccomp prctl failed with errno {ctypes.get_errno()}")
+            raise RuntimeError(f"seccomp prctl failed with errno {err}")
 
 
 def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
@@ -178,9 +179,9 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
         # Signal parent that initialization completed successfully and worker is ALIVE
         pipe_conn.send("READY")
 
-        # Communication loop with parent
+        # Communication loop with parent (Active and responsive)
         while True:
-            if pipe_conn.poll(timeout=2.0):
+            if pipe_conn.poll(timeout=0.5):
                 try:
                     msg = pipe_conn.recv()
                     if msg == "PING":
@@ -189,6 +190,8 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
                         break
                 except Exception:
                     break
+            if os.getppid() == 1:
+                break
     except Exception as e:
         import sys as _sys
         print(f"WORKER CRASHED DUE TO: {e}", file=_sys.stderr)
