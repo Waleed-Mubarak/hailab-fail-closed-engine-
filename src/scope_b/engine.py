@@ -142,17 +142,19 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
             else:
                 raise RuntimeError(f"mlockall failed with errno {err}")
 
-        # 3. Drop bounding set via prctl while still root
+        # 3. Drop bounding set via prctl while still root (if permitted)
         for cap in range(65):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        # 4. setgid / setuid to dedicated UID (Only if running as root)
-        if os.getuid() == 0:
-            try:
-                os.setgid(target_gid)
-                os.setuid(target_uid)
-            except OSError as e:
-                raise RuntimeError(f"setuid/setgid failed: {e}")
+        # 4. setgid / setuid to dedicated UID (Graceful fallback if restricted in CI)
+        try:
+            os.setgid(target_gid)
+            os.setuid(target_uid)
+        except OSError:
+            if os.getuid() != 0:
+                pass # Allow non-root execution in restricted CI sandbox
+            else:
+                raise
 
         # 5. Verify capabilities zeroed strictly
         if not verify_capabilities_zeroed():
