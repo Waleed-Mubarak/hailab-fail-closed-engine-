@@ -25,5 +25,4 @@ jobs:
 
       - name: Run Scope B Tests as Root (for mlockall)
         run: |
-          # تشغيل الاختبارات باستخدام sudo لمنح صلاحية CAP_IPC_LOCK وتجنب ENOMEM
           sudo -E pytest -v -s tests/scope_b/test_engine.py
