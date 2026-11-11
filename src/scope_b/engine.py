@@ -157,7 +157,7 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
             if err != 12:
                 raise RuntimeError(f"mlockall failed with errno {err}")
 
-        # 3. Drop bounding set via prctl (while still privileged to drop all caps)
+        # 3. Drop bounding set via prctl (while still privileged)
         for cap in range(65):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
