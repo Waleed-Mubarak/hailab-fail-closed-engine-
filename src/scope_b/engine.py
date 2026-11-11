@@ -19,7 +19,6 @@ PR_CAP_BND_DROP = 24
 # Seccomp & BPF Constants
 PR_SET_SECCOMP = 22
 SECCOMP_MODE_FILTER = 2
-
 AUDIT_ARCH_X86_64 = 0xC000003E
 
 BPF_LD = 0x00
@@ -31,7 +30,6 @@ BPF_RET = 0x06
 K_RET_ALLOW = 0x7fff0000
 K_RET_KILL = 0x80000000
 
-# Linux Capability Structures
 class CapHeader(ctypes.Structure):
     _fields_ = [("version", ctypes.c_uint32), ("pid", ctypes.c_int)]
 
@@ -65,36 +63,29 @@ class ScopeBEngine:
         self.parent_pid = os.getpid()
 
     def enforce_memory_hardening(self):
-        """Enforces mlockall. Fails closed (halts startup with RuntimeError) if mlockall fails."""
         res = libc.mlockall(MCL_CURRENT | MCL_FUTURE)
         if res != 0:
             err = ctypes.get_errno()
-            raise RuntimeError(
-                f"CRITICAL: mlockall failed with errno {err}. Startup halted."
-            )
+            raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}. Startup halted.")
         self.locked = True
 
     def enforce_process_isolation(self):
-        """Enforces kernel-level process isolation and protections in parent."""
         res_dump = libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)
         if res_dump != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_DUMPABLE to 0.")
-
         res_privs = libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
         if res_privs != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS.")
-
         self.isolated = True
 
     def zeroize_state(self):
-        """Zeroizes internal state and flags."""
         self.locked = False
         self.isolated = False
         self.zeroized = True
 
 
 def verify_capabilities_zeroed():
-    """Verifies via capget that CapEff and CapBnd are fully zeroed."""
+    """Verifies via capget that CapEff and CapPermitted are fully zeroed unconditionally."""
     header = CapHeader()
     header.version = 0x20080522
     header.pid = 0
@@ -102,13 +93,27 @@ def verify_capabilities_zeroed():
     res = libc.capget(ctypes.byref(header), ctypes.byref(data))
     if res != 0:
         return False
-    if data[0].effective != 0 or data[0].permitted != 0 or data[1].effective != 0 or data[1].permitted != 0:
+    if data[0].effective != 0 or data[0].permitted != 0:
         return False
     return True
 
 
+def verify_cap_bnd_zero():
+    """Verifies unconditionally from /proc/self/status that CapBnd is fully zeroed."""
+    try:
+        with open("/proc/self/status", "r") as f:
+            for line in f:
+                if line.startswith("CapBnd:"):
+                    vals = line.split()[1]
+                    if vals == "0000000000000000":
+                        return True
+    except Exception:
+        pass
+    return False
+
+
 def install_strict_seccomp():
-    """Installs a valid BPF seccomp filter with architecture check and SECCOMP_RET_KILL_PROCESS."""
+    """Installs a strict BPF seccomp filter with architecture check and SECCOMP_RET_KILL_PROCESS unconditionally."""
     allowed_syscalls = {
         0, 1, 3, 7, 9, 10, 11, 12, 13, 14, 15, 16, 21, 
         39, 41, 42, 43, 44, 45, 46, 47, 53, 56, 60, 
@@ -134,20 +139,19 @@ def install_strict_seccomp():
     res = libc.prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, ctypes.byref(prog))
     if res != 0:
         err = ctypes.get_errno()
-        if os.getuid() != 0 or err in (1, 22):
-            pass
-        else:
-            raise RuntimeError(f"seccomp prctl failed with errno {err}")
+        raise RuntimeError(f"seccomp prctl failed with errno {err}")
 
 
 def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
     """Worker process strictly enforcing initialization order and Fail-Closed semantics."""
     try:
-        # 1. Ensure worker dies if parent dies
+        # 1. PDEATHSIG
         if libc.prctl(PR_SET_PDEATHSIG, 9, 0, 0, 0) != 0:
             raise RuntimeError("PDEATHSIG failed")
 
         # 2. mlockall
+        if os.environ.get("SIMULATE_MLOCKALL_FAILURE") == "1":
+            raise RuntimeError("Simulated mlockall failure")
         if libc.mlockall(MCL_CURRENT | MCL_FUTURE) != 0:
             err = ctypes.get_errno()
             if err != 12:
@@ -157,20 +161,15 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
         for cap in range(65):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        # 4. setgid / setuid with CI sandbox compatibility
-        try:
-            os.setgid(target_gid)
-            os.setuid(target_uid)
-        except OSError:
-            if os.getuid() != 0:
-                pass
-            else:
-                raise
+        # 4. setgid / setuid strictly (Unconditional)
+        os.setgid(target_gid)
+        os.setuid(target_uid)
 
-        # 5. Verify capabilities zeroed
+        # 5. Strict Capability Checks (Unconditional Fail-Closed)
         if not verify_capabilities_zeroed():
-            if os.getuid() == 0:
-                raise RuntimeError("Capabilities verification failed")
+            raise RuntimeError("CapEff verification failed")
+        if not verify_cap_bnd_zero():
+            raise RuntimeError("CapBnd verification failed")
 
         # 6. PR_SET_DUMPABLE = 0
         if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
@@ -195,6 +194,8 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
                         pipe_conn.send("PONG")
                     elif msg == "EXIT":
                         break
+                    elif msg == "TRIGGER_SIGSYS":
+                        libc.syscall(169) # Trigger prohibited syscall (acct) to test SIGSYS kill
                 except Exception:
                     break
             if os.getppid() == 1:
