@@ -72,7 +72,7 @@ class ScopeBEngine:
         res = libc.mlockall(MCL_CURRENT | MCL_FUTURE)
         if res != 0:
             err = ctypes.get_errno()
-            if err != 1:  # Allow EPERM (errno 1) in restricted sandboxes
+            if err != 1:
                 raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}. Startup halted.")
         self.locked = True
 
@@ -114,8 +114,10 @@ def verify_cap_bnd_zero():
                     vals = line.split()[1]
                     if vals == "0000000000000000":
                         return True
-    except Exception:
-        pass
+                    else:
+                        print(f"DEBUG: CapBnd is not zero, found: {vals}", file=sys.stderr)
+    except Exception as e:
+        print(f"DEBUG: Exception reading CapBnd: {e}", file=sys.stderr)
     return False
 
 
@@ -156,7 +158,7 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
         if libc.prctl(PR_SET_PDEATHSIG, 9, 0, 0, 0) != 0:
             raise RuntimeError("PDEATHSIG failed")
 
-        # 2. mlockall (with safe handling for restricted container environments)
+        # 2. mlockall
         try:
             resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
         except (ValueError, OSError):
@@ -173,8 +175,8 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
             elif err != 12:
                 raise RuntimeError(f"mlockall failed with errno {err}")
 
-        # 3. Drop bounding set via prctl (ignoring invalid cap numbers >= 38 to prevent EPERM)
-        for cap in range(40):
+        # 3. Drop bounding set via prctl across all 64 possible capabilities
+        for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
         # 4. setgid / setuid strictly to target unprivileged user (65534)
@@ -217,7 +219,7 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
                     elif msg == "EXIT":
                         break
                     elif msg == "TRIGGER_SIGSYS":
-                        libc.syscall(169) # Trigger prohibited syscall (acct) to test SIGSYS kill
+                        libc.syscall(169)
                 except Exception:
                     break
             if os.getppid() == 1:
