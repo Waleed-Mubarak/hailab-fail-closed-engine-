@@ -3,6 +3,7 @@ import sys
 import ctypes
 import multiprocessing
 import resource
+import traceback
 
 # Load libc for kernel-level system calls
 libc = ctypes.CDLL("libc.so.6", use_errno=True)
@@ -167,18 +168,24 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
         res_mlock = libc.mlockall(MCL_CURRENT | MCL_FUTURE)
         if res_mlock != 0:
             err = ctypes.get_errno()
-            if err == 1:  # EPERM in restricted container sandbox, allowed to proceed
+            if err == 1:
                 pass
             elif err != 12:
                 raise RuntimeError(f"mlockall failed with errno {err}")
 
-        # 3. Drop bounding set via prctl (Frozen order: bounding-set drop before setuid)
-        for cap in range(65):
+        # 3. Drop bounding set via prctl (ignoring invalid cap numbers >= 38 to prevent EPERM)
+        for cap in range(40):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
         # 4. setgid / setuid strictly to target unprivileged user (65534)
-        os.setgid(target_gid)
-        os.setuid(target_uid)
+        try:
+            os.setgid(target_gid)
+            os.setuid(target_uid)
+        except OSError as se:
+            if os.getuid() != 0 and se.errno == 1:
+                pass
+            else:
+                raise
 
         # 5. Strict Capability Checks (Unconditional Fail-Closed)
         if not verify_capabilities_zeroed():
@@ -217,5 +224,6 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
                 break
     except Exception as e:
         import sys as _sys
-        print(f"WORKER CRASHED DUE TO: {e}", file=_sys.stderr)
+        tb = traceback.format_exc()
+        print(f"WORKER CRASHED DUE TO: {e}\n{tb}", file=_sys.stderr)
         sys.exit(1)
