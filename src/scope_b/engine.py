@@ -106,7 +106,6 @@ def verify_cap_bnd_zero():
             for line in f:
                 if line.startswith("CapBnd:"):
                     vals = line.split()[1]
-                    # التحقق المرن والصحيح لضمان عدم التعليق بغض النظر عن طول السلسلة
                     if int(vals, 16) == 0:
                         return True
                     return all(c == '0' for c in vals)
@@ -157,10 +156,11 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
         if os.environ.get("SIMULATE_MLOCKALL_FAILURE") == "1":
             raise RuntimeError("Simulated mlockall failure")
 
+        # معالجة وتجاوز خطأ Operation not permitted (1) أو مهارات الذاكرة داخل حاوية الـ CI بأمان
         res_mlock = libc.mlockall(MCL_CURRENT | MCL_FUTURE)
         if res_mlock != 0:
             err = ctypes.get_errno()
-            if err != 1 and err != 12:
+            if err not in (1, 12):
                 raise RuntimeError(f"mlockall failed with errno {err}")
 
         for cap in range(64):
