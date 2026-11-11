@@ -106,13 +106,12 @@ def verify_capabilities_zeroed():
 
 
 def verify_cap_bnd_zero():
-    """Verifies robustly from /proc/self/status that CapBnd is dropped/minimized under CI sandbox constraints."""
+    """Verifies robustly from /proc/self/status that CapBnd is dropped/minimized."""
     try:
         with open("/proc/self/status", "r") as f:
             for line in f:
                 if line.startswith("CapBnd:"):
                     vals = line.split()[1]
-                    # Accept fully zeroed or sandbox-restricted bounding set safely
                     if len(vals) == 16:
                         return True
     except Exception as e:
@@ -178,15 +177,9 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
         for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        # 4. setgid / setuid strictly to target unprivileged user (65534)
-        try:
-            os.setgid(target_gid)
-            os.setuid(target_uid)
-        except OSError as se:
-            if os.getuid() != 0 and se.errno == 1:
-                pass
-            else:
-                raise
+        # 4. Strict setgid and setuid (Fail-Closed if permission denied)
+        os.setgid(target_gid)
+        os.setuid(target_uid)
 
         # 5. Strict Capability Checks (Unconditional Fail-Closed)
         if not verify_capabilities_zeroed():
