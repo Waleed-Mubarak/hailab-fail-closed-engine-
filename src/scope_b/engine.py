@@ -5,20 +5,16 @@ import multiprocessing
 import resource
 import traceback
 
-# Load libc for kernel-level system calls
 libc = ctypes.CDLL("libc.so.6", use_errno=True)
 
-# Constants for mlockall
 MCL_CURRENT = 1
 MCL_FUTURE = 2
 
-# Constants for prctl
 PR_SET_DUMPABLE = 4
 PR_SET_NO_NEW_PRIVS = 38
 PR_SET_PDEATHSIG = 1
 PR_CAP_BND_DROP = 24
 
-# Seccomp & BPF Constants
 PR_SET_SECCOMP = 22
 SECCOMP_MODE_FILTER = 2
 AUDIT_ARCH_X86_64 = 0xC000003E
@@ -73,7 +69,7 @@ class ScopeBEngine:
         if res != 0:
             err = ctypes.get_errno()
             if err != 1:
-                raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}. Startup halted.")
+                raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}.")
         self.locked = True
 
     def enforce_process_isolation(self):
@@ -92,7 +88,6 @@ class ScopeBEngine:
 
 
 def verify_capabilities_zeroed():
-    """Verifies via capget that CapEff and CapPermitted are fully zeroed unconditionally."""
     header = CapHeader()
     header.version = 0x20080522
     header.pid = 0
@@ -106,7 +101,6 @@ def verify_capabilities_zeroed():
 
 
 def verify_cap_bnd_zero():
-    """Verifies robustly from /proc/self/status that CapBnd is dropped/minimized."""
     try:
         with open("/proc/self/status", "r") as f:
             for line in f:
@@ -114,13 +108,12 @@ def verify_cap_bnd_zero():
                     vals = line.split()[1]
                     if len(vals) == 16:
                         return True
-    except Exception as e:
-        print(f"DEBUG: Exception reading CapBnd: {e}", file=sys.stderr)
+    except Exception:
+        pass
     return False
 
 
 def install_strict_seccomp():
-    """Installs a strict BPF seccomp filter with architecture check and SECCOMP_RET_KILL_PROCESS unconditionally."""
     allowed_syscalls = {
         0, 1, 3, 7, 9, 10, 11, 12, 13, 14, 15, 16, 21, 
         39, 41, 42, 43, 44, 45, 46, 47, 53, 56, 60, 
@@ -150,13 +143,10 @@ def install_strict_seccomp():
 
 
 def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
-    """Worker process strictly enforcing initialization order and Fail-Closed semantics."""
     try:
-        # 1. PDEATHSIG
         if libc.prctl(PR_SET_PDEATHSIG, 9, 0, 0, 0) != 0:
             raise RuntimeError("PDEATHSIG failed")
 
-        # 2. mlockall
         try:
             resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
         except (ValueError, OSError):
@@ -168,42 +158,38 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
         res_mlock = libc.mlockall(MCL_CURRENT | MCL_FUTURE)
         if res_mlock != 0:
             err = ctypes.get_errno()
-            if err == 1:
-                pass
-            elif err != 12:
+            if err != 1 and err != 12:
                 raise RuntimeError(f"mlockall failed with errno {err}")
 
-        # 3. Drop bounding set via prctl across all capabilities
         for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        # 4. Strict setgid and setuid (Fail-Closed if permission denied)
+        # Clear supplementary groups first to prevent EPERM on setgid
+        try:
+            os.setgroups([])
+        except Exception:
+            pass
+
         os.setgid(target_gid)
         os.setuid(target_uid)
 
-        # 5. Strict Capability Checks (Unconditional Fail-Closed)
         if not verify_capabilities_zeroed():
             raise RuntimeError("CapEff verification failed")
         if not verify_cap_bnd_zero():
             raise RuntimeError("CapBnd verification failed")
 
-        # 6. PR_SET_DUMPABLE = 0
         if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
             raise RuntimeError("PR_SET_DUMPABLE failed")
 
-        # 7. PR_SET_NO_NEW_PRIVS = 1
         if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
             raise RuntimeError("PR_SET_NO_NEW_PRIVS failed")
 
-        # 8. Install strict Seccomp BPF filter
         install_strict_seccomp()
 
-        # Signal parent that initialization completed successfully and worker is ALIVE
         pipe_conn.send("READY")
 
-        # Communication loop with parent
         while True:
-            if pipe_conn.poll(timeout=0.5):
+            if pipe_conn.poll(timeout=0.2):
                 try:
                     msg = pipe_conn.recv()
                     if msg == "PING":
@@ -218,6 +204,5 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
                 break
     except Exception as e:
         import sys as _sys
-        tb = traceback.format_exc()
-        print(f"WORKER CRASHED DUE TO: {e}\n{tb}", file=_sys.stderr)
+        print(f"WORKER CRASHED DUE TO: {e}", file=_sys.stderr)
         sys.exit(1)
