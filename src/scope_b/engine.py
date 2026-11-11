@@ -106,8 +106,10 @@ def verify_cap_bnd_zero():
             for line in f:
                 if line.startswith("CapBnd:"):
                     vals = line.split()[1]
-                    if len(vals) == 16:
+                    # التحقق المرن والصحيح لضمان عدم التعليق بغض النظر عن طول السلسلة
+                    if int(vals, 16) == 0:
                         return True
+                    return all(c == '0' for c in vals)
     except Exception:
         pass
     return False
@@ -164,7 +166,6 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
         for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        # Clear supplementary groups first to prevent EPERM on setgid
         try:
             os.setgroups([])
         except Exception:
