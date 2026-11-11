@@ -6,8 +6,7 @@ from src.scope_b.engine import ScopeBEngine, worker_process_target
 
 def test_scope_b_kernel_state_enforcement():
     """Strictly tests that the Scope B worker initializes successfully, stays alive, 
-       enforces strict kernel-level security (UID 65534, CapEff=0, CapBnd=0, Seccomp=2), 
-       and responds correctly to IPC messages.
+       and enforces strict kernel-level security (UID 65534, CapEff=0, CapBnd=0, Seccomp=2).
     """
     parent_conn, worker_conn = multiprocessing.Pipe()
     
@@ -15,21 +14,18 @@ def test_scope_b_kernel_state_enforcement():
     p.start()
     
     try:
-        # 1. Assert worker is alive during/after initialization
         assert p.is_alive(), "CRITICAL: Worker process died during initialization!"
         
         if not parent_conn.poll(timeout=4.0):
             p.terminate()
             p.join()
-            pytest.fail("CRITICAL: Worker failed to signal READY within timeout (Worker crashed or dead).")
+            pytest.fail("CRITICAL: Worker failed to signal READY within timeout.")
         
         msg = parent_conn.recv()
         assert msg == "READY", f"Expected 'READY', got {msg}"
-        
-        # Verify worker is still alive right after initialization
         assert p.is_alive(), "CRITICAL: Worker died immediately after sending READY."
 
-        # 2. Verify live kernel state from /proc/[pid]/status strictly
+        # Verify live kernel state from /proc/[pid]/status strictly
         pid = p.pid
         status_path = f"/proc/{pid}/status"
         
@@ -64,13 +60,12 @@ def test_scope_b_kernel_state_enforcement():
         assert no_new_privs_set, "CRITICAL: NoNewPrivs is not enabled."
         assert seccomp_active, "CRITICAL: Seccomp filter (mode 2) is not active."
 
-        # 3. Test active communication (PING -> PONG)
+        # Test active communication (PING -> PONG)
         parent_conn.send("PING")
         assert parent_conn.poll(timeout=3.0), "CRITICAL: Worker did not respond to PING."
         reply = parent_conn.recv()
         assert reply == "PONG", f"Expected 'PONG', got {reply}"
 
-        # 4. Assert worker is still alive
         assert p.is_alive(), "CRITICAL: Worker died after PING/PONG exchange."
 
     finally:
@@ -85,20 +80,18 @@ def test_scope_b_kernel_state_enforcement():
 
 
 def test_seccomp_sigsys_kill():
-    """Tests that a prohibited syscall kills the worker process with SIGSYS / exit."""
+    """Tests that a prohibited syscall kills the worker process with SIGSYS."""
     parent_conn, worker_conn = multiprocessing.Pipe()
     p = multiprocessing.Process(target=worker_process_target, args=(worker_conn,))
     p.start()
     
     try:
         assert parent_conn.poll(timeout=4.0), "Worker failed to initialize"
-        parent_conn.recv() # READY
+        parent_conn.recv()
         
-        # Trigger prohibited syscall
         parent_conn.send("TRIGGER_SIGSYS")
         p.join(timeout=3.0)
         
-        # Worker should be dead due to SECCOMP_RET_KILL_PROCESS
         assert not p.is_alive(), "CRITICAL: Worker survived a prohibited syscall!"
     finally:
         if p.is_alive():
@@ -110,4 +103,4 @@ def test_mlockall_fail_closed_behavior():
     """Tests that ScopeBEngine memory hardening fails closed on error (raises RuntimeError)."""
     engine = ScopeBEngine()
     with pytest.raises(RuntimeError):
-        engine.enforce_memory_hardening() if os.getuid() != 0 else (lambda: (_ for _ in ()).throw(RuntimeError("Simulated mlockall failure")))()
+        engine.enforce_memory_hardening()
