@@ -157,11 +157,11 @@ def worker_process_target(pipe_conn, target_uid=65534, target_gid=65534):
             if err != 12:
                 raise RuntimeError(f"mlockall failed with errno {err}")
 
-        # 3. Drop bounding set via prctl
+        # 3. Drop bounding set via prctl (while still privileged to drop all caps)
         for cap in range(65):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        # 4. setgid / setuid strictly (Unconditional)
+        # 4. setgid / setuid strictly to target unprivileged user (65534)
         os.setgid(target_gid)
         os.setuid(target_uid)
 
