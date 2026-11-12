@@ -31,6 +31,9 @@ def test_scope_b_kernel_state_enforcement():
             pytest.fail("CRITICAL: Worker failed to signal READY within timeout (Fail-Closed enforced).")
         
         msg = parent_conn.recv()
+        if isinstance(msg, dict) and "ERROR" in msg:
+            pytest.fail(f"CRITICAL: Worker crashed with exception:\n{msg['ERROR']}")
+        
         assert msg == "READY", f"Expected 'READY', got {msg}"
 
         pid = p.pid
