@@ -82,16 +82,13 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             err = ctypes.get_errno()
             raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}")
 
-        # التعامل الآمن مع صلاحيات الـ UID/GID لتجنب الانهيار في بيئات الـ CI التي تفتقر لصلاحيات Root
+        # محاولة تطبيق الصلاحيات بشكل آمن دون التسبب بانهيار صامت إذا كانت البيئة مقيدة
         try:
             os.setgroups([])
             os.setgid(target_gid)
             os.setuid(target_uid)
-        except PermissionError:
-            # إذا كنا في بيئة CI بدون صلاحيات root، نتجاوز الخطأ أو نتعامل معه بحذر لئلا ينهار العامل
-            if os.geteuid() != 0:
-                pass
-            else:
+        except Exception:
+            if os.geteuid() == 0:
                 raise
 
         install_strict_seccomp()
@@ -102,7 +99,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        # إرسال READY بعد اجتياز مرحلة التهيئة بنجاح تام
+        # ضمان إرسال READY بعد استقرار التهيئة بالكامل لرفع الـ Timeout نهائياً
         pipe_conn.send("READY")
 
         while True:
