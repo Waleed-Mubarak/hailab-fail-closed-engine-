@@ -20,11 +20,10 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install dependencies with sudo
+      - name: Install dependencies
         run: |
-          sudo python -m pip install --upgrade pip
-          sudo pip install pytest pytest-timeout
+          python -m pip install pytest pytest-timeout
 
       - name: Run Scope B Tests as Root
         run: |
-          sudo python -m pytest -v -s --timeout=15 tests/scope_b/test_engine.py
+          sudo $(which python) -m pytest -v -s --timeout=15 tests/scope_b/test_engine.py
