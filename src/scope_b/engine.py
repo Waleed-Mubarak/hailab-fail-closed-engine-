@@ -19,50 +19,49 @@ MCL_CURRENT = 1
 MCL_FUTURE = 2
 
 def verify_capabilities_zeroed():
-    try:
-        with open("/proc/self/status", "r") as f:
-            for line in f:
-                if line.startswith("CapEff:"):
-                    val = line.split()[1]
-                    if val != "0000000000000000":
-                        raise RuntimeError(f"CRITICAL: CapEff is not zeroed: {val}")
-                    return True
-    except Exception:
-        pass
-    return True
+    with open("/proc/self/status", "r") as f:
+        for line in f:
+            if line.startswith("CapEff:"):
+                val = line.split()[1]
+                if val != "0000000000000000":
+                    raise RuntimeError(f"CRITICAL: CapEff is not zeroed: {val}")
+                return True
+    raise RuntimeError("CRITICAL: CapEff line not found")
 
 def verify_cap_bnd_zero():
-    try:
-        with open("/proc/self/status", "r") as f:
-            for line in f:
-                if line.startswith("CapBnd:"):
-                    val = line.split()[1]
-                    if not all(c == '0' for c in val):
-                        raise RuntimeError(f"CRITICAL: CapBnd is not zeroed: {val}")
-                    return True
-    except Exception:
-        pass
-    return True
+    with open("/proc/self/status", "r") as f:
+        for line in f:
+            if line.startswith("CapBnd:"):
+                val = line.split()[1]
+                if not all(c == '0' for c in val):
+                    raise RuntimeError(f"CRITICAL: CapBnd is not zeroed: {val}")
+                return True
+    raise RuntimeError("CRITICAL: CapBnd line not found")
 
 def install_strict_seccomp():
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
     bpf_code = [
-        struct.pack("HBBI", 0x20, 0, 0, 4),          # Load architecture
-        struct.pack("HBBI", 0x15, 0, 11, 0xC000003E),# Check x86_64
-        struct.pack("HBBI", 0x20, 0, 0, 0),          # Load syscall number
-        struct.pack("HBBI", 0x15, 9, 0, 0),          # sys_read -> ALLOW
-        struct.pack("HBBI", 0x15, 8, 0, 1),          # sys_write -> ALLOW
-        struct.pack("HBBI", 0x15, 7, 0, 7),          # sys_poll -> ALLOW
-        struct.pack("HBBI", 0x15, 6, 0, 9),          # sys_mmap -> ALLOW
-        struct.pack("HBBI", 0x15, 5, 0, 11),         # sys_munmap -> ALLOW
-        struct.pack("HBBI", 0x15, 4, 0, 12),         # sys_brk -> ALLOW
-        struct.pack("HBBI", 0x15, 3, 0, 15),         # sys_rt_sigreturn -> ALLOW
-        struct.pack("HBBI", 0x15, 2, 0, 60),         # sys_exit -> ALLOW
-        struct.pack("HBBI", 0x15, 1, 0, 202),        # sys_futex -> ALLOW
-        struct.pack("HBBI", 0x06, 0, 0, 0x80000000), # KILL_PROCESS (SIGSYS / -31)
-        struct.pack("HBBI", 0x06, 0, 0, 0x7FFF0000)  # ALLOW target
+        struct.pack("HBBI", 0x20, 0, 0, 4),
+        struct.pack("HBBI", 0x15, 0, 15, 0xC000003E),
+        struct.pack("HBBI", 0x20, 0, 0, 0),
+        struct.pack("HBBI", 0x15, 13, 0, 0),
+        struct.pack("HBBI", 0x15, 12, 0, 1),
+        struct.pack("HBBI", 0x15, 11, 0, 7),
+        struct.pack("HBBI", 0x15, 10, 0, 9),
+        struct.pack("HBBI", 0x15, 9, 0, 11),
+        struct.pack("HBBI", 0x15, 8, 0, 12),
+        struct.pack("HBBI", 0x15, 7, 0, 15),
+        struct.pack("HBBI", 0x15, 6, 0, 41),
+        struct.pack("HBBI", 0x15, 5, 0, 42),
+        struct.pack("HBBI", 0x15, 4, 0, 43),
+        struct.pack("HBBI", 0x15, 3, 0, 49),
+        struct.pack("HBBI", 0x15, 2, 0, 50),
+        struct.pack("HBBI", 0x15, 1, 0, 56),
+        struct.pack("HBBI", 0x15, 0, 0, 60),
+        struct.pack("HBBI", 0x06, 0, 0, 0x80000000),
+        struct.pack("HBBI", 0x06, 0, 0, 0x7FFF0000)
     ]
     bpf_insn = b"".join(bpf_code)
     
@@ -101,12 +100,13 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             raise RuntimeError("CRITICAL: Failed to set PR_SET_DUMPABLE")
 
         for cap in range(64):
-            libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
+            if libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0) != 0:
+                raise RuntimeError(f"CRITICAL: Failed to drop capability {cap}")
 
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
-        # إرسال READY فوراً بعد نجاح التهيئة لمنع الـ Timeout
+        # إرسال READY فقط عند النجاح التام لكافة القيود
         pipe_conn.send("READY")
 
         while True:
@@ -122,10 +122,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
     except Exception as e:
         import sys as _sys
         print(f"WORKER FATAL CRASH: {e}", file=_sys.stderr)
-        try:
-            pipe_conn.send("READY")
-        except Exception:
-            pass
+        # Fail-Closed حقيقي: عدم إرسال READY أبداً عند حدوث أي خطأ
         _sys.exit(77)
 
 
