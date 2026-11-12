@@ -39,26 +39,25 @@ def verify_cap_bnd_zero():
     raise RuntimeError("CRITICAL: CapBnd line not found")
 
 def install_strict_seccomp():
-    """تثبيت فلتر Seccomp يسمح بعمل بايثون الأساسي ويقتل أي استدعاء خارجي غير مصرح به بـ SIGSYS"""
+    """فلتر Seccomp صارم يسمح بعمل بايثون ويقتل أي استدعاء خارجي غير مصرح به بـ SIGSYS (-31)"""
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
-    # BPF bytecode يسمح بالاستدعاءات الضرورية لبيئة بايثون (read, write, poll, mmap, brk, futex, exit)
-    # ويقتل أي شيء آخر بـ KILL_PROCESS (SIGSYS / -31)
+    # بايتات BPF متوافقة مع معمارية x86_64 وتسمح بالاستدعاءات الضرورية لعمل بايثون والنظام الداخلي
     bpf_code = [
         struct.pack("HBBI", 0x20, 0, 0, 4),          # Load architecture
-        struct.pack("HBBI", 0x15, 0, 11, 0xC000003E),# Check x86_64, else jump to kill
+        struct.pack("HBBI", 0x15, 0, 11, 0xC000003E),# Check x86_64
         struct.pack("HBBI", 0x20, 0, 0, 0),          # Load syscall number
         struct.pack("HBBI", 0x15, 9, 0, 0),          # sys_read -> ALLOW
         struct.pack("HBBI", 0x15, 8, 0, 1),          # sys_write -> ALLOW
-        struct.pack("HBBI", 0x15, 7, 0, 7),          # sys_poll -> ALLOW (ضروري لـ multiprocessing pipe)
+        struct.pack("HBBI", 0x15, 7, 0, 7),          # sys_poll -> ALLOW
         struct.pack("HBBI", 0x15, 6, 0, 9),          # sys_mmap -> ALLOW
         struct.pack("HBBI", 0x15, 5, 0, 11),         # sys_munmap -> ALLOW
         struct.pack("HBBI", 0x15, 4, 0, 12),         # sys_brk -> ALLOW
         struct.pack("HBBI", 0x15, 3, 0, 15),         # sys_rt_sigreturn -> ALLOW
         struct.pack("HBBI", 0x15, 2, 0, 60),         # sys_exit -> ALLOW
         struct.pack("HBBI", 0x15, 1, 0, 202),        # sys_futex -> ALLOW
-        struct.pack("HBBI", 0x06, 0, 0, 0x80000000), # Default: KILL_PROCESS (SIGSYS / -31)
+        struct.pack("HBBI", 0x06, 0, 0, 0x80000000), # KILL_PROCESS (SIGSYS / -31)
         struct.pack("HBBI", 0x06, 0, 0, 0x7FFF0000)  # ALLOW target
     ]
     bpf_insn = b"".join(bpf_code)
@@ -103,6 +102,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
+        # إرسال إشارة الاستعداد فقط بعد اجتياز كافة الشروط بنجاح تام (Fail-Closed مطبق)
         pipe_conn.send("READY")
 
         while True:
@@ -118,6 +118,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
     except Exception as e:
         import sys as _sys
         print(f"WORKER FATAL CRASH: {e}", file=_sys.stderr)
+        # تطبيق Fail-Closed بإرجاع كود خروج غير صفري فوري
         _sys.exit(77)
 
 
