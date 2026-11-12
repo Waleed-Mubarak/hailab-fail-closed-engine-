@@ -42,34 +42,44 @@ def install_strict_seccomp():
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
-    bpf_code = [
-        struct.pack("HBBI", 0x20, 0, 0, 4),          # Load architecture
-        struct.pack("HBBI", 0x15, 0, 15, 0xC000003E),# Check x86_64
-        struct.pack("HBBI", 0x20, 0, 0, 0),          # Load syscall number
-        struct.pack("HBBI", 0x15, 13, 0, 0),         # sys_read -> ALLOW
-        struct.pack("HBBI", 0x15, 12, 0, 1),         # sys_write -> ALLOW
-        struct.pack("HBBI", 0x15, 11, 0, 3),         # sys_close -> ALLOW
-        struct.pack("HBBI", 0x15, 10, 0, 7),         # sys_poll -> ALLOW
-        struct.pack("HBBI", 0x15, 9, 0, 9),          # sys_mmap -> ALLOW
-        struct.pack("HBBI", 0x15, 8, 0, 11),         # sys_munmap -> ALLOW
-        struct.pack("HBBI", 0x15, 7, 0, 12),         # sys_brk -> ALLOW
-        struct.pack("HBBI", 0x15, 6, 0, 15),         # sys_rt_sigreturn -> ALLOW
-        struct.pack("HBBI", 0x15, 5, 0, 23),         # sys_select -> ALLOW
-        struct.pack("HBBI", 0x15, 4, 0, 47),         # sys_recvmsg -> ALLOW (حاسم لاستقبال PING)
-        struct.pack("HBBI", 0x15, 3, 0, 60),         # sys_exit -> ALLOW
-        struct.pack("HBBI", 0x15, 2, 0, 202),        # sys_futex -> ALLOW
-        struct.pack("HBBI", 0x15, 1, 0, 232),        # sys_epoll_wait -> ALLOW
-        struct.pack("HBBI", 0x15, 0, 1, 44),         # sys_sendto -> ALLOW (للرد بـ PONG)
-        struct.pack("HBBI", 0x06, 0, 0, 0x80000000), # KILL_PROCESS (SIGSYS / -31)
-        struct.pack("HBBI", 0x06, 0, 0, 0x7FFF0000)  # ALLOW target
-    ]
+    # القائمة البيضاء الشاملة لاستدعاءات النظام المطلوبة لتشغيل بايثون والـ Pipe/Sockets بأمان
+    allowed_syscalls = [0, 1, 3, 7, 9, 11, 12, 15, 23, 44, 47, 60, 202, 232]
+    
+    insns = []
+    # 0: تحميل المعمارية
+    insns.append((0x20, 0, 0, 4))
+    
+    k_len = len(allowed_syscalls)
+    kill_idx = 3 + k_len
+    allow_idx = 4 + k_len
+    
+    # 1: التحقق من معمارية x86_64
+    jf_arch = kill_idx - 2
+    insns.append((0x15, 0, jf_arch, 0xC000003E))
+    
+    # 2: تحميل رقم استدعاء النظام (Syscall number)
+    insns.append((0x20, 0, 0, 0))
+    
+    # إضافة فحوصات الـ Syscalls مع حساب دقيق للقفزات تلقائياً
+    for idx, sc in enumerate(allowed_syscalls):
+        curr_idx = 3 + idx
+        jt_val = allow_idx - curr_idx - 1
+        insns.append((0x15, jt_val, 0, sc))
+        
+    # تعليمات القتل (KILL_PROCESS)
+    insns.append((0x06, 0, 0, 0x80000000))
+    
+    # تعليمات السماح (ALLOW)
+    insns.append((0x06, 0, 0, 0x7FFF0000))
+    
+    bpf_code = [struct.pack("HBBI", code, jt, jf, k) for code, jt, jf, k in insns]
     bpf_insn = b"".join(bpf_code)
     
     class SockFprog(ctypes.Structure):
         _fields_ = [("len", ctypes.c_ushort), ("filter", ctypes.c_void_p)]
     
     buf = ctypes.create_string_buffer(bpf_insn)
-    fprog = SockFprog(len(bpf_code), ctypes.cast(buf, ctypes.c_void_p))
+    fprog = SockFprog(len(insns), ctypes.cast(buf, ctypes.c_void_p))
     
     if libc.prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, ctypes.byref(fprog)) != 0:
         raise RuntimeError("CRITICAL: Failed to install Seccomp filter")
@@ -116,10 +126,10 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
-        # إرسال READY أولاً قبل تفعيل Seccomp لضمان عدم حظر قنوات الاتصال الأولية
+        # إرسال READY أولاً قبل تفعيل الفلتر لضمان التمهيد السليم
         pipe_conn.send("READY")
 
-        # تثبيت Seccomp بعد إرسال READY مباشرة
+        # تثبيت فلتر Seccomp بدقة متناهية ودون أخطاء في القفزات
         install_strict_seccomp()
 
         while True:
