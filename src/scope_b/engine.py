@@ -70,12 +70,12 @@ def install_strict_seccomp():
     if libc.prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, ctypes.byref(fprog)) != 0:
         raise RuntimeError("CRITICAL: Failed to install Seccomp filter")
 
-def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target_gid: int = 65534):
+def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target_gid: int = 65534, simulate_mlockall_failure: bool = False):
     try:
         if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_PDEATHSIG")
 
-        if os.environ.get("SIMULATE_MLOCKALL_FAILURE") == "1":
+        if simulate_mlockall_failure:
             raise RuntimeError("CRITICAL: Simulated mlockall failure")
 
         resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
