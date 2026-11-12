@@ -3,6 +3,13 @@ import multiprocessing
 import os
 import signal
 import pytest
+
+# فرض طريقة spawn لضمان استقرار العمليات وقنوات الاتصال في بيئة الـ CI
+try:
+    multiprocessing.set_start_method('spawn', force=True)
+except RuntimeError:
+    pass
+
 from src.scope_b.engine import ScopeBEngine, worker_process_target, install_strict_seccomp, libc
 
 def test_scope_b_kernel_state_enforcement():
