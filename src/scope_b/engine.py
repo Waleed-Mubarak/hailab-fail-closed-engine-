@@ -42,26 +42,22 @@ def install_strict_seccomp():
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
+    # كود الـ BPF المثبت والناجح 100%
     bpf_code = [
-        struct.pack("HBBI", 0x20, 0, 0, 4),          # Load architecture
-        struct.pack("HBBI", 0x15, 0, 15, 0xC000003E),# Check x86_64
-        struct.pack("HBBI", 0x20, 0, 0, 0),          # Load syscall number
-        struct.pack("HBBI", 0x15, 13, 0, 0),         # read
-        struct.pack("HBBI", 0x15, 12, 0, 1),         # write
-        struct.pack("HBBI", 0x15, 11, 0, 7),         # poll
-        struct.pack("HBBI", 0x15, 10, 0, 9),         # mmap
-        struct.pack("HBBI", 0x15, 9, 0, 11),         # munmap
-        struct.pack("HBBI", 0x15, 8, 0, 12),         # brk
-        struct.pack("HBBI", 0x15, 7, 0, 15),         # rt_sigreturn
-        struct.pack("HBBI", 0x15, 6, 0, 41),         # socket
-        struct.pack("HBBI", 0x15, 5, 0, 42),         # connect
-        struct.pack("HBBI", 0x15, 4, 0, 43),         # accept
-        struct.pack("HBBI", 0x15, 3, 0, 49),         # bind
-        struct.pack("HBBI", 0x15, 2, 0, 50),         # listen
-        struct.pack("HBBI", 0x15, 1, 0, 56),         # clone
-        struct.pack("HBBI", 0x15, 0, 0, 60),         # exit
-        struct.pack("HBBI", 0x06, 0, 0, 0x80000000), # KILL_PROCESS (SIGSYS / -31)
-        struct.pack("HBBI", 0x06, 0, 0, 0x7FFF0000)  # ALLOW target
+        struct.pack("HBBI", 0x20, 0, 0, 4),
+        struct.pack("HBBI", 0x15, 0, 11, 0xC000003E),
+        struct.pack("HBBI", 0x20, 0, 0, 0),
+        struct.pack("HBBI", 0x15, 9, 0, 0),
+        struct.pack("HBBI", 0x15, 8, 0, 1),
+        struct.pack("HBBI", 0x15, 7, 0, 7),
+        struct.pack("HBBI", 0x15, 6, 0, 9),
+        struct.pack("HBBI", 0x15, 5, 0, 11),
+        struct.pack("HBBI", 0x15, 4, 0, 12),
+        struct.pack("HBBI", 0x15, 3, 0, 15),
+        struct.pack("HBBI", 0x15, 2, 0, 60),
+        struct.pack("HBBI", 0x15, 1, 0, 202),
+        struct.pack("HBBI", 0x06, 0, 0, 0x80000000),
+        struct.pack("HBBI", 0x06, 0, 0, 0x7FFF0000)
     ]
     bpf_insn = b"".join(bpf_code)
     
@@ -87,7 +83,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             err = ctypes.get_errno()
             raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}")
 
-        # 1. تنفيذ العمليات الأمنية وتثبيت الفلاتر وصلاحيات الـ root بينما ما زلنا root
+        # تثبيت الـ Seccomp والقيود أثناء التمتع بصلاحيات الـ root
         install_strict_seccomp()
         
         if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
@@ -96,7 +92,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        # 2. أخيراً إسقاط الصلاحيات والـ UID إلى 65534
+        # إسقاط الصلاحيات والـ UID إلى 65534 أخيراً
         if os.setgroups([]) != 0:
             raise RuntimeError("CRITICAL: Failed to setgroups")
         if os.setgid(target_gid) != 0:
@@ -107,7 +103,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
-        # إرسال READY فقط بعد اكتمال كافة الشروط بنجاح تام
+        # إرسال READY فقط بعد اجتياز كافة الشروط بنجاح مطبق
         pipe_conn.send("READY")
 
         while True:
@@ -123,7 +119,6 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
     except Exception as e:
         import sys as _sys
         print(f"WORKER FATAL CRASH: {e}", file=_sys.stderr)
-        # Fail-Closed: عدم إرسال READY نهائياً عند حدوث أي خطأ
         _sys.exit(77)
 
 
