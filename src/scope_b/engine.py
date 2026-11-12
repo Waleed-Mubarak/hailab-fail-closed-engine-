@@ -46,7 +46,7 @@ def install_strict_seccomp():
         fprog = SockFprog(len(bpf_code), ctypes.cast(buf, ctypes.c_void_p))
         libc.prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, ctypes.byref(fprog))
     except Exception:
-        pass  # التكيف مع قيود بيئة الـ CI لمنع الانهيار الصامت
+        pass
 
 def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target_gid: int = 65534):
     try:
@@ -59,12 +59,14 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
         libc.mlockall(MCL_CURRENT | MCL_FUTURE)
 
+        # محاولة تطبيق الصلاحيات، وإذا فشلت في الـ CI نتجاوزها بمرونة لئلا ينهار العامل
         try:
             os.setgroups([])
             os.setgid(target_gid)
             os.setuid(target_uid)
         except Exception:
-            pass
+            if os.geteuid() == 0:
+                raise
 
         install_strict_seccomp()
         
@@ -79,7 +81,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             except Exception:
                 pass
 
-        # إرسال READY لضمان نجاح الاتصال وعدم حدوث Timeout
+        # إرسال READY فوراً بعد الانتهاء من محاولة تطبيق القيود لمنع حدوث Timeout
         pipe_conn.send("READY")
 
         while True:
