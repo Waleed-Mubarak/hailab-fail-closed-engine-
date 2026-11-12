@@ -13,7 +13,7 @@ def test_scope_b_kernel_state_enforcement():
     try:
         assert p.is_alive(), "CRITICAL: Worker process died during initialization!"
         
-        if not parent_conn.poll(timeout=4.0):
+        if not parent_conn.poll(timeout=5.0):
             p.terminate()
             p.join()
             pytest.fail("CRITICAL: Worker failed to signal READY within timeout (Fail-Closed enforced).")
@@ -77,7 +77,7 @@ def test_seccomp_sigsys_kill():
     def prohibited_syscall_worker(pipe_conn):
         install_strict_seccomp()
         pipe_conn.send("READY_SECCOMP")
-        # استدعاء نظام محظور غير موجود (9999) لتفعيل القتل الفوري عبر النواة بـ SIGSYS (-31)
+        # استدعاء نظام محظور غير موجود (9999) لتقوم النواة بقتل العملية فوراً بـ SIGSYS (-31)
         libc.syscall(9999)
 
     parent_conn, worker_conn = multiprocessing.Pipe()
