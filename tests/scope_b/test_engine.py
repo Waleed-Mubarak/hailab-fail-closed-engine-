@@ -73,19 +73,22 @@ def test_scope_b_kernel_state_enforcement():
 
 
 def test_seccomp_sigsys_kill():
+    """اختبار أن استدعاء نظام محظور يُنهي العملية بـ SIGSYS وكود الخروج -31 بدقة"""
     def prohibited_syscall_worker(pipe_conn):
-        try:
-            install_strict_seccomp()
-            pipe_conn.send("READY_SECCOMP")
-            libc.syscall(9999)
-        except Exception as e:
-            pipe_conn.send(str(e))
+        # تثبيت الفلتر مباشرة دون تغليفه بـ try/except لكي لا يخرج العامل بصورة طبيعية عند أي خطأ
+        install_strict_seccomp()
+        pipe_conn.send("READY_SECCOMP")
+        # استدعاء رقم نظام محظور غير موجود (9999) لتقوم النواة بقتل العملية فوراً بـ SIGSYS
+        libc.syscall(9999)
 
     parent_conn, worker_conn = multiprocessing.Pipe()
     p = multiprocessing.Process(target=prohibited_syscall_worker, args=(worker_conn,))
     p.start()
     
     try:
+        assert parent_conn.poll(timeout=3.0), "CRITICAL: Seccomp worker failed to ready."
+        parent_conn.recv()
+        
         p.join(timeout=3.0)
         assert not p.is_alive(), "CRITICAL: Worker survived the prohibited system call!"
         assert p.exitcode == -signal.SIGSYS, f"Expected exit code {-signal.SIGSYS} (-31), got {p.exitcode}"
