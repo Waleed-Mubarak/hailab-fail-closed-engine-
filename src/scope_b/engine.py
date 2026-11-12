@@ -44,20 +44,22 @@ def install_strict_seccomp():
     
     bpf_code = [
         struct.pack("HBBI", 0x20, 0, 0, 4),          # Load architecture
-        struct.pack("HBBI", 0x15, 0, 13, 0xC000003E),# Check x86_64
+        struct.pack("HBBI", 0x15, 0, 15, 0xC000003E),# Check x86_64
         struct.pack("HBBI", 0x20, 0, 0, 0),          # Load syscall number
-        struct.pack("HBBI", 0x15, 11, 0, 0),         # sys_read -> ALLOW
-        struct.pack("HBBI", 0x15, 10, 0, 1),         # sys_write -> ALLOW
-        struct.pack("HBBI", 0x15, 9, 0, 3),          # sys_close -> ALLOW
-        struct.pack("HBBI", 0x15, 8, 0, 7),          # sys_poll -> ALLOW
-        struct.pack("HBBI", 0x15, 7, 0, 9),          # sys_mmap -> ALLOW
-        struct.pack("HBBI", 0x15, 6, 0, 11),         # sys_munmap -> ALLOW
-        struct.pack("HBBI", 0x15, 5, 0, 12),         # sys_brk -> ALLOW
-        struct.pack("HBBI", 0x15, 4, 0, 15),         # sys_rt_sigreturn -> ALLOW
-        struct.pack("HBBI", 0x15, 3, 0, 22),         # sys_pipe -> ALLOW
-        struct.pack("HBBI", 0x15, 2, 0, 60),         # sys_exit -> ALLOW
-        struct.pack("HBBI", 0x15, 1, 0, 202),        # sys_futex -> ALLOW
-        struct.pack("HBBI", 0x15, 0, 1, 232),        # sys_epoll_wait -> ALLOW
+        struct.pack("HBBI", 0x15, 13, 0, 0),         # sys_read -> ALLOW
+        struct.pack("HBBI", 0x15, 12, 0, 1),         # sys_write -> ALLOW
+        struct.pack("HBBI", 0x15, 11, 0, 3),         # sys_close -> ALLOW
+        struct.pack("HBBI", 0x15, 10, 0, 7),         # sys_poll -> ALLOW
+        struct.pack("HBBI", 0x15, 9, 0, 9),          # sys_mmap -> ALLOW
+        struct.pack("HBBI", 0x15, 8, 0, 11),         # sys_munmap -> ALLOW
+        struct.pack("HBBI", 0x15, 7, 0, 12),         # sys_brk -> ALLOW
+        struct.pack("HBBI", 0x15, 6, 0, 15),         # sys_rt_sigreturn -> ALLOW
+        struct.pack("HBBI", 0x15, 5, 0, 23),         # sys_select -> ALLOW
+        struct.pack("HBBI", 0x15, 4, 0, 47),         # sys_recvmsg -> ALLOW (حاسم لاستقبال PING)
+        struct.pack("HBBI", 0x15, 3, 0, 60),         # sys_exit -> ALLOW
+        struct.pack("HBBI", 0x15, 2, 0, 202),        # sys_futex -> ALLOW
+        struct.pack("HBBI", 0x15, 1, 0, 232),        # sys_epoll_wait -> ALLOW
+        struct.pack("HBBI", 0x15, 0, 1, 44),         # sys_sendto -> ALLOW (للرد بـ PONG)
         struct.pack("HBBI", 0x06, 0, 0, 0x80000000), # KILL_PROCESS (SIGSYS / -31)
         struct.pack("HBBI", 0x06, 0, 0, 0x7FFF0000)  # ALLOW target
     ]
