@@ -10,19 +10,21 @@ jobs:
   run-scope-b-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    container:
-      image: python:3.10-slim
-      options: --privileged --cap-add=ALL
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install system and python dependencies
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
         run: |
-          apt-get update && apt-get install -y gcc libc6-dev
           python -m pip install --upgrade pip
           pip install pytest pytest-timeout
 
-      - name: Run Scope B Tests
+      - name: Run Scope B Tests as Root
         run: |
-          pytest -v -s --timeout=15 tests/scope_b/test_engine.py
+          sudo pytest -v -s --timeout=15 tests/scope_b/test_engine.py
