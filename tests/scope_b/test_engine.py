@@ -4,7 +4,6 @@ import os
 import signal
 import pytest
 
-# فرض طريقة spawn لضمان استقرار العمليات وقنوات الاتصال في بيئة الـ CI
 try:
     multiprocessing.set_start_method('spawn', force=True)
 except RuntimeError:
@@ -81,7 +80,6 @@ def test_scope_b_kernel_state_enforcement():
 
 
 def test_seccomp_sigsys_kill():
-    """اختبار أن استدعاء نظام محظور يُنهي العملية بـ SIGSYS وكود الخروج -31 بدقة صارمة"""
     def prohibited_syscall_worker(pipe_conn):
         install_strict_seccomp()
         pipe_conn.send("READY_SECCOMP")
@@ -106,7 +104,6 @@ def test_seccomp_sigsys_kill():
 
 
 def test_mlockall_fail_closed_behavior():
-    """اختبار أن فشل mlockall يمنع إرسال READY ويؤدي لانهيار آمن للعملية بكود غير صفري"""
     parent_conn, worker_conn = multiprocessing.Pipe()
     
     os.environ["SIMULATE_MLOCKALL_FAILURE"] = "1"
