@@ -9,11 +9,10 @@ try:
 except RuntimeError:
     pass
 
-from src.scope_b.engine import ScopeBEngine, worker_process_target, install_strict_seccomp, libc
+from src.scope_b.engine import worker_process_target, install_strict_seccomp, libc
 
 @pytest.fixture(autouse=True)
 def clean_env():
-    """تنظيف متغيرات البيئة قبل وبعد كل اختبار لمنع أي تلوث أو تسرب"""
     os.environ.pop("SIMULATE_MLOCKALL_FAILURE", None)
     yield
     os.environ.pop("SIMULATE_MLOCKALL_FAILURE", None)
@@ -92,7 +91,6 @@ def prohibited_syscall_worker(pipe_conn):
 
 
 def test_seccomp_sigsys_kill():
-    """اختبار أن استدعاء نظام محظور يُنهي العملية بـ SIGSYS وكود الخروج -31 بدقة صارمة"""
     parent_conn, worker_conn = multiprocessing.Pipe()
     p = multiprocessing.Process(target=prohibited_syscall_worker, args=(worker_conn,))
     p.start()
@@ -112,9 +110,7 @@ def test_seccomp_sigsys_kill():
 
 
 def test_mlockall_fail_closed_behavior():
-    """اختبار أن فشل mlockall يمنع إرسال READY ويؤدي لانهيار آمن للعملية بكود غير صفري"""
     parent_conn, worker_conn = multiprocessing.Pipe()
-    
     os.environ["SIMULATE_MLOCKALL_FAILURE"] = "1"
     p = multiprocessing.Process(target=worker_process_target, args=(worker_conn,))
     p.start()
