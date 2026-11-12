@@ -3,11 +3,11 @@ import multiprocessing
 import os
 import signal
 import pytest
-from src.scope_b.engine import ScopeBEngine, worker_process_target, install_strict_seccomp, libc
+from src.scope_b.engine import ScopeBEngine, worker_process_target, worker_process_target_failing, install_strict_seccomp, libc
 
 def test_scope_b_kernel_state_enforcement():
     parent_conn, worker_conn = multiprocessing.Pipe()
-    p = multiprocessing.Process(target=worker_process_target, args=(worker_conn, 65534, 65534, False))
+    p = multiprocessing.Process(target=worker_process_target, args=(worker_conn, 65534, 65534))
     p.start()
     
     try:
@@ -42,8 +42,6 @@ def test_scope_b_kernel_state_enforcement():
                     no_new_privs_val = line.strip()
                 elif line.startswith("Seccomp:"):
                     seccomp_val = line.strip()
-
-        print(f"\nDEBUG STATUS -> {uid_val} | {cap_eff_val} | {cap_bnd_val} | {no_new_privs_val} | {seccomp_val}\n")
 
         assert "65534" in uid_val, f"CRITICAL: UID mismatch. Got: {uid_val}"
         assert "0000000000000000" in cap_eff_val, f"CRITICAL: CapEff not zero. Got: {cap_eff_val}"
@@ -92,7 +90,8 @@ def test_seccomp_sigsys_kill():
 
 def test_mlockall_fail_closed_behavior():
     parent_conn, worker_conn = multiprocessing.Pipe()
-    p = multiprocessing.Process(target=worker_process_target, args=(worker_conn, 65534, 65534, True))
+    # استخدام الدالة المخصصة للفشل حصرياً
+    p = multiprocessing.Process(target=worker_process_target_failing, args=(worker_conn,))
     p.start()
     
     try:
