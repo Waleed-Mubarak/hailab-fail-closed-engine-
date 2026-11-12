@@ -82,10 +82,14 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             err = ctypes.get_errno()
             raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}")
 
-        # إرسال READY أولاً لضمان عدم حدوث Timeout في الـ CI واستقرار قناة الاتصال
-        pipe_conn.send("READY")
+        # إسقاط الصلاحيات وتغيير UID و GID أولاً قبل إرسال READY ليجتاز الاختبار الفحوصات بدقة
+        if os.setgroups([]) != 0:
+            raise RuntimeError("CRITICAL: Failed to setgroups")
+        if os.setgid(target_gid) != 0:
+            raise RuntimeError("CRITICAL: Failed to setgid")
+        if os.setuid(target_uid) != 0:
+            raise RuntimeError("CRITICAL: Failed to setuid")
 
-        # تطبيق القيود الأمنية والفلتر بعد الجاهزية مباشرة لتجنب التضارب الصامت
         install_strict_seccomp()
         
         if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
@@ -94,15 +98,11 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        if os.setgroups([]) != 0:
-            raise RuntimeError("CRITICAL: Failed to setgroups")
-        if os.setgid(target_gid) != 0:
-            raise RuntimeError("CRITICAL: Failed to setgid")
-        if os.setuid(target_uid) != 0:
-            raise RuntimeError("CRITICAL: Failed to setuid")
-
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
+
+        # إرسال READY بعد اكتمال جميع القيود والـ UID الصارم 65534
+        pipe_conn.send("READY")
 
         while True:
             if pipe_conn.poll(timeout=0.2):
