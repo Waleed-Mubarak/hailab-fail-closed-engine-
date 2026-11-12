@@ -42,7 +42,7 @@ def install_strict_seccomp():
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
-    # قائمة السماح الضيقة جداً والمجرّدة من أي استدعاءات شبكة أو استدعاءات زائدة
+    # قائمة السماح الضيقة والأساسية فقط للعمليات الداخلية للـ Worker
     bpf_code = [
         struct.pack("HBBI", 0x20, 0, 0, 4),          # Load architecture
         struct.pack("HBBI", 0x15, 0, 9, 0xC000003E),# Check x86_64
@@ -74,7 +74,6 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_PDEATHSIG")
 
-        # محاكاة فشل mlockall الحقيقي للاختبار دون تهاون
         if os.environ.get("SIMULATE_MLOCKALL_FAILURE") == "1":
             raise RuntimeError("CRITICAL: Simulated mlockall failure")
 
@@ -98,11 +97,10 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        # التحقق الإجباري وعدم إهمال أي نتيجة
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
-        # إرسال READY فقط بعد نجاح كل الخطوات بشكل قطعي
+        # إرسال READY فقط عند اكتمال كافة شروط الحماية بنجاح قطعي
         pipe_conn.send("READY")
 
         while True:
@@ -118,7 +116,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
     except Exception as e:
         import sys as _sys
         print(f"WORKER FATAL CRASH: {e}", file=_sys.stderr)
-        # عدم إرسال READY نهائياً عند حدوث أي خطأ (Fail-Closed صارم)
+        # عدم إرسال READY مطلقاً عند حدوث أي خطأ (Fail-Closed)
         _sys.exit(77)
 
 
