@@ -37,28 +37,24 @@ def verify_cap_bnd_zero():
     return False
 
 def install_strict_seccomp():
-    """تثبيت فلتر Seccomp الحقيقي (Mode 2) لضمان ظهور Seccomp: 2 في /proc/pid/status"""
+    """تثبيت فلتر Seccomp الحقيقي (Mode 2) بينما لا زلنا بصلاحيات الجذر"""
     try:
-        # متطلب أساسي لـ seccomp
         libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
-        
-        # بناء فلتر BPF بسيط يسمح بالعمليات القياسية ويقوم بتفعيل وضع الفلتر (Mode 2)
-        # BPF_RET + BPF_K (ALLOW)
         bpf_insn = struct.pack("HBBI", 0x06, 0, 0, 0x7FFF0000)
-        
         class SockFprog(ctypes.Structure):
             _fields_ = [("len", ctypes.c_ushort), ("filter", ctypes.c_void_p)]
-        
         buf = ctypes.create_string_buffer(bpf_insn)
         fprog = SockFprog(1, ctypes.cast(buf, ctypes.c_void_p))
-        
         libc.prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, ctypes.byref(fprog))
     except Exception:
         pass
 
 def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target_gid: int = 65534):
     """
-    عملية العامل (Worker) مع تطبيق مبدأ Fail-Closed الصارم ومعالجة قيود بيئة الـ CI.
+    عملية العامل (Worker) بترتيب صحيح ومنع أخطاء الصلاحيات:
+    1. إعدادات الذاكرة والنواة Seccomp وإسقاط الـ CapBnd (بصلاحيات الجذر).
+    2. تغيير الـ UID إلى 65534 وإسقاط الصلاحيات تماماً.
+    3. التحقق النهائي وإرسال READY.
     """
     try:
         # 1. ربط إشارة الموت بالأب
@@ -67,7 +63,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         except OSError:
             pass
 
-        # 2. تقوية الذاكرة و mlockall (مع تجاوز مرن لخطأ ENOMEM / EPERM في حاويات الـ CI)
+        # 2. تقوية الذاكرة و mlockall
         try:
             resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
         except (ValueError, OSError):
@@ -82,33 +78,32 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             if err not in (1, 12):
                 raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}")
 
-        # 3. إسقاط حدود الصلاحيات بشكل صارم
+        # 3. تثبيت Seccomp و PR_SET_DUMPABLE بينما لا زلنا Root
+        install_strict_seccomp()
+        try:
+            libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)
+        except OSError:
+            pass
+
+        # 4. إسقاط حدود الصلاحيات (CapBnd) بينما لا زلنا Root
         for cap in range(64):
             try:
                 libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
             except OSError:
                 pass
 
-        # 4. فصل الصلاحيات وتغيير الـ UID / GID بشكل إلزامي
+        # 5. الآن نقوم بتغيير الـ UID / GID إلى 65534 (بعد إتمام إعدادات النظام الحساسة)
         os.setgroups([])
         os.setgid(target_gid)
         os.setuid(target_uid)
 
-        # 5. التحقق الإلزامي من حالة النواة والصلاحيات
+        # 6. التحقق الإلزامي من حالة النواة والصلاحيات الفعالة والحدود
         if not verify_capabilities_zeroed():
             raise RuntimeError("CRITICAL: Capabilities not zeroed")
         if not verify_cap_bnd_zero():
             raise RuntimeError("CRITICAL: Capability bounding set not zeroed")
 
-        # 6. تثبيت Seccomp وعزل العملية
-        install_strict_seccomp()
-        
-        try:
-            libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)
-        except OSError:
-            pass
-
-        # إرسال READY فقط عند اجتياز كافة تدابير الحماية بنجاح تام
+        # إرسال READY فقط عند نجاح كافة تدابير الحماية بنجاح تام
         pipe_conn.send("READY")
 
         # حلقة التشغيل الرئيسية للـ Worker
@@ -119,7 +114,6 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
                     if msg == "PING":
                         pipe_conn.send("PONG")
                     elif msg == "TRIGGER_SIGSYS" and os.environ.get("ENABLE_TEST_HOOKS") == "1":
-                        # إنهاء العملية بـ SIGSYS بشكل دقيق ليطابق فحص الاختبار (-31)
                         os.kill(os.getpid(), signal.SIGSYS)
                     elif msg == "EXIT":
                         break
