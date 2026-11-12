@@ -29,31 +29,29 @@ def verify_capabilities_zeroed():
     raise RuntimeError("CRITICAL: CapEff line not found")
 
 def verify_cap_bnd_zero():
-    """التحقق من حدود الصلاحيات مع التوافقية مع بيئة الحاويات"""
+    """التحقق من حدود الصلاحيات"""
     with open("/proc/self/status", "r") as f:
         for line in f:
             if line.startswith("CapBnd:"):
                 val = line.split()[1]
-                # السماح بالتحقق الصارم أو التوافق مع قيود الـ CI
+                if not all(c == '0' for c in val):
+                    raise RuntimeError(f"CRITICAL: CapBnd is not zeroed: {val}")
                 return True
     raise RuntimeError("CRITICAL: CapBnd line not found")
 
 def install_strict_seccomp():
-    """تثبيت فلتر Seccomp الحقيقي الذي يقتل العمليات المخالفة بـ SIGSYS"""
+    """تثبيت فلتر Seccomp الصارم"""
     res = libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
     if res != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
-    # BPF program: Kill on unmatched syscall, allow specified list
-    # SECCOMP_RET_KILL_PROCESS = 0x80000000, SECCOMP_RET_ALLOW = 0x7FFF0000
     bpf_code = [
-        struct.pack("HBBI", 0x20, 0, 0, 4),      # Load architecture
-        struct.pack("HBBI", 0x15, 0, 3, 0xC000003E), # Check x86_64
-        struct.pack("HBBI", 0x20, 0, 0, 0),      # Load syscall number
-        # Allow basic safe syscalls (read=0, write=1, exit=60, rt_sigreturn=15, etc.)
-        struct.pack("HBBI", 0x15, 0, 0, 60),     # exit
-        struct.pack("HBBI", 0x06, 0, 0, 0x7FFF0000), # ALLOW
-        struct.pack("HBBI", 0x06, 0, 0, 0x80000000)  # KILL_PROCESS (SIGSYS)
+        struct.pack("HBBI", 0x20, 0, 0, 4),          # Load architecture
+        struct.pack("HBBI", 0x15, 0, 3, 0xC000003E),     # Check x86_64
+        struct.pack("HBBI", 0x20, 0, 0, 0),          # Load syscall number
+        struct.pack("HBBI", 0x15, 0, 0, 60),         # sys_exit
+        struct.pack("HBBI", 0x06, 0, 0, 0x7FFF0000),     # ALLOW
+        struct.pack("HBBI", 0x06, 0, 0, 0x80000000)      # KILL (SIGSYS)
     ]
     bpf_insn = b"".join(bpf_code)
     
@@ -65,22 +63,27 @@ def install_strict_seccomp():
     
     res_sec = libc.prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, ctypes.byref(fprog))
     if res_sec != 0:
-        # Fallback to standard allow filter if strict BPF fails in CI container
-        bpf_fallback = struct.pack("HBBI", 0x06, 0, 0, 0x7FFF0000)
-        buf_fb = ctypes.create_string_buffer(bpf_fallback)
-        fprog_fb = SockFprog(1, ctypes.cast(buf_fb, ctypes.c_void_p))
-        libc.prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, ctypes.byref(fprog_fb))
+        raise RuntimeError("CRITICAL: Failed to install strict Seccomp filter")
 
 def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target_gid: int = 65534):
     try:
-        if libc.prctl(PR_SET_PDEATHSIG, 9, 0, 0, 0) != 0:
+        if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_PDEATHSIG")
+
+        if os.environ.get("SIMULATE_MLOCKALL_FAILURE") == "1":
+            raise RuntimeError("CRITICAL: Simulated mlockall failure")
 
         try:
             resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
-            libc.mlockall(MCL_CURRENT | MCL_FUTURE)
-        except Exception:
+        except (ValueError, OSError):
             pass
+
+        res_mlock = libc.mlockall(MCL_CURRENT | MCL_FUTURE)
+        if res_mlock != 0:
+            err = ctypes.get_errno()
+            # التسامح مع errno 1 (EPERM) و 12 (ENOMEM) كما طلب د. حكمت
+            if err not in (1, 12):
+                raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}")
 
         install_strict_seccomp()
         
