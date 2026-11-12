@@ -80,7 +80,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         mlock_res = libc.mlockall(MCL_CURRENT | MCL_FUTURE)
         if mlock_res != 0:
             err = ctypes.get_errno()
-            if err not in [1, 12, 22]:  # EPERM, ENOMEM, EINVAL
+            if err not in [1, 12, 22]:
                 raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}")
 
         if os.setgroups([]) != 0:
@@ -90,8 +90,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         if os.setuid(target_uid) != 0:
             raise RuntimeError("CRITICAL: Failed to setuid")
 
-        install_strict_seccomp()
-        
+        # التحقق من الصلاحيات والبيئة قبل تفعيل فلتر Seccomp النهائي لضمان سلامة إرسال READY
         if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_DUMPABLE")
 
@@ -101,7 +100,11 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
+        # إرسال الجاهزية أولاً قبل تفعيل Seccomp الصارم
         pipe_conn.send("READY")
+
+        # تفعيل Seccomp الصارم في النهاية
+        install_strict_seccomp()
 
         while True:
             if pipe_conn.poll(timeout=0.2):
@@ -119,16 +122,3 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         print(f"=== WORKER CRASHED DUE TO: {e} ===", file=_sys.stderr)
         traceback.print_exc(file=_sys.stderr)
         _sys.exit(77)
-
-
-class ScopeBEngine:
-    def __init__(self):
-        self.locked = False
-
-    def enforce_memory_hardening(self):
-        resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
-        if libc.mlockall(MCL_CURRENT | MCL_FUTURE) != 0:
-            err = ctypes.get_errno()
-            if err not in [1, 12, 22]:
-                raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}.")
-        self.locked = True
