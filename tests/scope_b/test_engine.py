@@ -90,7 +90,6 @@ def test_seccomp_sigsys_kill():
 
 def test_mlockall_fail_closed_behavior():
     parent_conn, worker_conn = multiprocessing.Pipe()
-    # استخدام الدالة المخصصة للفشل حصرياً
     p = multiprocessing.Process(target=worker_process_target_failing, args=(worker_conn,))
     p.start()
     
