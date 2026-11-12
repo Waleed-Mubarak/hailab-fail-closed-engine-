@@ -68,7 +68,7 @@ def verify_cap_bnd_zero():
                 if not all(c == '0' for c in val):
                     raise RuntimeError(f"CRITICAL: CapBnd is not zeroed: {val}")
                 return True
-    raise RuntimeError("CRITICAL: CapBnd line not found")
+    raise RuntimeError("CapBnd line not found")
 
 def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target_gid: int = 65534):
     try:
