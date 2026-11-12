@@ -77,7 +77,7 @@ def test_seccomp_sigsys_kill():
         try:
             install_strict_seccomp()
             pipe_conn.send("READY_SECCOMP")
-            libc.reboot(0, 0, 0x1234567)
+            libc.syscall(9999)
         except Exception as e:
             pipe_conn.send(str(e))
 
