@@ -97,10 +97,16 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         except OSError:
             pass
 
-        if os.setgid(target_gid) != 0:
-            raise RuntimeError("CRITICAL: Failed to setgid")
-        if os.setuid(target_uid) != 0:
-            raise RuntimeError("CRITICAL: Failed to setuid")
+        # تصحيح دوال setgid و setuid (لأنها ترجع None عند النجاح وليس 0)
+        try:
+            os.setgid(target_gid)
+        except OSError as e:
+            raise RuntimeError(f"CRITICAL: Failed to setgid: {e}")
+
+        try:
+            os.setuid(target_uid)
+        except OSError as e:
+            raise RuntimeError(f"CRITICAL: Failed to setuid: {e}")
 
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
