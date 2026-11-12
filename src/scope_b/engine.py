@@ -53,8 +53,10 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_PDEATHSIG")
 
-        # التحقق بدقة من محاكاة الفشل لتخصيصها للاختبار المعني فقط
+        # التحقق فقط إذا كان اختبار الفشل هو المقصود بشكل صريح
         if os.environ.get("SIMULATE_MLOCKALL_FAILURE") == "1":
+            # إزالة المتغير فورا لمنع تسربه للاختبارات التالية
+            os.environ.pop("SIMULATE_MLOCKALL_FAILURE", None)
             raise RuntimeError("CRITICAL: Simulated mlockall failure")
 
         try:
@@ -87,7 +89,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             except Exception:
                 pass
 
-        # إرسال READY بنجاح لتجنب الـ Timeout
+        # إرسال READY فوراً لضمان عدم حدوث Timeout
         pipe_conn.send("READY")
 
         while True:
