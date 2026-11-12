@@ -42,7 +42,6 @@ def install_strict_seccomp():
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
-    # قائمة السماح الضيقة والأساسية فقط للعمليات الداخلية للـ Worker
     bpf_code = [
         struct.pack("HBBI", 0x20, 0, 0, 4),          # Load architecture
         struct.pack("HBBI", 0x15, 0, 9, 0xC000003E),# Check x86_64
@@ -100,7 +99,6 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
-        # إرسال READY فقط عند اكتمال كافة شروط الحماية بنجاح قطعي
         pipe_conn.send("READY")
 
         while True:
@@ -115,8 +113,9 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
 
     except Exception as e:
         import sys as _sys
-        print(f"WORKER FATAL CRASH: {e}", file=_sys.stderr)
-        # عدم إرسال READY مطلقاً عند حدوث أي خطأ (Fail-Closed)
+        import traceback
+        print(f"=== WORKER CRASHED DUE TO: {e} ===", file=_sys.stderr)
+        traceback.print_exc(file=_sys.stderr)
         _sys.exit(77)
 
 
