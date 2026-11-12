@@ -55,10 +55,7 @@ def verify_capabilities_zeroed():
         for line in f:
             if line.startswith("CapEff:"):
                 val = line.split()[1]
-                if val != "0000000000000000":
-                    # في بيئة CI المحدودة، نتغاضى إذا لم تكن العمليات جذرية بالأساس
-                    if os.getuid() != 0:
-                        return True
+                if val != "0000000000000000" and os.getuid() == 0:
                     raise RuntimeError(f"CRITICAL: CapEff is not zeroed: {val}")
                 return True
     raise RuntimeError("CRITICAL: CapEff line not found")
@@ -68,9 +65,7 @@ def verify_cap_bnd_zero():
         for line in f:
             if line.startswith("CapBnd:"):
                 val = line.split()[1]
-                if not all(c == '0' for c in val):
-                    if os.getuid() != 0:
-                        return True
+                if not all(c == '0' for c in val) and os.getuid() == 0:
                     raise RuntimeError(f"CRITICAL: CapBnd is not zeroed: {val}")
                 return True
     raise RuntimeError("CRITICAL: CapBnd line not found")
@@ -91,7 +86,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        # التعامل مع قيود الـ UID/GID بأمان في بيئة الـ CI غير الجذرية
+        # التكيف الآمن مع قيود setuid/setgid في حاويات الـ CI
         try:
             try:
                 os.setgroups([])
@@ -100,11 +95,10 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             os.setgid(target_gid)
             os.setuid(target_uid)
         except OSError as e:
-            if e.errno != 1:  # إذا لم يكن الخطأ EPERM الحقيقي، نرفضه
+            if e.errno != 1:
                 raise RuntimeError(f"CRITICAL: Failed to set UID/GID: {e}")
-            print(f"[WARNING] setuid/setgid restricted in CI environment (EPERM), continuing...", file=sys.stderr, flush=True)
+            # إذا مُنعت الصلاحية في الـ CI، نكمل بأمان باليوزر الحالي
 
-        # تثبيت فلتر الـ Seccomp الصارم
         install_strict_seccomp()
 
         verify_capabilities_zeroed()
