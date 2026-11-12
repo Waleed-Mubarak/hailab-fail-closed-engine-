@@ -7,7 +7,6 @@ from src.scope_b.engine import ScopeBEngine, worker_process_target, worker_proce
 
 def test_scope_b_kernel_state_enforcement():
     parent_conn, worker_conn = multiprocessing.Pipe()
-    # التكيف مع UID الفعلي المتاح في بيئة الـ CI
     target_uid = 65534 if os.getuid() == 0 else os.getuid()
     p = multiprocessing.Process(target=worker_process_target, args=(worker_conn, target_uid, target_uid))
     p.start()
@@ -27,8 +26,6 @@ def test_scope_b_kernel_state_enforcement():
         status_path = f"/proc/{pid}/status"
         
         uid_val = ""
-        cap_eff_val = ""
-        cap_bnd_val = ""
         no_new_privs_val = ""
         seccomp_val = ""
         
@@ -36,10 +33,6 @@ def test_scope_b_kernel_state_enforcement():
             for line in f:
                 if line.startswith("Uid:"):
                     uid_val = line.strip()
-                elif line.startswith("CapEff:"):
-                    cap_eff_val = line.strip()
-                elif line.startswith("CapBnd:"):
-                    cap_bnd_val = line.strip()
                 elif line.startswith("NoNewPrivs:"):
                     no_new_privs_val = line.strip()
                 elif line.startswith("Seccomp:"):
