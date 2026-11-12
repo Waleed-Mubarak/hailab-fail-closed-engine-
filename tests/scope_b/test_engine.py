@@ -1,11 +1,12 @@
-import time
-import multiprocessing
 import os
+import multiprocessing
 import signal
 import pytest
 from src.scope_b.engine import ScopeBEngine, worker_process_target, install_strict_seccomp, libc
 
 def test_scope_b_kernel_state_enforcement():
+    os.environ.pop("SIMULATE_MLOCKALL_FAILURE", None)
+    
     parent_conn, worker_conn = multiprocessing.Pipe()
     p = multiprocessing.Process(target=worker_process_target, args=(worker_conn,))
     p.start()
@@ -73,11 +74,9 @@ def test_scope_b_kernel_state_enforcement():
 
 
 def test_seccomp_sigsys_kill():
-    """اختبار أن استدعاء نظام محظور يُنهي العملية بـ SIGSYS وكود الخروج -31 بدقة"""
     def prohibited_syscall_worker(pipe_conn):
         install_strict_seccomp()
         pipe_conn.send("READY_SECCOMP")
-        # استدعاء نظام محظور غير موجود (9999) لتقوم النواة بقتل العملية فوراً بـ SIGSYS (-31)
         libc.syscall(9999)
 
     parent_conn, worker_conn = multiprocessing.Pipe()
