@@ -77,7 +77,7 @@ def test_seccomp_sigsys_kill():
     def prohibited_syscall_worker(pipe_conn):
         install_strict_seccomp()
         pipe_conn.send("READY_SECCOMP")
-        # استدعاء نظام محظور غير موجود (9999) لتقوم النواة بقتل العملية فوراً بـ SIGSYS (-31)
+        # استدعاء نظام محظور غير موجود (9999) لتفعيل القتل الفوري عبر النواة بـ SIGSYS (-31)
         libc.syscall(9999)
 
     parent_conn, worker_conn = multiprocessing.Pipe()
