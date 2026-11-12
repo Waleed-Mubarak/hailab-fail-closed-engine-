@@ -19,7 +19,6 @@ MCL_CURRENT = 1
 MCL_FUTURE = 2
 
 def verify_capabilities_zeroed():
-    """التحقق الصارم من تصفير الصلاحيات الفعالة (Fail-Closed إلزامي)"""
     with open("/proc/self/status", "r") as f:
         for line in f:
             if line.startswith("CapEff:"):
@@ -30,7 +29,6 @@ def verify_capabilities_zeroed():
     raise RuntimeError("CRITICAL: CapEff line not found")
 
 def verify_cap_bnd_zero():
-    """التحقق الصارم من تصفير حدود الصلاحيات (Fail-Closed إلزامي)"""
     with open("/proc/self/status", "r") as f:
         for line in f:
             if line.startswith("CapBnd:"):
@@ -41,7 +39,6 @@ def verify_cap_bnd_zero():
     raise RuntimeError("CRITICAL: CapBnd line not found")
 
 def install_strict_seccomp():
-    """تثبيت فلتر Seccomp الصارم دون أي تجاهل للأخطاء"""
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
@@ -53,7 +50,7 @@ def install_strict_seccomp():
         struct.pack("HBBI", 0x15, 0, 0, 15),         # sys_rt_sigreturn
         struct.pack("HBBI", 0x15, 0, 0, 0),          # sys_read
         struct.pack("HBBI", 0x15, 0, 0, 1),          # sys_write
-        struct.pack("HBBI", 0x15, 0, 0, 11),         # sys_munmap (ضروري للاختبارات)
+        struct.pack("HBBI", 0x15, 0, 0, 11),         # sys_munmap
         struct.pack("HBBI", 0x06, 0, 0, 0x7FFF0000), # ALLOW
         struct.pack("HBBI", 0x06, 0, 0, 0x80000000)  # KILL_PROCESS (SIGSYS)
     ]
