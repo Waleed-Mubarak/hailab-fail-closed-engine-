@@ -81,14 +81,11 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             if err not in (1, 12):
                 raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}")
 
-        install_strict_seccomp()
-        
         libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)
 
         for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        # إسقاط الصلاحيات والمجموعات بشكل صارم
         try:
             os.setgroups([])
         except Exception:
@@ -98,6 +95,9 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             raise RuntimeError("CRITICAL: Failed to setgid")
         if os.setuid(target_uid) != 0:
             raise RuntimeError("CRITICAL: Failed to setuid")
+
+        # تثبيت الـ Seccomp هنا حصرياً بعد إسقاط الصلاحيات والـ UID بنجاح
+        install_strict_seccomp()
 
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
