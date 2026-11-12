@@ -93,11 +93,9 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             raise RuntimeError("CRITICAL: Simulated mlockall failure")
 
         resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
-        mlock_res = libc.mlockall(MCL_CURRENT | MCL_FUTURE)
-        if mlock_res != 0:
+        if libc.mlockall(MCL_CURRENT | MCL_FUTURE) != 0:
             err = ctypes.get_errno()
-            if err not in [1, 12, 22]:
-                raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}")
+            raise RuntimeError(f"CRITICAL: mlockall failed strictly with errno {err}")
 
         if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
@@ -108,28 +106,18 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        try:
-            os.setgroups([])
-        except OSError:
-            pass
-
-        try:
-            os.setgid(target_gid)
-        except OSError as e:
-            raise RuntimeError(f"CRITICAL: Failed to setgid: {e}")
-
-        try:
-            os.setuid(target_uid)
-        except OSError as e:
-            raise RuntimeError(f"CRITICAL: Failed to setuid: {e}")
+        # تنفيذ صارم بالكامل بدون أي استثناءات مصطنعة أو تجاهل للأخطاء (Fail-Closed)
+        os.setgroups([])
+        os.setgid(target_gid)
+        os.setuid(target_uid)
 
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
-        # 1. تثبيت فلتر Seccomp أولاً ليكون مفعلاً ومستقراً لحظة فحص العملية
+        # تثبيت فلتر Seccomp صارماً
         install_strict_seccomp()
 
-        # 2. ثم إرسال READY بعد تفعيل الفلتر تماماً
+        # إرسال READY فقط عند نجاح كل الخطوات السابقة دون أي خلل
         pipe_conn.send("READY")
 
         while True:
@@ -143,13 +131,15 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
                 break
 
     except Exception as e:
+        import sys as _sys
         import traceback as _tb
         err_msg = "".join(_tb.format_exception(type(e), e, e.__traceback__))
         try:
             pipe_conn.send({"ERROR": err_msg})
         except Exception:
             pass
-        sys.exit(77)
+        # إيقاف العامل فوراً برمز خطأ غير صفر (Fail-Closed قسري)
+        _sys.exit(77)
 
 
 class ScopeBEngine:
@@ -160,6 +150,5 @@ class ScopeBEngine:
         resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
         if libc.mlockall(MCL_CURRENT | MCL_FUTURE) != 0:
             err = ctypes.get_errno()
-            if err not in [1, 12, 22]:
-                raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}.")
+            raise RuntimeError(f"CRITICAL: mlockall failed strictly with errno {err}.")
         self.locked = True
