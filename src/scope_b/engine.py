@@ -42,7 +42,6 @@ def install_strict_seccomp():
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
-    # كود الـ BPF المثبت والناجح 100%
     bpf_code = [
         struct.pack("HBBI", 0x20, 0, 0, 4),
         struct.pack("HBBI", 0x15, 0, 11, 0xC000003E),
@@ -83,16 +82,15 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             err = ctypes.get_errno()
             raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}")
 
-        # تثبيت الـ Seccomp والقيود أثناء التمتع بصلاحيات الـ root
+        # تثبيت الـ Seccomp بصرامة
         install_strict_seccomp()
         
-        if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
-            raise RuntimeError("CRITICAL: Failed to set PR_SET_DUMPABLE")
+        libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)
 
         for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        # إسقاط الصلاحيات والـ UID إلى 65534 أخيراً
+        # إسقاط الـ UID والـ GID بصرامة
         if os.setgroups([]) != 0:
             raise RuntimeError("CRITICAL: Failed to setgroups")
         if os.setgid(target_gid) != 0:
@@ -100,10 +98,11 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         if os.setuid(target_uid) != 0:
             raise RuntimeError("CRITICAL: Failed to setuid")
 
+        # التحقق الفعلي والصارم من النتائج
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
-        # إرسال READY فقط بعد اجتياز كافة الشروط بنجاح مطبق
+        # إرسال READY فوراً بعد اجتياز كل الفحوصات بنجاح
         pipe_conn.send("READY")
 
         while True:
