@@ -79,10 +79,11 @@ def test_scope_b_kernel_state_enforcement():
             p.join()
 
 
-# تم إخراج الدالة هنا لتصبح Top-level و قابلة لـ pickle بشكل تام مع spawn
 def prohibited_syscall_worker(pipe_conn):
-    install_strict_seccomp()
+    # إرسال الجاهزية أولاً قبل تفعيل قيود Seccomp الصارمة لكي يتمكن الـ Pipe من العمل
     pipe_conn.send("READY_SECCOMP")
+    install_strict_seccomp()
+    # الآن تنفيذ استدعاء نظام محظور لكي يتم قتل العملية بـ SIGSYS فوراً
     libc.syscall(9999)
 
 
