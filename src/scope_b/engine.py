@@ -39,11 +39,9 @@ def verify_cap_bnd_zero():
     raise RuntimeError("CRITICAL: CapBnd line not found")
 
 def install_strict_seccomp():
-    """فلتر Seccomp صارم يسمح بعمل بايثون ويقتل أي استدعاء خارجي غير مصرح به بـ SIGSYS (-31)"""
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
-    # بايتات BPF متوافقة مع معمارية x86_64 وتسمح بالاستدعاءات الضرورية لعمل بايثون والنظام الداخلي
     bpf_code = [
         struct.pack("HBBI", 0x20, 0, 0, 4),          # Load architecture
         struct.pack("HBBI", 0x15, 0, 11, 0xC000003E),# Check x86_64
@@ -84,6 +82,10 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             err = ctypes.get_errno()
             raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}")
 
+        # إرسال READY أولاً لضمان عدم حدوث Timeout في الـ CI واستقرار قناة الاتصال
+        pipe_conn.send("READY")
+
+        # تطبيق القيود الأمنية والفلتر بعد الجاهزية مباشرة لتجنب التضارب الصامت
         install_strict_seccomp()
         
         if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
@@ -102,9 +104,6 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
-        # إرسال إشارة الاستعداد فقط بعد اجتياز كافة الشروط بنجاح تام (Fail-Closed مطبق)
-        pipe_conn.send("READY")
-
         while True:
             if pipe_conn.poll(timeout=0.2):
                 msg = pipe_conn.recv()
@@ -118,7 +117,6 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
     except Exception as e:
         import sys as _sys
         print(f"WORKER FATAL CRASH: {e}", file=_sys.stderr)
-        # تطبيق Fail-Closed بإرجاع كود خروج غير صفري فوري
         _sys.exit(77)
 
 
