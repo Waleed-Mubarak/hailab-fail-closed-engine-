@@ -39,22 +39,27 @@ def verify_cap_bnd_zero():
     raise RuntimeError("CRITICAL: CapBnd line not found")
 
 def install_strict_seccomp():
-    """تثبيت فلتر Seccomp صارم وصحيح يضمن قتل العملية بـ SIGSYS عند أي استدعاء محظور"""
+    """تثبيت فلتر Seccomp يسمح بعمل بايثون الأساسي ويقتل أي استدعاء خارجي غير مصرح به بـ SIGSYS"""
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
-    # BPF bytecode دقيق ومختبر للتحقق من المعمارية والسماح بالعمليات الأساسية فقط
+    # BPF bytecode يسمح بالاستدعاءات الضرورية لبيئة بايثون (read, write, poll, mmap, brk, futex, exit)
+    # ويقتل أي شيء آخر بـ KILL_PROCESS (SIGSYS / -31)
     bpf_code = [
-        struct.pack("HBBI", 0x20, 0, 0, 4),          # Load architecture offset
-        struct.pack("HBBI", 0x15, 0, 6, 0xC000003E), # Check if x86_64, else skip/kill
+        struct.pack("HBBI", 0x20, 0, 0, 4),          # Load architecture
+        struct.pack("HBBI", 0x15, 0, 11, 0xC000003E),# Check x86_64, else jump to kill
         struct.pack("HBBI", 0x20, 0, 0, 0),          # Load syscall number
-        struct.pack("HBBI", 0x15, 0, 0, 60),         # sys_exit
-        struct.pack("HBBI", 0x15, 0, 0, 15),         # sys_rt_sigreturn
-        struct.pack("HBBI", 0x15, 0, 0, 0),          # sys_read
-        struct.pack("HBBI", 0x15, 0, 0, 1),          # sys_write
-        struct.pack("HBBI", 0x15, 0, 0, 11),         # sys_munmap
-        struct.pack("HBBI", 0x06, 0, 0, 0x7FFF0000), # ALLOW
-        struct.pack("HBBI", 0x06, 0, 0, 0x80000000)  # KILL_PROCESS (SIGSYS / -31)
+        struct.pack("HBBI", 0x15, 9, 0, 0),          # sys_read -> ALLOW
+        struct.pack("HBBI", 0x15, 8, 0, 1),          # sys_write -> ALLOW
+        struct.pack("HBBI", 0x15, 7, 0, 7),          # sys_poll -> ALLOW (ضروري لـ multiprocessing pipe)
+        struct.pack("HBBI", 0x15, 6, 0, 9),          # sys_mmap -> ALLOW
+        struct.pack("HBBI", 0x15, 5, 0, 11),         # sys_munmap -> ALLOW
+        struct.pack("HBBI", 0x15, 4, 0, 12),         # sys_brk -> ALLOW
+        struct.pack("HBBI", 0x15, 3, 0, 15),         # sys_rt_sigreturn -> ALLOW
+        struct.pack("HBBI", 0x15, 2, 0, 60),         # sys_exit -> ALLOW
+        struct.pack("HBBI", 0x15, 1, 0, 202),        # sys_futex -> ALLOW
+        struct.pack("HBBI", 0x06, 0, 0, 0x80000000), # Default: KILL_PROCESS (SIGSYS / -31)
+        struct.pack("HBBI", 0x06, 0, 0, 0x7FFF0000)  # ALLOW target
     ]
     bpf_insn = b"".join(bpf_code)
     
