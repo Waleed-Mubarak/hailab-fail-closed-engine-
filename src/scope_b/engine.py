@@ -70,13 +70,10 @@ def install_strict_seccomp():
     if libc.prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, ctypes.byref(fprog)) != 0:
         raise RuntimeError("CRITICAL: Failed to install Seccomp filter")
 
-def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target_gid: int = 65534, simulate_mlockall_failure: bool = False):
+def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target_gid: int = 65534):
     try:
         if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_PDEATHSIG")
-
-        if simulate_mlockall_failure:
-            raise RuntimeError("CRITICAL: Simulated mlockall failure")
 
         resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
         if libc.mlockall(MCL_CURRENT | MCL_FUTURE) != 0:
@@ -114,6 +111,18 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
 
     except Exception as e:
         print(f"\n[FATAL WORKER ERROR] -----------------------------------------", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        print(f"--------------------------------------------------------------\n", file=sys.stderr)
+        sys.exit(77)
+
+def worker_process_target_failing(pipe_conn: Connection):
+    try:
+        if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
+            raise RuntimeError("CRITICAL: Failed to set PR_SET_PDEATHSIG")
+        # محاكاة فشل mlockall قطعي وصريح لاختبار Fail-Closed
+        raise RuntimeError("CRITICAL: Simulated mlockall failure")
+    except Exception as e:
+        print(f"\n[FATAL WORKER ERROR (FAILING)] --------------------------------", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         print(f"--------------------------------------------------------------\n", file=sys.stderr)
         sys.exit(77)
