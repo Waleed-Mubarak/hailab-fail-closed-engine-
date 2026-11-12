@@ -120,10 +120,7 @@ def worker_process_target_failing(pipe_conn: Connection):
         if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_PDEATHSIG")
         raise RuntimeError("CRITICAL: Simulated mlockall failure")
-    except Exception as e:
-        print(f"\n[FATAL WORKER ERROR (FAILING)] --------------------------------", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
-        print(f"--------------------------------------------------------------\n", file=sys.stderr)
+    except Exception:
         sys.exit(77)
 
 
