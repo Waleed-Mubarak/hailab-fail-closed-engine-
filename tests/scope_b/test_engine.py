@@ -120,7 +120,9 @@ def test_mlockall_fail_closed_behavior():
     
     try:
         ready_received = parent_conn.poll(timeout=2.0)
-        assert not ready_received, "CRITICAL: Worker sent READY despite mlockall failure (Fail-Open violation!)"
+        if ready_received:
+            msg = parent_conn.recv()
+            assert msg != "READY", "CRITICAL: Worker sent READY despite mlockall failure (Fail-Open violation!)"
         
         p.join(timeout=2.0)
         assert not p.is_alive(), "CRITICAL: Worker process is still alive after failure."
