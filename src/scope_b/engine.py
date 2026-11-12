@@ -83,6 +83,17 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             if err not in [1, 12, 22]:
                 raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}")
 
+        # ضبط NoNewPrivs وإسقاط الصلاحيات بينما لا نزال بصلاحيات الـ Root لضمان النجاح
+        if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
+            raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
+
+        if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
+            raise RuntimeError("CRITICAL: Failed to set PR_SET_DUMPABLE")
+
+        for cap in range(64):
+            libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
+
+        # الآن الانتقال إلى المستخدم المقيد 65534
         if os.setgroups([]) != 0:
             raise RuntimeError("CRITICAL: Failed to setgroups")
         if os.setgid(target_gid) != 0:
@@ -90,17 +101,11 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         if os.setuid(target_uid) != 0:
             raise RuntimeError("CRITICAL: Failed to setuid")
 
-        # التحقق من الصلاحيات والبيئة قبل تفعيل فلتر Seccomp النهائي لضمان سلامة إرسال READY
-        if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
-            raise RuntimeError("CRITICAL: Failed to set PR_SET_DUMPABLE")
-
-        for cap in range(64):
-            libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
-
+        # التحقق النهائي من حالة النواة
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
-        # إرسال الجاهزية أولاً قبل تفعيل Seccomp الصارم
+        # إرسال إشارة الجاهزية بعد اكتمال القفل والتحقق
         pipe_conn.send("READY")
 
         # تفعيل Seccomp الصارم في النهاية
@@ -122,3 +127,16 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         print(f"=== WORKER CRASHED DUE TO: {e} ===", file=_sys.stderr)
         traceback.print_exc(file=_sys.stderr)
         _sys.exit(77)
+
+
+class ScopeBEngine:
+    def __init__(self):
+        self.locked = False
+
+    def enforce_memory_hardening(self):
+        resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
+        if libc.mlockall(MCL_CURRENT | MCL_FUTURE) != 0:
+            err = ctypes.get_errno()
+            if err not in [1, 12, 22]:
+                raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}.")
+        self.locked = True
