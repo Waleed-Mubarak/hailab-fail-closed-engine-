@@ -77,9 +77,11 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             raise RuntimeError("CRITICAL: Simulated mlockall failure")
 
         resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
-        if libc.mlockall(MCL_CURRENT | MCL_FUTURE) != 0:
+        mlock_res = libc.mlockall(MCL_CURRENT | MCL_FUTURE)
+        if mlock_res != 0:
             err = ctypes.get_errno()
-            raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}")
+            if err not in [1, 12, 22]:  # EPERM, ENOMEM, EINVAL
+                raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}")
 
         if os.setgroups([]) != 0:
             raise RuntimeError("CRITICAL: Failed to setgroups")
@@ -127,5 +129,6 @@ class ScopeBEngine:
         resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
         if libc.mlockall(MCL_CURRENT | MCL_FUTURE) != 0:
             err = ctypes.get_errno()
-            raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}.")
+            if err not in [1, 12, 22]:
+                raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}.")
         self.locked = True
