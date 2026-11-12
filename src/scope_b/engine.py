@@ -44,16 +44,18 @@ def install_strict_seccomp():
     
     bpf_code = [
         struct.pack("HBBI", 0x20, 0, 0, 4),          # Load architecture
-        struct.pack("HBBI", 0x15, 0, 9, 0xC000003E),# Check x86_64
+        struct.pack("HBBI", 0x15, 0, 11, 0xC000003E),# Check x86_64
         struct.pack("HBBI", 0x20, 0, 0, 0),          # Load syscall number
-        struct.pack("HBBI", 0x15, 7, 0, 0),          # sys_read -> ALLOW
-        struct.pack("HBBI", 0x15, 6, 0, 1),          # sys_write -> ALLOW
-        struct.pack("HBBI", 0x15, 5, 0, 9),          # sys_mmap -> ALLOW
-        struct.pack("HBBI", 0x15, 4, 0, 11),         # sys_munmap -> ALLOW
-        struct.pack("HBBI", 0x15, 3, 0, 12),         # sys_brk -> ALLOW
-        struct.pack("HBBI", 0x15, 2, 0, 15),         # sys_rt_sigreturn -> ALLOW
-        struct.pack("HBBI", 0x15, 1, 0, 60),         # sys_exit -> ALLOW
-        struct.pack("HBBI", 0x15, 0, 1, 202),        # sys_futex -> ALLOW
+        struct.pack("HBBI", 0x15, 9, 0, 0),          # sys_read -> ALLOW
+        struct.pack("HBBI", 0x15, 8, 0, 1),          # sys_write -> ALLOW
+        struct.pack("HBBI", 0x15, 7, 0, 7),          # sys_poll -> ALLOW (للـ Pipe)
+        struct.pack("HBBI", 0x15, 6, 0, 9),          # sys_mmap -> ALLOW
+        struct.pack("HBBI", 0x15, 5, 0, 11),         # sys_munmap -> ALLOW
+        struct.pack("HBBI", 0x15, 4, 0, 12),         # sys_brk -> ALLOW
+        struct.pack("HBBI", 0x15, 3, 0, 15),         # sys_rt_sigreturn -> ALLOW
+        struct.pack("HBBI", 0x15, 2, 0, 60),         # sys_exit -> ALLOW
+        struct.pack("HBBI", 0x15, 1, 0, 202),        # sys_futex -> ALLOW
+        struct.pack("HBBI", 0x15, 0, 1, 232),        # sys_epoll_wait -> ALLOW (للـ Pipe polling)
         struct.pack("HBBI", 0x06, 0, 0, 0x80000000), # KILL_PROCESS (SIGSYS / -31)
         struct.pack("HBBI", 0x06, 0, 0, 0x7FFF0000)  # ALLOW target
     ]
@@ -97,7 +99,6 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         except OSError:
             pass
 
-        # تصحيح دوال setgid و setuid (لأنها ترجع None عند النجاح وليس 0)
         try:
             os.setgid(target_gid)
         except OSError as e:
