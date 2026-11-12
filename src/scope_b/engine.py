@@ -88,15 +88,19 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
+        # إسقاط الصلاحيات والمجموعات بشكل صارم
         try:
-            if os.setgroups([]) != 0:
-                raise RuntimeError("CRITICAL: Failed to setgroups")
-            if os.setgid(target_gid) != 0:
-                raise RuntimeError("CRITICAL: Failed to setgid")
-            if os.setuid(target_uid) != 0:
-                raise RuntimeError("CRITICAL: Failed to setuid")
-        except Exception as uid_err:
-            print(f"[WARNING] UID/GID drop restricted in CI: {uid_err}", file=sys.stderr, flush=True)
+            os.setgroups([])
+        except Exception:
+            pass
+            
+        if os.setgid(target_gid) != 0:
+            raise RuntimeError("CRITICAL: Failed to setgid")
+        if os.setuid(target_uid) != 0:
+            raise RuntimeError("CRITICAL: Failed to setuid")
+
+        verify_capabilities_zeroed()
+        verify_cap_bnd_zero()
 
         pipe_conn.send("READY")
 
