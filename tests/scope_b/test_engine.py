@@ -3,16 +3,12 @@ import multiprocessing
 import os
 import signal
 import pytest
-from src.scope_b.engine import ScopeBEngine, worker_process_target, worker_process_target_failing, install_strict_seccomp, libc
+from src.scope_b.engine import ScopeBEngine, worker_process_target, install_strict_seccomp, libc
 
 def test_scope_b_kernel_state_enforcement():
-    # تخطي آمن للاختبار في بيئة الـ CI بسبب قيود النواة الافتراضية لحاويات ubuntu-latest
-    if os.getenv("CI"):
-        pytest.skip("Skipping kernel enforcement test in CI environment due to container/kernel restrictions.")
-
+    os.environ.pop("SIMULATE_MLOCKALL_FAILURE", None)
     parent_conn, worker_conn = multiprocessing.Pipe()
-    target_uid = 65534 if os.getuid() == 0 else os.getuid()
-    p = multiprocessing.Process(target=worker_process_target, args=(worker_conn, target_uid, target_uid))
+    p = multiprocessing.Process(target=worker_process_target, args=(worker_conn,))
     p.start()
     
     try:
@@ -29,21 +25,39 @@ def test_scope_b_kernel_state_enforcement():
         pid = p.pid
         status_path = f"/proc/{pid}/status"
         
-        no_new_privs_val = "1"
-        seccomp_val = "2"
+        uid_matched = False
+        cap_eff_zero = False
+        cap_bnd_zero = False
+        no_new_privs_set = False
+        seccomp_active = False
         
-        try:
-            with open(status_path, "r") as f:
-                for line in f:
-                    if line.startswith("NoNewPrivs:"):
-                        no_new_privs_val = line.strip()
-                    elif line.startswith("Seccomp:"):
-                        seccomp_val = line.strip()
-        except Exception:
-            pass  # تجاوز آمن لقراءة ملف الستاتس إذا منعتها قيود الـ CI
+        with open(status_path, "r") as f:
+            for line in f:
+                if line.startswith("Uid:"):
+                    parts = line.split()
+                    if len(parts) > 2 and parts[1] == "65534" and parts[2] == "65534":
+                        uid_matched = True
+                elif line.startswith("CapEff:"):
+                    if line.split()[1] == "0000000000000000":
+                        cap_eff_zero = True
+                elif line.startswith("CapBnd:"):
+                    parts = line.split()
+                    # تحقق صارم من أن كافة أحرف الباوندري أصفار تماماً
+                    if len(parts) > 1 and all(c == '0' for c in parts[1]) and len(parts[1]) >= 16:
+                        cap_bnd_zero = True
+                elif line.startswith("NoNewPrivs:"):
+                    if line.strip().endswith("1"):
+                        no_new_privs_set = True
+                elif line.startswith("Seccomp:"):
+                    if line.strip().endswith("2"):
+                        seccomp_active = True
 
-        assert no_new_privs_val.endswith("1"), f"CRITICAL: NoNewPrivs not 1. Got: {no_new_privs_val}"
-        assert seccomp_val.endswith("2"), f"CRITICAL: Seccomp not 2. Got: {seccomp_val}"
+        # التأكد من عدم وجود أي تجاوز أو تهاون
+        assert uid_matched, "CRITICAL: Worker UID was not set strictly to 65534."
+        assert cap_eff_zero, "CRITICAL: CapEff is not fully zeroed."
+        assert cap_bnd_zero, "CRITICAL: CapBnd is not fully zeroed."
+        assert no_new_privs_set, "CRITICAL: NoNewPrivs is not enabled."
+        assert seccomp_active, "CRITICAL: Seccomp filter (mode 2) is not active."
 
         parent_conn.send("PING")
         assert parent_conn.poll(timeout=3.0), "CRITICAL: Worker did not respond to PING."
@@ -62,6 +76,7 @@ def test_scope_b_kernel_state_enforcement():
 
 
 def test_seccomp_sigsys_kill():
+    """اختبار أن استدعاء نظام محظور يُنهي العملية بـ SIGSYS وكود الخروج -31 بدقة صارمة"""
     def prohibited_syscall_worker(pipe_conn):
         install_strict_seccomp()
         pipe_conn.send("READY_SECCOMP")
@@ -72,11 +87,13 @@ def test_seccomp_sigsys_kill():
     p.start()
     
     try:
-        assert parent_conn.poll(timeout=3.0), "CRITICAL: Seccomp worker failed to ready."
-        parent_conn.recv()
+        assert parent_conn.poll(timeout=5.0), "CRITICAL: Seccomp worker failed to ready."
+        msg = parent_conn.recv()
+        assert msg == "READY_SECCOMP"
         
         p.join(timeout=3.0)
         assert not p.is_alive(), "CRITICAL: Worker survived the prohibited system call!"
+        # فحص كود الخروج بدقة ليكون مطابَقاً تماماً لـ -SIGSYS (-31)
         assert p.exitcode == -signal.SIGSYS, f"Expected exit code {-signal.SIGSYS} (-31), got {p.exitcode}"
     finally:
         if p.is_alive():
@@ -85,8 +102,11 @@ def test_seccomp_sigsys_kill():
 
 
 def test_mlockall_fail_closed_behavior():
+    """اختبار أن فشل mlockall يمنع إرسال READY ويؤدي لانهيار آمن للعملية بكود غير صفري"""
     parent_conn, worker_conn = multiprocessing.Pipe()
-    p = multiprocessing.Process(target=worker_process_target_failing, args=(worker_conn,))
+    
+    os.environ["SIMULATE_MLOCKALL_FAILURE"] = "1"
+    p = multiprocessing.Process(target=worker_process_target, args=(worker_conn,))
     p.start()
     
     try:
@@ -97,6 +117,7 @@ def test_mlockall_fail_closed_behavior():
         assert not p.is_alive(), "CRITICAL: Worker process is still alive after failure."
         assert p.exitcode != 0, f"Expected non-zero exit code on failure, got {p.exitcode}"
     finally:
+        os.environ.pop("SIMULATE_MLOCKALL_FAILURE", None)
         if p.is_alive():
             p.terminate()
             p.join()
