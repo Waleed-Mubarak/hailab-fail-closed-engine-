@@ -4,7 +4,6 @@ import ctypes
 import resource
 import struct
 import signal
-import traceback
 from multiprocessing.connection import Connection
 
 libc = ctypes.CDLL("libc.so.6", use_errno=True)
@@ -19,25 +18,45 @@ SECCOMP_MODE_FILTER = 2
 MCL_CURRENT = 1
 MCL_FUTURE = 2
 
+def verify_capabilities_zeroed():
+    with open("/proc/self/status", "r") as f:
+        for line in f:
+            if line.startswith("CapEff:"):
+                val = line.split()[1]
+                if val != "0000000000000000":
+                    raise RuntimeError(f"CRITICAL: CapEff is not zeroed: {val}")
+                return True
+    raise RuntimeError("CRITICAL: CapEff line not found")
+
+def verify_cap_bnd_zero():
+    with open("/proc/self/status", "r") as f:
+        for line in f:
+            if line.startswith("CapBnd:"):
+                val = line.split()[1]
+                if not all(c == '0' for c in val):
+                    raise RuntimeError(f"CRITICAL: CapBnd is not zeroed: {val}")
+                return True
+    raise RuntimeError("CRITICAL: CapBnd line not found")
+
 def install_strict_seccomp():
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
+    # قائمة السماح الضيقة جداً والمجرّدة من أي استدعاءات شبكة أو استدعاءات زائدة
     bpf_code = [
-        struct.pack("HBBI", 0x20, 0, 0, 4),
-        struct.pack("HBBI", 0x15, 0, 11, 0xC000003E),
-        struct.pack("HBBI", 0x20, 0, 0, 0),
-        struct.pack("HBBI", 0x15, 9, 0, 0),
-        struct.pack("HBBI", 0x15, 8, 0, 1),
-        struct.pack("HBBI", 0x15, 7, 0, 7),
-        struct.pack("HBBI", 0x15, 6, 0, 9),
-        struct.pack("HBBI", 0x15, 5, 0, 11),
-        struct.pack("HBBI", 0x15, 4, 0, 12),
-        struct.pack("HBBI", 0x15, 3, 0, 15),
-        struct.pack("HBBI", 0x15, 2, 0, 60),
-        struct.pack("HBBI", 0x15, 1, 0, 202),
-        struct.pack("HBBI", 0x06, 0, 0, 0x80000000),
-        struct.pack("HBBI", 0x06, 0, 0, 0x7FFF0000)
+        struct.pack("HBBI", 0x20, 0, 0, 4),          # Load architecture
+        struct.pack("HBBI", 0x15, 0, 9, 0xC000003E),# Check x86_64
+        struct.pack("HBBI", 0x20, 0, 0, 0),          # Load syscall number
+        struct.pack("HBBI", 0x15, 7, 0, 0),          # sys_read -> ALLOW
+        struct.pack("HBBI", 0x15, 6, 0, 1),          # sys_write -> ALLOW
+        struct.pack("HBBI", 0x15, 5, 0, 9),          # sys_mmap -> ALLOW
+        struct.pack("HBBI", 0x15, 4, 0, 11),         # sys_munmap -> ALLOW
+        struct.pack("HBBI", 0x15, 3, 0, 12),         # sys_brk -> ALLOW
+        struct.pack("HBBI", 0x15, 2, 0, 15),         # sys_rt_sigreturn -> ALLOW
+        struct.pack("HBBI", 0x15, 1, 0, 60),         # sys_exit -> ALLOW
+        struct.pack("HBBI", 0x15, 0, 1, 202),        # sys_futex -> ALLOW
+        struct.pack("HBBI", 0x06, 0, 0, 0x80000000), # KILL_PROCESS (SIGSYS / -31)
+        struct.pack("HBBI", 0x06, 0, 0, 0x7FFF0000)  # ALLOW target
     ]
     bpf_insn = b"".join(bpf_code)
     
@@ -50,71 +69,40 @@ def install_strict_seccomp():
     if libc.prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, ctypes.byref(fprog)) != 0:
         raise RuntimeError("CRITICAL: Failed to install Seccomp filter")
 
-def verify_capabilities_zeroed():
-    try:
-        with open("/proc/self/status", "r") as f:
-            for line in f:
-                if line.startswith("CapEff:"):
-                    val = line.split()[1]
-                    if val != "0000000000000000" and os.getuid() == 0:
-                        raise RuntimeError(f"CRITICAL: CapEff is not zeroed: {val}")
-                    return True
-    except Exception:
-        if os.getuid() == 0:
-            raise
-    return True
-
-def verify_cap_bnd_zero():
-    try:
-        with open("/proc/self/status", "r") as f:
-            for line in f:
-                if line.startswith("CapBnd:"):
-                    val = line.split()[1]
-                    if not all(c == '0' for c in val) and os.getuid() == 0:
-                        raise RuntimeError(f"CRITICAL: CapBnd is not zeroed: {val}")
-                    return True
-    except Exception:
-        if os.getuid() == 0:
-            raise
-    return True
-
 def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target_gid: int = 65534):
     try:
         if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_PDEATHSIG")
 
+        # محاكاة فشل mlockall الحقيقي للاختبار دون تهاون
+        if os.environ.get("SIMULATE_MLOCKALL_FAILURE") == "1":
+            raise RuntimeError("CRITICAL: Simulated mlockall failure")
+
         resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
         if libc.mlockall(MCL_CURRENT | MCL_FUTURE) != 0:
             err = ctypes.get_errno()
-            if err not in (1, 12):
-                raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}")
+            raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}")
 
-        libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)
+        if os.setgroups([]) != 0:
+            raise RuntimeError("CRITICAL: Failed to setgroups")
+        if os.setgid(target_gid) != 0:
+            raise RuntimeError("CRITICAL: Failed to setgid")
+        if os.setuid(target_uid) != 0:
+            raise RuntimeError("CRITICAL: Failed to setuid")
+
+        install_strict_seccomp()
+        
+        if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
+            raise RuntimeError("CRITICAL: Failed to set PR_SET_DUMPABLE")
 
         for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        try:
-            try:
-                os.setgroups([])
-            except Exception:
-                pass
-            
-            # تجاوز آمن في حال منعت حاويات CI الحديثة تغيير الـ UID لمنع التعليق
-            if os.getuid() == 0:
-                try:
-                    os.setgid(target_gid)
-                    os.setuid(target_uid)
-                except OSError:
-                    pass
-        except Exception:
-            pass
-
-        install_strict_seccomp()
-
+        # التحقق الإجباري وعدم إهمال أي نتيجة
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
+        # إرسال READY فقط بعد نجاح كل الخطوات بشكل قطعي
         pipe_conn.send("READY")
 
         while True:
@@ -128,17 +116,10 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
                 break
 
     except Exception as e:
-        print(f"\n[FATAL WORKER ERROR IN TARGET] -> {e}", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
-        sys.exit(77)
-
-def worker_process_target_failing(pipe_conn: Connection):
-    try:
-        if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
-            raise RuntimeError("CRITICAL: Failed to set PR_SET_PDEATHSIG")
-        raise RuntimeError("CRITICAL: Simulated mlockall failure")
-    except Exception:
-        sys.exit(77)
+        import sys as _sys
+        print(f"WORKER FATAL CRASH: {e}", file=_sys.stderr)
+        # عدم إرسال READY نهائياً عند حدوث أي خطأ (Fail-Closed صارم)
+        _sys.exit(77)
 
 
 class ScopeBEngine:
@@ -149,6 +130,5 @@ class ScopeBEngine:
         resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
         if libc.mlockall(MCL_CURRENT | MCL_FUTURE) != 0:
             err = ctypes.get_errno()
-            if err not in (1, 12):
-                raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}.")
+            raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}.")
         self.locked = True
