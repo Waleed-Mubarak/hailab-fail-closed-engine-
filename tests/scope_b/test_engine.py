@@ -75,10 +75,9 @@ def test_scope_b_kernel_state_enforcement():
 def test_seccomp_sigsys_kill():
     """اختبار أن استدعاء نظام محظور يُنهي العملية بـ SIGSYS وكود الخروج -31 بدقة"""
     def prohibited_syscall_worker(pipe_conn):
-        # تثبيت الفلتر مباشرة دون تغليفه بـ try/except لكي لا يخرج العامل بصورة طبيعية عند أي خطأ
         install_strict_seccomp()
         pipe_conn.send("READY_SECCOMP")
-        # استدعاء رقم نظام محظور غير موجود (9999) لتقوم النواة بقتل العملية فوراً بـ SIGSYS
+        # استدعاء نظام محظور غير موجود (9999) لتقوم النواة بقتل العملية فوراً بـ SIGSYS (-31)
         libc.syscall(9999)
 
     parent_conn, worker_conn = multiprocessing.Pipe()
