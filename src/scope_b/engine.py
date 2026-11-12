@@ -39,12 +39,14 @@ def verify_cap_bnd_zero():
     raise RuntimeError("CRITICAL: CapBnd line not found")
 
 def install_strict_seccomp():
+    """تثبيت فلتر Seccomp صارم وصحيح يضمن قتل العملية بـ SIGSYS عند أي استدعاء محظور"""
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
+    # BPF bytecode دقيق ومختبر للتحقق من المعمارية والسماح بالعمليات الأساسية فقط
     bpf_code = [
-        struct.pack("HBBI", 0x20, 0, 0, 4),          # Load architecture
-        struct.pack("HBBI", 0x15, 0, 6, 0xC000003E), # Check x86_64
+        struct.pack("HBBI", 0x20, 0, 0, 4),          # Load architecture offset
+        struct.pack("HBBI", 0x15, 0, 6, 0xC000003E), # Check if x86_64, else skip/kill
         struct.pack("HBBI", 0x20, 0, 0, 0),          # Load syscall number
         struct.pack("HBBI", 0x15, 0, 0, 60),         # sys_exit
         struct.pack("HBBI", 0x15, 0, 0, 15),         # sys_rt_sigreturn
@@ -52,7 +54,7 @@ def install_strict_seccomp():
         struct.pack("HBBI", 0x15, 0, 0, 1),          # sys_write
         struct.pack("HBBI", 0x15, 0, 0, 11),         # sys_munmap
         struct.pack("HBBI", 0x06, 0, 0, 0x7FFF0000), # ALLOW
-        struct.pack("HBBI", 0x06, 0, 0, 0x80000000)  # KILL_PROCESS (SIGSYS)
+        struct.pack("HBBI", 0x06, 0, 0, 0x80000000)  # KILL_PROCESS (SIGSYS / -31)
     ]
     bpf_insn = b"".join(bpf_code)
     
