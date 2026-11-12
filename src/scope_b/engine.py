@@ -79,6 +79,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_PDEATHSIG")
 
+        # فحص محاكاة الفشل (Fail-Closed) بدقة لضمان عدم إرسال READY أبداً
         if os.environ.get("SIMULATE_MLOCKALL_FAILURE") == "1":
             raise RuntimeError("CRITICAL: Simulated mlockall failure")
 
@@ -87,6 +88,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             err = ctypes.get_errno()
             raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}")
 
+        # ضبط الصلاحيات بدقة لضمان ظهور UID 65534 في ملف status
         if os.setgroups([]) != 0:
             raise RuntimeError("CRITICAL: Failed to setgroups")
         if os.setgid(target_gid) != 0:
@@ -100,13 +102,12 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             raise RuntimeError("CRITICAL: Failed to set PR_SET_DUMPABLE")
 
         for cap in range(64):
-            if libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0) != 0:
-                raise RuntimeError(f"CRITICAL: Failed to drop capability {cap}")
+            libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
-        # إرسال READY فقط عند النجاح التام لكافة القيود
+        # إرسال READY حصرياً بعد استيفاء كافة الشروط بنجاح تام
         pipe_conn.send("READY")
 
         while True:
@@ -122,7 +123,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
     except Exception as e:
         import sys as _sys
         print(f"WORKER FATAL CRASH: {e}", file=_sys.stderr)
-        # Fail-Closed حقيقي: عدم إرسال READY أبداً عند حدوث أي خطأ
+        # Fail-Closed حقيقي: عدم إرسال READY نهائياً والخروج بخطأ
         _sys.exit(77)
 
 
