@@ -11,8 +11,14 @@ except RuntimeError:
 
 from src.scope_b.engine import ScopeBEngine, worker_process_target, install_strict_seccomp, libc
 
-def test_scope_b_kernel_state_enforcement():
+@pytest.fixture(autouse=True)
+def clean_env():
+    """تنظيف متغيرات البيئة قبل وبعد كل اختبار لمنع أي تلوث أو تسرب"""
     os.environ.pop("SIMULATE_MLOCKALL_FAILURE", None)
+    yield
+    os.environ.pop("SIMULATE_MLOCKALL_FAILURE", None)
+
+def test_scope_b_kernel_state_enforcement():
     parent_conn, worker_conn = multiprocessing.Pipe()
     p = multiprocessing.Process(target=worker_process_target, args=(worker_conn,))
     p.start()
@@ -80,10 +86,8 @@ def test_scope_b_kernel_state_enforcement():
 
 
 def prohibited_syscall_worker(pipe_conn):
-    # إرسال الجاهزية أولاً قبل تفعيل قيود Seccomp الصارمة لكي يتمكن الـ Pipe من العمل
     pipe_conn.send("READY_SECCOMP")
     install_strict_seccomp()
-    # الآن تنفيذ استدعاء نظام محظور لكي يتم قتل العملية بـ SIGSYS فوراً
     libc.syscall(9999)
 
 
