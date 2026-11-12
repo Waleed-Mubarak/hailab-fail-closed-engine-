@@ -79,12 +79,15 @@ def test_scope_b_kernel_state_enforcement():
             p.join()
 
 
-def test_seccomp_sigsys_kill():
-    def prohibited_syscall_worker(pipe_conn):
-        install_strict_seccomp()
-        pipe_conn.send("READY_SECCOMP")
-        libc.syscall(9999)
+# تم إخراج الدالة هنا لتصبح Top-level و قابلة لـ pickle بشكل تام مع spawn
+def prohibited_syscall_worker(pipe_conn):
+    install_strict_seccomp()
+    pipe_conn.send("READY_SECCOMP")
+    libc.syscall(9999)
 
+
+def test_seccomp_sigsys_kill():
+    """اختبار أن استدعاء نظام محظور يُنهي العملية بـ SIGSYS وكود الخروج -31 بدقة صارمة"""
     parent_conn, worker_conn = multiprocessing.Pipe()
     p = multiprocessing.Process(target=prohibited_syscall_worker, args=(worker_conn,))
     p.start()
@@ -104,6 +107,7 @@ def test_seccomp_sigsys_kill():
 
 
 def test_mlockall_fail_closed_behavior():
+    """اختبار أن فشل mlockall يمنع إرسال READY ويؤدي لانهيار آمن للعملية بكود غير صفري"""
     parent_conn, worker_conn = multiprocessing.Pipe()
     
     os.environ["SIMULATE_MLOCKALL_FAILURE"] = "1"
