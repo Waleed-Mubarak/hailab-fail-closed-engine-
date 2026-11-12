@@ -44,18 +44,20 @@ def install_strict_seccomp():
     
     bpf_code = [
         struct.pack("HBBI", 0x20, 0, 0, 4),          # Load architecture
-        struct.pack("HBBI", 0x15, 0, 11, 0xC000003E),# Check x86_64
+        struct.pack("HBBI", 0x15, 0, 13, 0xC000003E),# Check x86_64
         struct.pack("HBBI", 0x20, 0, 0, 0),          # Load syscall number
-        struct.pack("HBBI", 0x15, 9, 0, 0),          # sys_read -> ALLOW
-        struct.pack("HBBI", 0x15, 8, 0, 1),          # sys_write -> ALLOW
-        struct.pack("HBBI", 0x15, 7, 0, 7),          # sys_poll -> ALLOW (للـ Pipe)
-        struct.pack("HBBI", 0x15, 6, 0, 9),          # sys_mmap -> ALLOW
-        struct.pack("HBBI", 0x15, 5, 0, 11),         # sys_munmap -> ALLOW
-        struct.pack("HBBI", 0x15, 4, 0, 12),         # sys_brk -> ALLOW
-        struct.pack("HBBI", 0x15, 3, 0, 15),         # sys_rt_sigreturn -> ALLOW
+        struct.pack("HBBI", 0x15, 11, 0, 0),         # sys_read -> ALLOW
+        struct.pack("HBBI", 0x15, 10, 0, 1),         # sys_write -> ALLOW
+        struct.pack("HBBI", 0x15, 9, 0, 3),          # sys_close -> ALLOW
+        struct.pack("HBBI", 0x15, 8, 0, 7),          # sys_poll -> ALLOW
+        struct.pack("HBBI", 0x15, 7, 0, 9),          # sys_mmap -> ALLOW
+        struct.pack("HBBI", 0x15, 6, 0, 11),         # sys_munmap -> ALLOW
+        struct.pack("HBBI", 0x15, 5, 0, 12),         # sys_brk -> ALLOW
+        struct.pack("HBBI", 0x15, 4, 0, 15),         # sys_rt_sigreturn -> ALLOW
+        struct.pack("HBBI", 0x15, 3, 0, 22),         # sys_pipe -> ALLOW
         struct.pack("HBBI", 0x15, 2, 0, 60),         # sys_exit -> ALLOW
         struct.pack("HBBI", 0x15, 1, 0, 202),        # sys_futex -> ALLOW
-        struct.pack("HBBI", 0x15, 0, 1, 232),        # sys_epoll_wait -> ALLOW (للـ Pipe polling)
+        struct.pack("HBBI", 0x15, 0, 1, 232),        # sys_epoll_wait -> ALLOW
         struct.pack("HBBI", 0x06, 0, 0, 0x80000000), # KILL_PROCESS (SIGSYS / -31)
         struct.pack("HBBI", 0x06, 0, 0, 0x7FFF0000)  # ALLOW target
     ]
@@ -112,10 +114,11 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
-        # تثبيت Seccomp أولاً قبل إرسال READY لضمان تفعيله لحظة الفحص
-        install_strict_seccomp()
-
+        # إرسال READY أولاً قبل تفعيل Seccomp لضمان عدم حظر قنوات الاتصال الأولية
         pipe_conn.send("READY")
+
+        # تثبيت Seccomp بعد إرسال READY مباشرة
+        install_strict_seccomp()
 
         while True:
             if pipe_conn.poll(timeout=0.2):
