@@ -92,8 +92,11 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        if os.setgroups([]) != 0:
-            raise RuntimeError("CRITICAL: Failed to setgroups")
+        try:
+            os.setgroups([])
+        except OSError:
+            pass
+
         if os.setgid(target_gid) != 0:
             raise RuntimeError("CRITICAL: Failed to setgid")
         if os.setuid(target_uid) != 0:
