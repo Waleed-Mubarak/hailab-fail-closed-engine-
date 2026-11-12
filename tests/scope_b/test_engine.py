@@ -42,7 +42,6 @@ def test_scope_b_kernel_state_enforcement():
                         cap_eff_zero = True
                 elif line.startswith("CapBnd:"):
                     parts = line.split()
-                    # تحقق صارم من أن كافة أحرف الباوندري أصفار تماماً
                     if len(parts) > 1 and all(c == '0' for c in parts[1]) and len(parts[1]) >= 16:
                         cap_bnd_zero = True
                 elif line.startswith("NoNewPrivs:"):
@@ -52,7 +51,6 @@ def test_scope_b_kernel_state_enforcement():
                     if line.strip().endswith("2"):
                         seccomp_active = True
 
-        # التأكد من عدم وجود أي تجاوز أو تهاون
         assert uid_matched, "CRITICAL: Worker UID was not set strictly to 65534."
         assert cap_eff_zero, "CRITICAL: CapEff is not fully zeroed."
         assert cap_bnd_zero, "CRITICAL: CapBnd is not fully zeroed."
@@ -93,7 +91,6 @@ def test_seccomp_sigsys_kill():
         
         p.join(timeout=3.0)
         assert not p.is_alive(), "CRITICAL: Worker survived the prohibited system call!"
-        # فحص كود الخروج بدقة ليكون مطابَقاً تماماً لـ -SIGSYS (-31)
         assert p.exitcode == -signal.SIGSYS, f"Expected exit code {-signal.SIGSYS} (-31), got {p.exitcode}"
     finally:
         if p.is_alive():
