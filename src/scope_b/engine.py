@@ -126,11 +126,11 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
-        # إرسال READY أولاً قبل تفعيل الفلتر لضمان التمهيد السليم
-        pipe_conn.send("READY")
-
-        # تثبيت فلتر Seccomp بدقة متناهية ودون أخطاء في القفزات
+        # 1. تثبيت فلتر Seccomp أولاً ليكون مفعلاً ومستقراً لحظة فحص العملية
         install_strict_seccomp()
+
+        # 2. ثم إرسال READY بعد تفعيل الفلتر تماماً
+        pipe_conn.send("READY")
 
         while True:
             if pipe_conn.poll(timeout=0.2):
