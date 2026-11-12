@@ -112,9 +112,10 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
-        pipe_conn.send("READY")
-
+        # تثبيت Seccomp أولاً قبل إرسال READY لضمان تفعيله لحظة الفحص
         install_strict_seccomp()
+
+        pipe_conn.send("READY")
 
         while True:
             if pipe_conn.poll(timeout=0.2):
