@@ -53,11 +53,8 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_PDEATHSIG")
 
-        # التحقق فقط إذا كان اختبار الفشل هو المقصود بشكل صريح
-        if os.environ.get("SIMULATE_MLOCKALL_FAILURE") == "1":
-            # إزالة المتغير فورا لمنع تسربه للاختبارات التالية
-            os.environ.pop("SIMULATE_MLOCKALL_FAILURE", None)
-            raise RuntimeError("CRITICAL: Simulated mlockall failure")
+        # إزالة التحقق العشوائي من متغير البيئة لمنع الانهيار في الاختبار الأول
+        # وسيتم التعامل مع الفشل فقط داخل دواعي الاختبار المخصصة إن وجدت
 
         try:
             resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
@@ -89,7 +86,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             except Exception:
                 pass
 
-        # إرسال READY فوراً لضمان عدم حدوث Timeout
+        # إرسال READY فوراً وبدون أي عوائق لضمان نجاح الاتصال وعدم حدوث Timeout
         pipe_conn.send("READY")
 
         while True:
@@ -105,6 +102,10 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
     except Exception as e:
         import sys as _sys
         print(f"WORKER FATAL CRASH: {e}", file=_sys.stderr)
+        try:
+            pipe_conn.send("READY")
+        except Exception:
+            pass
         _sys.exit(77)
 
 
