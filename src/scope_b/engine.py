@@ -83,7 +83,6 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             if err not in [1, 12, 22]:
                 raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}")
 
-        # ضبط NoNewPrivs وإسقاط الصلاحيات بينما لا نزال بصلاحيات الـ Root لضمان النجاح
         if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
 
@@ -93,7 +92,6 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        # الآن الانتقال إلى المستخدم المقيد 65534
         if os.setgroups([]) != 0:
             raise RuntimeError("CRITICAL: Failed to setgroups")
         if os.setgid(target_gid) != 0:
@@ -101,14 +99,11 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         if os.setuid(target_uid) != 0:
             raise RuntimeError("CRITICAL: Failed to setuid")
 
-        # التحقق النهائي من حالة النواة
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
-        # إرسال إشارة الجاهزية بعد اكتمال القفل والتحقق
         pipe_conn.send("READY")
 
-        # تفعيل Seccomp الصارم في النهاية
         install_strict_seccomp()
 
         while True:
@@ -122,11 +117,13 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
                 break
 
     except Exception as e:
-        import sys as _sys
-        import traceback
-        print(f"=== WORKER CRASHED DUE TO: {e} ===", file=_sys.stderr)
-        traceback.print_exc(file=_sys.stderr)
-        _sys.exit(77)
+        import traceback as _tb
+        err_msg = "".join(_tb.format_exception(type(e), e, e.__traceback__))
+        try:
+            pipe_conn.send({"ERROR": err_msg})
+        except Exception:
+            pass
+        sys.exit(77)
 
 
 class ScopeBEngine:
