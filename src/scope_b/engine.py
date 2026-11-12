@@ -4,6 +4,7 @@ import ctypes
 import resource
 import struct
 import signal
+import traceback
 from multiprocessing.connection import Connection
 
 libc = ctypes.CDLL("libc.so.6", use_errno=True)
@@ -82,7 +83,6 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             err = ctypes.get_errno()
             raise RuntimeError(f"CRITICAL: mlockall failed with errno {err}")
 
-        # تثبيت الـ Seccomp بصرامة
         install_strict_seccomp()
         
         libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)
@@ -90,7 +90,6 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        # إسقاط الـ UID والـ GID بصرامة
         if os.setgroups([]) != 0:
             raise RuntimeError("CRITICAL: Failed to setgroups")
         if os.setgid(target_gid) != 0:
@@ -98,11 +97,9 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         if os.setuid(target_uid) != 0:
             raise RuntimeError("CRITICAL: Failed to setuid")
 
-        # التحقق الفعلي والصارم من النتائج
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
-        # إرسال READY فوراً بعد اجتياز كل الفحوصات بنجاح
         pipe_conn.send("READY")
 
         while True:
@@ -116,9 +113,10 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
                 break
 
     except Exception as e:
-        import sys as _sys
-        print(f"WORKER FATAL CRASH: {e}", file=_sys.stderr)
-        _sys.exit(77)
+        print(f"\n[FATAL WORKER ERROR] -----------------------------------------", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        print(f"--------------------------------------------------------------\n", file=sys.stderr)
+        sys.exit(77)
 
 
 class ScopeBEngine:
