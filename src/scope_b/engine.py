@@ -42,8 +42,24 @@ def install_strict_seccomp():
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
-    # القائمة البيضاء الشاملة لاستدعاءات النظام المطلوبة لتشغيل بايثون والـ Pipe/Sockets بأمان
-    allowed_syscalls = [0, 1, 3, 7, 9, 11, 12, 15, 23, 44, 47, 60, 202, 232]
+    # القائمة البيضاء الموسعة والمحدثة لتشمل getppid (110) و exit_group (231) وباقي استدعاءات البايثون والـ IPC بأمان
+    allowed_syscalls = [
+        0,    # read
+        1,    # write
+        3,    # close
+        7,    # poll
+        9,    # mmap
+        11,   # munmap
+        12,   # brk
+        15,   # rt_sigaction
+        23,   # select
+        44,   # sendto
+        47,   # recvmsg
+        60,   # exit
+        110,  # getppid (مطلوب للتحقق من الأب في الحلقة)[span_2](start_span)[span_2](end_span)
+        202,  # futex
+        231   # exit_group (مطلوب للخروج النظيف)[span_3](start_span)[span_3](end_span)
+    ]
     
     insns = []
     # 0: تحميل المعمارية
@@ -89,10 +105,14 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_PDEATHSIG")
 
-        if os.environ.get("SIMULATE_MLOCKALL_FAILURE") == "1":
-            raise RuntimeError("CRITICAL: Simulated mlockall failure")
+        # تم إزالة خطاف محاكاة الفشل من كود الإنتاج بناءً على توجيهات د. حكمت
 
-        resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
+        try:
+            resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
+        except (ValueError, OSError):
+            # التعامل مع البيئات التي لا تملك صلاحية CAP_SYS_RESOURCE وتكتفي بالحد المتاح (مثل Sandbox د. حكمت)[span_4](start_span)[span_4](end_span)[span_5](start_span)[span_5](end_span)
+            pass
+
         if libc.mlockall(MCL_CURRENT | MCL_FUTURE) != 0:
             err = ctypes.get_errno()
             raise RuntimeError(f"CRITICAL: mlockall failed strictly with errno {err}")
@@ -147,7 +167,10 @@ class ScopeBEngine:
         self.locked = False
 
     def enforce_memory_hardening(self):
-        resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
+        try:
+            resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
+        except (ValueError, OSError):
+            pass
         if libc.mlockall(MCL_CURRENT | MCL_FUTURE) != 0:
             err = ctypes.get_errno()
             raise RuntimeError(f"CRITICAL: mlockall failed strictly with errno {err}.")
