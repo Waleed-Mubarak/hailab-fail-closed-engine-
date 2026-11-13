@@ -54,7 +54,8 @@ def install_strict_seccomp():
         12,   # brk
         14,   # rt_sigprocmask (إدارة الإشارات أثناء الإغلاق)
         15,   # rt_sigaction
-        20,   # writev (مطلوب لتفريغ stdout/stderr عند الخروج النظيف للبايثون)
+        16,   # ioctl (تنظيف التيارات والتحكم بها)
+        20,   # writev (تفريغ stdout/stderr عند الخروج النظيف للبايثون)
         23,   # select
         44,   # sendto
         47,   # recvmsg
@@ -64,6 +65,7 @@ def install_strict_seccomp():
         202,  # futex
         218,  # set_tid_address (تنظيف الخيوط عند الخروج)
         231,  # exit_group (الخروج النظيف للعمليات)
+        257,  # openat (فتح ملفات السجل المرجعية عند الإغلاق)
         273   # set_robust_list (القوائم الآمنة للتنظيف)
     ]
     
