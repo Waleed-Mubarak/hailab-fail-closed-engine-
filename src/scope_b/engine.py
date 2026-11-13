@@ -46,27 +46,33 @@ def install_strict_seccomp():
     allowed_syscalls = [
         0,    # read
         1,    # write
+        2,    # open
         3,    # close
-        5,    # fstat (فحص الملفات والتيارات عند الإغلاق)
+        5,    # fstat
         7,    # poll
+        8,    # lseek
         9,    # mmap
         11,   # munmap
         12,   # brk
-        14,   # rt_sigprocmask (إدارة الإشارات أثناء الإغلاق)
+        14,   # rt_sigprocmask
         15,   # rt_sigaction
-        16,   # ioctl (تنظيف التيارات والتحكم بها)
-        20,   # writev (تفريغ stdout/stderr عند الخروج النظيف للبايثون)
+        16,   # ioctl
+        20,   # writev
         23,   # select
+        39,   # getpid
         44,   # sendto
         47,   # recvmsg
         60,   # exit
-        110,  # getppid (فحص الأب في الحلقة)
-        158,  # arch_prctl (مطلوب لـ x86_64 TLS في بايثون)
+        107,  # getuid
+        108,  # getgid
+        110,  # getppid
+        158,  # arch_prctl
+        186,  # gettid
         202,  # futex
-        218,  # set_tid_address (تنظيف الخيوط عند الخروج)
-        231,  # exit_group (الخروج النظيف للعمليات)
-        257,  # openat (فتح ملفات السجل المرجعية عند الإغلاق)
-        273   # set_robust_list (القوائم الآمنة للتنظيف)
+        218,  # set_tid_address
+        231,  # exit_group
+        257,  # openat
+        273   # set_robust_list
     ]
     
     insns = []
