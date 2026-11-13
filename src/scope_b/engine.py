@@ -42,11 +42,12 @@ def install_strict_seccomp():
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
-    # القائمة البيضاء الدقيقة والصحيحة كلياً لمعمارية x86_64 وخروج بايثون الآمن
+    # القائمة البيضاء الدقيقة لخروج بايثون والاتصال. 
+    # ملاحظة (c): تتضمن open, openat, getdents64, ioctl لمطلبات تشغيل مفسر بايثون وقنوات الاتصال وتهيئة بيئة العمل بسلام.
     allowed_syscalls = [
         0,    # read
         1,    # write
-        2,    # open
+        2,    # open (مطلوب لمفسر بايثون عند التهيئة والقراءة)
         3,    # close
         5,    # fstat
         7,    # poll
@@ -54,10 +55,10 @@ def install_strict_seccomp():
         9,    # mmap
         11,   # munmap
         12,   # brk
-        13,   # rt_sigaction (مطلوب لإدارة إشارات بايثون)
-        14,   # rt_sigprocmask (إدارة قناع الإشارات)
-        15,   # rt_sigreturn (مطلوب للعودة من معالجة الإشارات عند الخروج)
-        16,   # ioctl
+        13,   # rt_sigaction
+        14,   # rt_sigprocmask
+        15,   # rt_sigreturn
+        16,   # ioctl (مطلوب للتحكم والتيارات)
         20,   # writev
         23,   # select
         35,   # nanosleep
@@ -72,11 +73,11 @@ def install_strict_seccomp():
         158,  # arch_prctl
         186,  # gettid
         202,  # futex
-        217,  # getdents64
+        217,  # getdents64 (مطلوب لقراءة مجلدات الحالة والنظام مثل /proc)
         218,  # set_tid_address
         228,  # clock_gettime
         231,  # exit_group
-        257,  # openat
+        257,  # openat (مطلوب لمفسر بايثون الحديث لفتح الملفات)
         273   # set_robust_list
     ]
     
@@ -124,6 +125,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_PDEATHSIG")
 
+        # ملاحظة (b): تجاهل فشل setrlimit مقبول هنا فقط لأن فشل mlockall الأساسي سيفشل العملية بشكل صارم وصريح (Fail-Closed).
         try:
             resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
         except (ValueError, OSError):
@@ -145,6 +147,10 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         os.setgroups([])
         os.setgid(target_gid)
         os.setuid(target_uid)
+
+        # ملاحظة (d): إعادة ضبط التحقق من PR_SET_DUMPABLE بعد تغيير الـ UID لضمان عدم إعادة ضبطه.
+        if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
+            raise RuntimeError("CRITICAL: Failed to re-set PR_SET_DUMPABLE after setuid")
 
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
