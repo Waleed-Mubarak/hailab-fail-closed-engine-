@@ -42,7 +42,7 @@ def install_strict_seccomp():
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
-    # القائمة البيضاء الموسعة والمحدثة لتشمل getppid (110) و exit_group (231) وباقي استدعاءات البايثون والـ IPC بأمان
+    # القائمة البيضاء الشاملة والموسعة لتشغيل بايثون، الـ IPC، الخيوط، والإغلاق النظيف تماماً
     allowed_syscalls = [
         0,    # read
         1,    # write
@@ -51,14 +51,18 @@ def install_strict_seccomp():
         9,    # mmap
         11,   # munmap
         12,   # brk
+        14,   # rt_sigprocmask (إدارة الإشارات أثناء الإغلاق)
         15,   # rt_sigaction
         23,   # select
         44,   # sendto
         47,   # recvmsg
         60,   # exit
-        110,  # getppid (مطلوب للتحقق من الأب في الحلقة)[span_2](start_span)[span_2](end_span)
+        110,  # getppid (فحص الأب في الحلقة)
+        158,  # arch_prctl (مطلوب لـ x86_64 TLS في بايثون)
         202,  # futex
-        231   # exit_group (مطلوب للخروج النظيف)[span_3](start_span)[span_3](end_span)
+        218,  # set_tid_address (تنظيف الخيوط عند الخروج)
+        231,  # exit_group (الخروج النظيف للعمليات)
+        273   # set_robust_list (القوائم الآمنة للتنظيف)
     ]
     
     insns = []
@@ -105,12 +109,10 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_PDEATHSIG")
 
-        # تم إزالة خطاف محاكاة الفشل من كود الإنتاج بناءً على توجيهات د. حكمت
-
+        # تم إزالة خطاف محاكاة الفشل من كود الإنتاج نهائياً
         try:
             resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
         except (ValueError, OSError):
-            # التعامل مع البيئات التي لا تملك صلاحية CAP_SYS_RESOURCE وتكتفي بالحد المتاح (مثل Sandbox د. حكمت)[span_4](start_span)[span_4](end_span)[span_5](start_span)[span_5](end_span)
             pass
 
         if libc.mlockall(MCL_CURRENT | MCL_FUTURE) != 0:
