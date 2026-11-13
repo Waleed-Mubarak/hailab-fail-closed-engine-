@@ -2,6 +2,8 @@ import time
 import multiprocessing
 import os
 import signal
+import resource
+import ctypes
 import pytest
 
 try:
@@ -9,7 +11,7 @@ try:
 except RuntimeError:
     pass
 
-from src.scope_b.engine import worker_process_target, install_strict_seccomp, libc
+from src.scope_b.engine import worker_process_target, install_strict_seccomp, libc, MCL_CURRENT, MCL_FUTURE
 
 def test_scope_b_kernel_state_enforcement():
     parent_conn, worker_conn = multiprocessing.Pipe()
@@ -107,6 +109,49 @@ def test_seccomp_sigsys_kill():
         p.join(timeout=3.0)
         assert not p.is_alive(), "CRITICAL: Worker survived the prohibited system call!"
         assert p.exitcode == -signal.SIGSYS, f"Expected exit code {-signal.SIGSYS} (-31), got {p.exitcode}"
+    finally:
+        if p.is_alive():
+            p.terminate()
+            p.join()
+
+
+def mlockall_failure_worker(pipe_conn):
+    try:
+        # ضبط حد الذاكرة المقفلة إلى صفر، ثم النزول لمستخدم غير جذر لافتقار صلاحية CAP_IPC_LOCK
+        resource.setrlimit(resource.RLIMIT_MEMLOCK, (0, 0))
+        os.setgroups([])
+        os.setgid(65534)
+        os.setuid(65534)
+        
+        if libc.mlockall(MCL_CURRENT | MCL_FUTURE) != 0:
+            err = ctypes.get_errno()
+            raise RuntimeError(f"CRITICAL: mlockall failed strictly with errno {err}")
+        pipe_conn.send("READY")
+    except Exception as e:
+        import sys as _sys
+        try:
+            pipe_conn.send({"ERROR": str(e)})
+        except Exception:
+            pass
+        _sys.exit(77)
+
+
+def test_mlockall_failure():
+    parent_conn, worker_conn = multiprocessing.Pipe()
+    p = multiprocessing.Process(target=mlockall_failure_worker, args=(worker_conn,))
+    p.start()
+    
+    try:
+        # التأكد من عدم وصول إشارة READY وأن العامل توقف بفشل قسري
+        has_data = parent_conn.poll(timeout=2.0)
+        if has_data:
+            msg = parent_conn.recv()
+            if msg == "READY":
+                pytest.fail("CRITICAL: Worker unexpectedly succeeded mlockall without CAP_IPC_LOCK!")
+        
+        p.join(timeout=3.0)
+        assert not p.is_alive(), "CRITICAL: Worker process did not exit after mlockall failure."
+        assert p.exitcode != 0, f"Expected non-zero exit code, got {p.exitcode}"
     finally:
         if p.is_alive():
             p.terminate()
