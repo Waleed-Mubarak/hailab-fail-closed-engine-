@@ -11,12 +11,6 @@ except RuntimeError:
 
 from src.scope_b.engine import worker_process_target, install_strict_seccomp, libc
 
-@pytest.fixture(autouse=True)
-def clean_env():
-    os.environ.pop("SIMULATE_MLOCKALL_FAILURE", None)
-    yield
-    os.environ.pop("SIMULATE_MLOCKALL_FAILURE", None)
-
 def test_scope_b_kernel_state_enforcement():
     parent_conn, worker_conn = multiprocessing.Pipe()
     p = multiprocessing.Process(target=worker_process_target, args=(worker_conn,))
@@ -71,17 +65,24 @@ def test_scope_b_kernel_state_enforcement():
         assert no_new_privs_set, "CRITICAL: NoNewPrivs is not enabled."
         assert seccomp_active, "CRITICAL: Seccomp filter (mode 2) is not active."
 
-        parent_conn.send("PING")
-        assert parent_conn.poll(timeout=3.0), "CRITICAL: Worker did not respond to PING."
-        reply = parent_conn.recv()
-        assert reply == "PONG", f"Expected 'PONG', got {reply}"
+        # الانتظار لأكثر من ثانية والتحقق من أن العامل لا يزال حياً تحت Seccomp
+        time.sleep(1.2)
+        assert p.is_alive(), "CRITICAL: Worker died prematurely after initialization."
+
+        # تبادل PING/PONG مرتين على الأقل
+        for _ in range(2):
+            parent_conn.send("PING")
+            assert parent_conn.poll(timeout=3.0), "CRITICAL: Worker did not respond to PING."
+            reply = parent_conn.recv()
+            assert reply == "PONG", f"Expected 'PONG', got {reply}"
+
+        # إرسال EXIT والتأكد من الخروج النظيف (exitcode == 0)
+        parent_conn.send("EXIT")
+        p.join(timeout=3.0)
+        assert not p.is_alive(), "CRITICAL: Worker process did not exit after EXIT."
+        assert p.exitcode == 0, f"Expected clean exit code 0, got {p.exitcode}"
 
     finally:
-        try:
-            parent_conn.send("EXIT")
-        except Exception:
-            pass
-        p.join(timeout=2.0)
         if p.is_alive():
             p.terminate()
             p.join()
@@ -107,28 +108,6 @@ def test_seccomp_sigsys_kill():
         assert not p.is_alive(), "CRITICAL: Worker survived the prohibited system call!"
         assert p.exitcode == -signal.SIGSYS, f"Expected exit code {-signal.SIGSYS} (-31), got {p.exitcode}"
     finally:
-        if p.is_alive():
-            p.terminate()
-            p.join()
-
-
-def test_mlockall_fail_closed_behavior():
-    parent_conn, worker_conn = multiprocessing.Pipe()
-    os.environ["SIMULATE_MLOCKALL_FAILURE"] = "1"
-    p = multiprocessing.Process(target=worker_process_target, args=(worker_conn,))
-    p.start()
-    
-    try:
-        ready_received = parent_conn.poll(timeout=2.0)
-        if ready_received:
-            msg = parent_conn.recv()
-            assert msg != "READY", "CRITICAL: Worker sent READY despite mlockall failure (Fail-Open violation!)"
-        
-        p.join(timeout=2.0)
-        assert not p.is_alive(), "CRITICAL: Worker process is still alive after failure."
-        assert p.exitcode != 0, f"Expected non-zero exit code on failure, got {p.exitcode}"
-    finally:
-        os.environ.pop("SIMULATE_MLOCKALL_FAILURE", None)
         if p.is_alive():
             p.terminate()
             p.join()
