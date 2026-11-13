@@ -42,7 +42,7 @@ def install_strict_seccomp():
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
-    # القائمة البيضاء الشاملة والموسعة لتشغيل بايثون، الـ IPC، الخيوط، والتفريغ النظيف عند الإغلاق
+    # القائمة البيضاء الشاملة والموسعة لتشغيل بايثون، الـ IPC، الخيوط، الوقت، والتفريغ النظيف عند الإغلاق
     allowed_syscalls = [
         0,    # read
         1,    # write
@@ -59,17 +59,21 @@ def install_strict_seccomp():
         16,   # ioctl
         20,   # writev
         23,   # select
+        35,   # nanosleep (السبات والانتظار)
         39,   # getpid
         44,   # sendto
         47,   # recvmsg
         60,   # exit
+        96,   # gettimeofday (استعلام الوقت)
         107,  # getuid
         108,  # getgid
         110,  # getppid
         158,  # arch_prctl
         186,  # gettid
         202,  # futex
+        217,  # getdents64
         218,  # set_tid_address
+        228,  # clock_gettime (ساعات النظام والوقت الدقيق)
         231,  # exit_group
         257,  # openat
         273   # set_robust_list
