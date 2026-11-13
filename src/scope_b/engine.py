@@ -42,7 +42,7 @@ def install_strict_seccomp():
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
-    # القائمة البيضاء الشاملة والموسعة لتشغيل بايثون، الـ IPC، الخيوط، الوقت، والتفريغ النظيف عند الإغلاق
+    # القائمة البيضاء الدقيقة والصحيحة كلياً لمعمارية x86_64 وخروج بايثون الآمن
     allowed_syscalls = [
         0,    # read
         1,    # write
@@ -54,17 +54,18 @@ def install_strict_seccomp():
         9,    # mmap
         11,   # munmap
         12,   # brk
-        14,   # rt_sigprocmask
-        15,   # rt_sigaction
+        13,   # rt_sigaction (مطلوب لإدارة إشارات بايثون)
+        14,   # rt_sigprocmask (إدارة قناع الإشارات)
+        15,   # rt_sigreturn (مطلوب للعودة من معالجة الإشارات عند الخروج)
         16,   # ioctl
         20,   # writev
         23,   # select
-        35,   # nanosleep (السبات والانتظار)
+        35,   # nanosleep
         39,   # getpid
         44,   # sendto
         47,   # recvmsg
         60,   # exit
-        96,   # gettimeofday (استعلام الوقت)
+        96,   # gettimeofday
         107,  # getuid
         108,  # getgid
         110,  # getppid
@@ -73,7 +74,7 @@ def install_strict_seccomp():
         202,  # futex
         217,  # getdents64
         218,  # set_tid_address
-        228,  # clock_gettime (ساعات النظام والوقت الدقيق)
+        228,  # clock_gettime
         231,  # exit_group
         257,  # openat
         273   # set_robust_list
@@ -123,7 +124,6 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_PDEATHSIG")
 
-        # تم إزالة خطاف محاكاة الفشل من كود الإنتاج نهائياً
         try:
             resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
         except (ValueError, OSError):
@@ -142,7 +142,6 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         for cap in range(64):
             libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-        # تنفيذ صارم بالكامل بدون أي استثناءات مصطنعة أو تجاهل للأخطاء (Fail-Closed)
         os.setgroups([])
         os.setgid(target_gid)
         os.setuid(target_uid)
@@ -150,10 +149,8 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
-        # تثبيت فلتر Seccomp صارماً
         install_strict_seccomp()
 
-        # إرسال READY فقط عند نجاح كل الخطوات السابقة دون أي خلل
         pipe_conn.send("READY")
 
         while True:
@@ -174,7 +171,6 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             pipe_conn.send({"ERROR": err_msg})
         except Exception:
             pass
-        # إيقاف العامل فوراً برمز خطأ غير صفر (Fail-Closed قسري)
         _sys.exit(77)
 
 
