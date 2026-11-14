@@ -4,6 +4,7 @@ import ctypes
 import resource
 import struct
 import signal
+import hashlib
 from multiprocessing.connection import Connection
 
 libc = ctypes.CDLL("libc.so.6", use_errno=True)
@@ -42,12 +43,10 @@ def install_strict_seccomp():
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
-    # القائمة البيضاء الدقيقة لخروج بايثون والاتصال. 
-    # ملاحظة (c): تتضمن open, openat, getdents64, ioctl لمطلبات تشغيل مفسر بايثون وقنوات الاتصال وتهيئة بيئة العمل بسلام.
     allowed_syscalls = [
         0,    # read
         1,    # write
-        2,    # open (مطلوب لمفسر بايثون عند التهيئة والقراءة)
+        2,    # open
         3,    # close
         5,    # fstat
         7,    # poll
@@ -58,7 +57,7 @@ def install_strict_seccomp():
         13,   # rt_sigaction
         14,   # rt_sigprocmask
         15,   # rt_sigreturn
-        16,   # ioctl (مطلوب للتحكم والتيارات)
+        16,   # ioctl
         20,   # writev
         23,   # select
         35,   # nanosleep
@@ -73,39 +72,31 @@ def install_strict_seccomp():
         158,  # arch_prctl
         186,  # gettid
         202,  # futex
-        217,  # getdents64 (مطلوب لقراءة مجلدات الحالة والنظام مثل /proc)
+        217,  # getdents64
         218,  # set_tid_address
         228,  # clock_gettime
         231,  # exit_group
-        257,  # openat (مطلوب لمفسر بايثون الحديث لفتح الملفات)
+        257,  # openat
         273   # set_robust_list
     ]
     
     insns = []
-    # 0: تحميل المعمارية
     insns.append((0x20, 0, 0, 4))
     
     k_len = len(allowed_syscalls)
     kill_idx = 3 + k_len
     allow_idx = 4 + k_len
     
-    # 1: التحقق من معمارية x86_64
     jf_arch = kill_idx - 2
     insns.append((0x15, 0, jf_arch, 0xC000003E))
-    
-    # 2: تحميل رقم استدعاء النظام (Syscall number)
     insns.append((0x20, 0, 0, 0))
     
-    # إضافة فحوصات الـ Syscalls مع حساب دقيق للقفزات تلقائياً
     for idx, sc in enumerate(allowed_syscalls):
         curr_idx = 3 + idx
         jt_val = allow_idx - curr_idx - 1
         insns.append((0x15, jt_val, 0, sc))
         
-    # تعليمات القتل (KILL_PROCESS)
     insns.append((0x06, 0, 0, 0x80000000))
-    
-    # تعليمات السماح (ALLOW)
     insns.append((0x06, 0, 0, 0x7FFF0000))
     
     bpf_code = [struct.pack("HBBI", code, jt, jf, k) for code, jt, jf, k in insns]
@@ -125,7 +116,6 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_PDEATHSIG")
 
-        # ملاحظة (b): تجاهل فشل setrlimit مقبول هنا فقط لأن فشل mlockall الأساسي سيفشل العملية بشكل صارم وصريح (Fail-Closed).
         try:
             resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
         except (ValueError, OSError):
@@ -148,7 +138,6 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         os.setgid(target_gid)
         os.setuid(target_uid)
 
-        # ملاحظة (d): إعادة ضبط التحقق من PR_SET_DUMPABLE بعد تغيير الـ UID لضمان عدم إعادة ضبطه.
         if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to re-set PR_SET_DUMPABLE after setuid")
 
@@ -157,15 +146,43 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
 
         install_strict_seccomp()
 
+        # REQ-SCOPE-B-01: توليد المفاتيح والمواد السرية داخل العامل حصراً
+        key_material = bytearray(os.urandom(32))
+        is_zeroized = False
+
         pipe_conn.send("READY")
 
         while True:
             if pipe_conn.poll(timeout=0.2):
-                msg = pipe_conn.recv()
+                try:
+                    msg = pipe_conn.recv()
+                except Exception:
+                    pipe_conn.send("OPERATION_REFUSED")
+                    continue
+
+                # REQ-SCOPE-B-01: بعد التطهير، أي طلب يتلقى OPERATION_REFUSED قطعاً
+                if is_zeroized:
+                    pipe_conn.send("OPERATION_REFUSED")
+                    continue
+
                 if msg == "PING":
                     pipe_conn.send("PONG")
+                elif msg == "COMPUTE":
+                    # عملية تشفير/حساب داخلية تعتمد على المفتاح دون تسريبه
+                    digest = hashlib.sha256(key_material).hexdigest()
+                    pipe_conn.send({"STATUS": "OK", "DIGEST": digest})
+                elif msg == "ZEROIZE":
+                    # REQ-SCOPE-B-01: التطهير الحاسم والكتابة فوق مخزن المفاتيح بالكامل
+                    for i in range(len(key_material)):
+                        key_material[i] = 0
+                    is_zeroized = True
+                    pipe_conn.send("OK_ZEROIZED")
                 elif msg == "EXIT":
                     break
+                else:
+                    # أي رسالة أو أمر مجهول أو مشوه يُرفض فوراً
+                    pipe_conn.send("OPERATION_REFUSED")
+
             if os.getppid() == 1:
                 break
 
