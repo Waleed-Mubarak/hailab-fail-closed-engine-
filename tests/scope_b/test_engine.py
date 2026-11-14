@@ -67,22 +67,64 @@ def test_scope_b_kernel_state_enforcement():
         assert no_new_privs_set, "CRITICAL: NoNewPrivs is not enabled."
         assert seccomp_active, "CRITICAL: Seccomp filter (mode 2) is not active."
 
-        # الانتظار لأكثر من ثانية والتحقق من أن العامل لا يزال حياً تحت Seccomp
         time.sleep(1.2)
         assert p.is_alive(), "CRITICAL: Worker died prematurely after initialization."
 
-        # تبادل PING/PONG مرتين على الأقل
         for _ in range(2):
             parent_conn.send("PING")
             assert parent_conn.poll(timeout=3.0), "CRITICAL: Worker did not respond to PING."
             reply = parent_conn.recv()
             assert reply == "PONG", f"Expected 'PONG', got {reply}"
 
-        # إرسال EXIT والتأكد من الخروج النظيف (exitcode == 0)
         parent_conn.send("EXIT")
         p.join(timeout=3.0)
         assert not p.is_alive(), "CRITICAL: Worker process did not exit after EXIT."
         assert p.exitcode == 0, f"Expected clean exit code 0, got {p.exitcode}"
+
+    finally:
+        if p.is_alive():
+            p.terminate()
+            p.join()
+
+
+def test_scope_b_01_zeroization_lifecycle():
+    parent_conn, worker_conn = multiprocessing.Pipe()
+    p = multiprocessing.Process(target=worker_process_target, args=(worker_conn,))
+    p.start()
+    
+    try:
+        assert parent_conn.poll(timeout=5.0), "CRITICAL: Worker failed to start"
+        msg = parent_conn.recv()
+        assert msg == "READY"
+
+        # (i) اختبار نجاح العمليات قبل التطهير
+        parent_conn.send("COMPUTE")
+        assert parent_conn.poll(timeout=2.0), "CRITICAL: Worker did not respond to COMPUTE."
+        resp = parent_conn.recv()
+        assert isinstance(resp, dict) and resp.get("STATUS") == "OK", f"Compute failed before zeroization: {resp}"
+
+        # اختبار إرسال أمر مجهول أو مشوه و التأكد من رفضه بـ OPERATION_REFUSED
+        parent_conn.send("MALFORMED_COMMAND")
+        assert parent_conn.poll(timeout=2.0)
+        assert parent_conn.recv() == "OPERATION_REFUSED"
+
+        # (ii) تنفيذ التطهير (Zeroization)
+        parent_conn.send("ZEROIZE")
+        assert parent_conn.poll(timeout=2.0)
+        assert parent_conn.recv() == "OK_ZEROIZED"
+
+        # (iii) التأكد من رفض أي طلبات لاحقة (متكررة أو مشوهة) بعد التطهير
+        parent_conn.send("COMPUTE")
+        assert parent_conn.poll(timeout=2.0)
+        assert parent_conn.recv() == "OPERATION_REFUSED"
+
+        parent_conn.send("PING")
+        assert parent_conn.poll(timeout=2.0)
+        assert parent_conn.recv() == "OPERATION_REFUSED"
+
+        parent_conn.send("EXIT")
+        p.join(timeout=3.0)
+        assert p.exitcode == 0
 
     finally:
         if p.is_alive():
@@ -117,7 +159,6 @@ def test_seccomp_sigsys_kill():
 
 def mlockall_failure_worker(pipe_conn):
     try:
-        # ضبط حد الذاكرة المقفلة إلى صفر، ثم النزول لمستخدم غير جذر لافتقار صلاحية CAP_IPC_LOCK
         resource.setrlimit(resource.RLIMIT_MEMLOCK, (0, 0))
         os.setgroups([])
         os.setgid(65534)
@@ -142,7 +183,6 @@ def test_mlockall_failure():
     p.start()
     
     try:
-        # التأكد من عدم وصول إشارة READY وأن العامل توقف بفشل قسري
         has_data = parent_conn.poll(timeout=2.0)
         if has_data:
             msg = parent_conn.recv()
