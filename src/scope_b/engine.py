@@ -141,12 +141,16 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to re-set PR_SET_DUMPABLE after setuid")
 
+        # التحقق الفعلي من PR_GET_DUMPABLE (PR_GET_DUMPABLE = 3)
+        dumpable_val = libc.prctl(3, 0, 0, 0, 0)
+        if dumpable_val != 0:
+            raise RuntimeError(f"CRITICAL: PR_GET_DUMPABLE is not 0: {dumpable_val}")
+
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
         install_strict_seccomp()
 
-        # REQ-SCOPE-B-01: توليد المفاتيح والمواد السرية داخل العامل حصراً
         key_material = bytearray(os.urandom(32))
         is_zeroized = False
 
@@ -160,11 +164,9 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
                     pipe_conn.send("OPERATION_REFUSED")
                     continue
 
-                # معالجة أمر الخروج أولاً لضمان إغلاق العامل بأمان حتى بعد التطهير
                 if msg == "EXIT":
                     break
 
-                # REQ-SCOPE-B-01: بعد التطهير، أي طلب آخر يتلقى OPERATION_REFUSED قطعاً
                 if is_zeroized:
                     pipe_conn.send("OPERATION_REFUSED")
                     continue
