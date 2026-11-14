@@ -2,6 +2,7 @@ import time
 import multiprocessing
 import os
 import signal
+import errno
 import resource
 import ctypes
 import pytest
@@ -75,7 +76,7 @@ def test_scope_b_kernel_state_enforcement():
         assert no_new_privs_set, "CRITICAL: NoNewPrivs is not enabled."
         assert seccomp_active, "CRITICAL: Seccomp filter (mode 2) is not active."
 
-        time.sleep(1.2)
+        time.sleep(0.5)
         assert p.is_alive(), "CRITICAL: Worker died prematurely after initialization."
 
         for _ in range(2):
@@ -135,31 +136,51 @@ def test_scope_b_01_zeroization_lifecycle():
             p.join()
 
 
+def _unprivileged_mem_probe(target_pid: int, result_conn):
+    """عملية مستقلة تسقط صلاحياتها لـ UID 65534 (نفس مستخدم العامل وبدون CAP_SYS_PTRACE) لمحاولة قراءة الذاكرة."""
+    try:
+        os.setgroups([])
+        os.setgid(65534)
+        os.setuid(65534)
+        mem_path = f"/proc/{target_pid}/mem"
+        with open(mem_path, "rb") as mem_file:
+            mem_file.read(64)
+        result_conn.send("UNEXPECTED_READ_SUCCESS")
+    except PermissionError as e:
+        result_conn.send(("DENIED", e.errno))
+    except OSError as e:
+        result_conn.send(("DENIED", e.errno))
+
+
 def test_scope_b_02_mem_access_denied():
+    """REQ-SCOPE-B-02: التحقق من رفض الوصول (EPERM) من عملية مستقلة بنفس UID بدون صلاحيات root."""
     parent_conn, worker_conn = multiprocessing.Pipe()
     p = multiprocessing.Process(target=worker_process_target, args=(worker_conn,))
     p.start()
     
+    probe = None
     try:
         assert parent_conn.poll(timeout=5.0)
         assert parent_conn.recv() == "READY"
         
-        pid = p.pid
-        mem_path = f"/proc/{pid}/mem"
-        
-        access_denied = False
-        try:
-            with open(mem_path, "rb") as mem_file:
-                mem_file.read(100)
-        except (PermissionError, OSError):
-            access_denied = True
+        probe_parent, probe_child = multiprocessing.Pipe()
+        probe = multiprocessing.Process(target=_unprivileged_mem_probe, args=(p.pid, probe_child))
+        probe.start()
 
-        assert access_denied, "CRITICAL: Successfully read /proc/<pid>/mem of isolated worker! Dump isolation failed (B-02)."
+        assert probe_parent.poll(timeout=5.0), "CRITICAL: Unprivileged probe timed out."
+        res = probe_parent.recv()
+        probe.join(timeout=2.0)
+
+        assert isinstance(res, tuple) and res[0] == "DENIED", f"CRITICAL: Unprivileged same-UID process read /proc/<pid>/mem! Result: {res}"
+        assert res[1] in (errno.EPERM, errno.EACCES), f"Expected EPERM/EACCES, got errno {res[1]}"
 
         parent_conn.send("EXIT")
         p.join(timeout=3.0)
         assert p.exitcode == 0
     finally:
+        if probe and probe.is_alive():
+            probe.terminate()
+            probe.join()
         if p.is_alive():
             p.terminate()
             p.join()
@@ -251,11 +272,9 @@ def test_worker_process_unexpected_termination():
         worker_pid = parent_info_conn.recv()
         time.sleep(0.5)
 
-        # قتل العملية الأبوية الوسيطة فجأة بـ SIGKILL
         os.kill(intermediate_parent.pid, signal.SIGKILL)
         intermediate_parent.join(timeout=3.0)
 
-        # التحقق من أن العامل الفرعي قد قُتل تلقائياً بواسطة النواة (PR_SET_PDEATHSIG)
         time.sleep(0.3)
         worker_alive = True
         try:
@@ -276,40 +295,66 @@ def test_worker_process_unexpected_termination():
 
 
 def test_scope_b_07_watchdog_monitoring():
-    """REQ-SCOPE-B-07: اختبار عملية المراقبة المستقلة Watchdog واكتشافها لموت أو توقف العامل."""
-    parent_conn, worker_conn = multiprocessing.Pipe()
-    w = multiprocessing.Process(target=worker_process_target, args=(worker_conn,))
+    """
+    REQ-SCOPE-B-07: التحقق من:
+    1. استخدام الـ Watchdog لقناة اتصال مستقلة تماماً عن العملية الرئيسية.
+    2. عمل الـ Watchdog بصلاحيات مقيدة (UID 65534).
+    3. قيام الـ Watchdog باحتواء العامل فعلياً (SIGKILL) عند تجمد العامل.
+    """
+    main_parent_conn, main_worker_conn = multiprocessing.Pipe()
+    wd_parent_conn, wd_worker_conn = multiprocessing.Pipe()
+
+    w = multiprocessing.Process(
+        target=worker_process_target,
+        args=(main_worker_conn, wd_worker_conn),
+    )
     w.start()
     
     wd_alert_parent, wd_alert_child = multiprocessing.Pipe()
     wd = None
     try:
-        assert parent_conn.poll(timeout=5.0)
-        assert parent_conn.recv() == "READY"
+        assert main_parent_conn.poll(timeout=5.0)
+        assert main_parent_conn.recv() == "READY"
 
         wd = multiprocessing.Process(
             target=watchdog_process_target,
-            args=(w.pid, parent_conn, wd_alert_child, 0.2),
+            args=(w.pid, wd_parent_conn, wd_alert_child, 0.15),
         )
         wd.start()
 
-        # السماح للـ Watchdog بإجراء عدة دورات فحص PING/PONG ناجحة
-        time.sleep(0.7)
-        assert wd.is_alive(), "CRITICAL: Watchdog died unexpectedly while worker is healthy."
+        assert wd_alert_parent.poll(timeout=5.0)
+        assert wd_alert_parent.recv() == "WATCHDOG_READY"
 
-        # إيقاف المراقب بأمان ثم إغلاق العامل
-        wd_alert_parent.send("STOP_WATCHDOG")
-        assert wd_alert_parent.poll(timeout=2.0)
-        assert wd_alert_parent.recv() == "WATCHDOG_STOPPED"
-        wd.join(timeout=2.0)
+        # التحقق من أن الـ Watchdog أسقط صلاحياته إلى UID 65534
+        with open(f"/proc/{wd.pid}/status", "r") as f:
+            status_content = f.read()
+        assert "Uid:\t65534\t65534" in status_content, "CRITICAL: Watchdog is not running with restricted UID 65534!"
 
-        parent_conn.send("EXIT")
+        # السماح للـ Watchdog بالعمل بالتوازي مع أوامر العملية الرئيسية دون أي تضارب في القنوات
+        time.sleep(0.4)
+        main_parent_conn.send("PING")
+        assert main_parent_conn.poll(timeout=2.0)
+        assert main_parent_conn.recv() == "PONG"
+        assert wd.is_alive(), "CRITICAL: Watchdog died while worker is healthy."
+
+        # محاكاة تجمد العامل (SIGSTOP) والتحقق من أن الـ Watchdog يتخذ إجراء احتواء فعلي بقتله (SIGKILL)
+        os.kill(w.pid, signal.SIGSTOP)
+        assert wd_alert_parent.poll(timeout=4.0), "CRITICAL: Watchdog failed to detect hung worker!"
+        alert_msg = wd_alert_parent.recv()
+        assert alert_msg == "FAIL_CLOSED_CONTAINED:TIMEOUT", f"Expected fail-closed containment, got {alert_msg}"
+
         w.join(timeout=3.0)
-        assert w.exitcode == 0
+        assert not w.is_alive(), "CRITICAL: Watchdog failed to contain (kill) the unresponsive worker!"
+        assert w.exitcode == -signal.SIGKILL
+
+        wd.join(timeout=2.0)
     finally:
         if wd and wd.is_alive():
             wd.terminate()
             wd.join()
         if w.is_alive():
-            w.terminate()
+            try:
+                os.kill(w.pid, signal.SIGKILL)
+            except OSError:
+                pass
             w.join()
