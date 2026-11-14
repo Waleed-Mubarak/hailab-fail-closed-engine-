@@ -261,7 +261,7 @@ def _parent_spawner_for_pdeathsig(child_pid_conn):
 
 
 def test_worker_process_unexpected_termination():
-    """REQ-SCOPE-B-04: التحقق من أن PR_SET_PDEATHSIG يقتل العامل فوراً بـ SIGKILL عند موت العملية الأب."""
+    """REQ-SCOPE-B-04: التحقق من أن PR_SET_PDEATHSIG يقتل العامل فوراً وتجنب توقيتات Zombie عبر قراءة /proc/<pid>/status."""
     parent_info_conn, child_info_conn = multiprocessing.Pipe()
     intermediate_parent = multiprocessing.Process(target=_parent_spawner_for_pdeathsig, args=(child_info_conn,))
     intermediate_parent.start()
@@ -275,14 +275,24 @@ def test_worker_process_unexpected_termination():
         os.kill(intermediate_parent.pid, signal.SIGKILL)
         intermediate_parent.join(timeout=3.0)
 
-        time.sleep(0.3)
-        worker_alive = True
-        try:
-            os.kill(worker_pid, 0)
-        except OSError:
-            worker_alive = False
+        # التحقق من موت العملية أو تحولها لحالة Zombie أو اختفائها تفادياً لمشاكل التوقيت
+        dead = False
+        for _ in range(30):
+            time.sleep(0.1)
+            try:
+                with open(f"/proc/{worker_pid}/status", "r") as f:
+                    content = f.read()
+                    if "State:\tZ" in content or "State:\tX" in content:
+                        dead = True
+                        break
+            except FileNotFoundError:
+                dead = True
+                break
+            except OSError:
+                dead = True
+                break
 
-        assert not worker_alive, f"CRITICAL: Worker (PID {worker_pid}) survived parent death!"
+        assert dead, f"CRITICAL: Worker (PID {worker_pid}) survived parent death or did not transition to terminated/zombie state!"
     finally:
         if intermediate_parent.is_alive():
             intermediate_parent.terminate()
