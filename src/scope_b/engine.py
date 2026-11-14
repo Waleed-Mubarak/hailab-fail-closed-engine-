@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import ctypes
 import resource
 import struct
@@ -10,6 +11,7 @@ from multiprocessing.connection import Connection
 libc = ctypes.CDLL("libc.so.6", use_errno=True)
 
 PR_SET_PDEATHSIG = 1
+PR_GET_DUMPABLE = 3
 PR_SET_DUMPABLE = 4
 PR_SET_NO_NEW_PRIVS = 38
 PR_CAP_BND_DROP = 24
@@ -18,6 +20,7 @@ SECCOMP_MODE_FILTER = 2
 
 MCL_CURRENT = 1
 MCL_FUTURE = 2
+
 
 def verify_capabilities_zeroed():
     with open("/proc/self/status", "r") as f:
@@ -29,6 +32,7 @@ def verify_capabilities_zeroed():
                 return True
     raise RuntimeError("CRITICAL: CapEff line not found")
 
+
 def verify_cap_bnd_zero():
     with open("/proc/self/status", "r") as f:
         for line in f:
@@ -38,6 +42,7 @@ def verify_cap_bnd_zero():
                     raise RuntimeError(f"CRITICAL: CapBnd is not zeroed: {val}")
                 return True
     raise RuntimeError("CRITICAL: CapBnd line not found")
+
 
 def install_strict_seccomp():
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
@@ -111,11 +116,14 @@ def install_strict_seccomp():
     if libc.prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, ctypes.byref(fprog)) != 0:
         raise RuntimeError("CRITICAL: Failed to install Seccomp filter")
 
+
 def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target_gid: int = 65534):
     try:
+        # REQ-SCOPE-B-04: إنهاء العامل فوراً بـ SIGKILL عند موت العملية الأبوية
         if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_PDEATHSIG")
 
+        # REQ-SCOPE-B-06: قفل الذاكرة ومنع التبديل للقرص (Fail-Closed)
         try:
             resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
         except (ValueError, OSError):
@@ -125,6 +133,7 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             err = ctypes.get_errno()
             raise RuntimeError(f"CRITICAL: mlockall failed strictly with errno {err}")
 
+        # REQ-SCOPE-B-05 & B-02: إسقاط الصلاحيات وتفعيل العزل
         if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
 
@@ -141,16 +150,17 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Failed to re-set PR_SET_DUMPABLE after setuid")
 
-        # التحقق الفعلي من PR_GET_DUMPABLE (PR_GET_DUMPABLE = 3)
-        dumpable_val = libc.prctl(3, 0, 0, 0, 0)
+        dumpable_val = libc.prctl(PR_GET_DUMPABLE, 0, 0, 0, 0)
         if dumpable_val != 0:
             raise RuntimeError(f"CRITICAL: PR_GET_DUMPABLE is not 0: {dumpable_val}")
 
         verify_capabilities_zeroed()
         verify_cap_bnd_zero()
 
+        # REQ-SCOPE-B-03: تركيب مرشح Seccomp الصارم
         install_strict_seccomp()
 
+        # REQ-SCOPE-B-01: توليد مادة المفتاح حصرياً داخل العامل وعزلها
         key_material = bytearray(os.urandom(32))
         is_zeroized = False
 
@@ -196,6 +206,41 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         except Exception:
             pass
         _sys.exit(77)
+
+
+def watchdog_process_target(worker_pid: int, pipe_conn: Connection, alert_conn: Connection, interval: float = 0.2):
+    """REQ-SCOPE-B-07: عملية مراقبة مستقلة تراقب نبض العامل وتُطلق إنذاراً أو تُنهي المراقبة عند التوقف."""
+    try:
+        while True:
+            if alert_conn.poll(timeout=0.05):
+                cmd = alert_conn.recv()
+                if cmd == "STOP_WATCHDOG":
+                    alert_conn.send("WATCHDOG_STOPPED")
+                    break
+
+            try:
+                os.kill(worker_pid, 0)
+            except OSError:
+                alert_conn.send("WORKER_DEAD")
+                break
+
+            try:
+                pipe_conn.send("PING")
+                if pipe_conn.poll(timeout=1.0):
+                    resp = pipe_conn.recv()
+                    if resp != "PONG":
+                        alert_conn.send("WORKER_UNRESPONSIVE")
+                        break
+                else:
+                    alert_conn.send("WORKER_TIMEOUT")
+                    break
+            except Exception:
+                alert_conn.send("PIPE_BROKEN")
+                break
+
+            time.sleep(interval)
+    except Exception:
+        pass
 
 
 class ScopeBEngine:
