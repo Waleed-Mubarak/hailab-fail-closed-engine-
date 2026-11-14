@@ -160,7 +160,11 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
                     pipe_conn.send("OPERATION_REFUSED")
                     continue
 
-                # REQ-SCOPE-B-01: بعد التطهير، أي طلب يتلقى OPERATION_REFUSED قطعاً
+                # معالجة أمر الخروج أولاً لضمان إغلاق العامل بأمان حتى بعد التطهير
+                if msg == "EXIT":
+                    break
+
+                # REQ-SCOPE-B-01: بعد التطهير، أي طلب آخر يتلقى OPERATION_REFUSED قطعاً
                 if is_zeroized:
                     pipe_conn.send("OPERATION_REFUSED")
                     continue
@@ -168,19 +172,14 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
                 if msg == "PING":
                     pipe_conn.send("PONG")
                 elif msg == "COMPUTE":
-                    # عملية تشفير/حساب داخلية تعتمد على المفتاح دون تسريبه
                     digest = hashlib.sha256(key_material).hexdigest()
                     pipe_conn.send({"STATUS": "OK", "DIGEST": digest})
                 elif msg == "ZEROIZE":
-                    # REQ-SCOPE-B-01: التطهير الحاسم والكتابة فوق مخزن المفاتيح بالكامل
                     for i in range(len(key_material)):
                         key_material[i] = 0
                     is_zeroized = True
                     pipe_conn.send("OK_ZEROIZED")
-                elif msg == "EXIT":
-                    break
                 else:
-                    # أي رسالة أو أمر مجهول أو مشوه يُرفض فوراً
                     pipe_conn.send("OPERATION_REFUSED")
 
             if os.getppid() == 1:
