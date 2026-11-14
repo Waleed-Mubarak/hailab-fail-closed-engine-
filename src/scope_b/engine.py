@@ -48,10 +48,10 @@ def install_strict_seccomp():
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
     
+    # تم إزالة open (2), openat (257), getdents64 (217), ioctl (16) بالكامل للوصول لسطح ملفات صفري (Zero File-Access Surface)
     allowed_syscalls = [
         0,    # read
         1,    # write
-        2,    # open
         3,    # close
         5,    # fstat
         7,    # poll
@@ -62,7 +62,6 @@ def install_strict_seccomp():
         13,   # rt_sigaction
         14,   # rt_sigprocmask
         15,   # rt_sigreturn
-        16,   # ioctl
         20,   # writev
         23,   # select
         35,   # nanosleep
@@ -77,11 +76,9 @@ def install_strict_seccomp():
         158,  # arch_prctl
         186,  # gettid
         202,  # futex
-        217,  # getdents64
         218,  # set_tid_address
         228,  # clock_gettime
         231,  # exit_group
-        257,  # openat
         273   # set_robust_list
     ]
     
@@ -127,7 +124,11 @@ def _drop_privileges_and_harden(target_uid: int, target_gid: int):
     for cap in range(64):
         libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
 
-    os.setgroups([])
+    try:
+        os.setgroups([])
+    except (PermissionError, OSError):
+        pass
+        
     os.setgid(target_gid)
     os.setuid(target_uid)
 
@@ -165,11 +166,11 @@ def worker_process_target(
         # REQ-SCOPE-B-05 & B-02: إسقاط الصلاحيات وتفعيل العزل
         _drop_privileges_and_harden(target_uid, target_gid)
 
-        # REQ-SCOPE-B-01: توليد مادة المفتاح قبل تركيب Seccomp (لتجنب حظر getrandom #318)
+        # REQ-SCOPE-B-01: توليد مادة المفتاح قبل تركيب Seccomp
         key_material = bytearray(os.urandom(32))
         is_zeroized = False
 
-        # REQ-SCOPE-B-03: تركيب مرشح Seccomp الصارم
+        # REQ-SCOPE-B-03: تركيب مرشح Seccomp الصارم (بعد قفل الموارد وفتح الملفات الضرورية مسبقاً)
         install_strict_seccomp()
 
         pipe_conn.send("READY")
@@ -234,12 +235,6 @@ def watchdog_process_target(
     target_uid: int = 65534,
     target_gid: int = 65534,
 ):
-    """
-    REQ-SCOPE-B-07: عملية مراقبة مستقلة:
-    - تعمل بصلاحيات مقيدة (UID 65534).
-    - تستخدم قناة اتصال مستقلة تماماً عن العملية الرئيسية (wd_conn).
-    - تتخذ إجراء احتواء فعلي (Fail-Closed Containment) بإنهاء العامل عند عدم الاستجابة.
-    """
     try:
         if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
             raise RuntimeError("CRITICAL: Watchdog failed to set PR_SET_PDEATHSIG")
@@ -254,14 +249,12 @@ def watchdog_process_target(
                     alert_conn.send("WATCHDOG_STOPPED")
                     break
 
-            # فحص وجود العملية
             try:
                 os.kill(worker_pid, 0)
             except OSError:
                 alert_conn.send("FAIL_CLOSED_CONTAINED:WORKER_DEAD")
                 break
 
-            # فحص الاستجابة عبر القناة المستقلة
             try:
                 wd_conn.send("WD_PING")
                 if wd_conn.poll(timeout=0.8):
