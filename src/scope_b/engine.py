@@ -117,7 +117,36 @@ def install_strict_seccomp():
         raise RuntimeError("CRITICAL: Failed to install Seccomp filter")
 
 
-def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target_gid: int = 65534):
+def _drop_privileges_and_harden(target_uid: int, target_gid: int):
+    if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
+        raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
+
+    if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
+        raise RuntimeError("CRITICAL: Failed to set PR_SET_DUMPABLE")
+
+    for cap in range(64):
+        libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
+
+    os.setgroups([])
+    os.setgid(target_gid)
+    os.setuid(target_uid)
+
+    if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
+        raise RuntimeError("CRITICAL: Failed to re-set PR_SET_DUMPABLE after setuid")
+
+    if libc.prctl(PR_GET_DUMPABLE, 0, 0, 0, 0) != 0:
+        raise RuntimeError("CRITICAL: PR_GET_DUMPABLE is not 0")
+
+    verify_capabilities_zeroed()
+    verify_cap_bnd_zero()
+
+
+def worker_process_target(
+    pipe_conn: Connection,
+    wd_conn: Connection = None,
+    target_uid: int = 65534,
+    target_gid: int = 65534,
+):
     try:
         # REQ-SCOPE-B-04: إنهاء العامل فوراً بـ SIGKILL عند موت العملية الأبوية
         if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
@@ -134,40 +163,29 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
             raise RuntimeError(f"CRITICAL: mlockall failed strictly with errno {err}")
 
         # REQ-SCOPE-B-05 & B-02: إسقاط الصلاحيات وتفعيل العزل
-        if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
-            raise RuntimeError("CRITICAL: Failed to set PR_SET_NO_NEW_PRIVS")
+        _drop_privileges_and_harden(target_uid, target_gid)
 
-        if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
-            raise RuntimeError("CRITICAL: Failed to set PR_SET_DUMPABLE")
-
-        for cap in range(64):
-            libc.prctl(PR_CAP_BND_DROP, cap, 0, 0, 0)
-
-        os.setgroups([])
-        os.setgid(target_gid)
-        os.setuid(target_uid)
-
-        if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
-            raise RuntimeError("CRITICAL: Failed to re-set PR_SET_DUMPABLE after setuid")
-
-        dumpable_val = libc.prctl(PR_GET_DUMPABLE, 0, 0, 0, 0)
-        if dumpable_val != 0:
-            raise RuntimeError(f"CRITICAL: PR_GET_DUMPABLE is not 0: {dumpable_val}")
-
-        verify_capabilities_zeroed()
-        verify_cap_bnd_zero()
+        # REQ-SCOPE-B-01: توليد مادة المفتاح قبل تركيب Seccomp (لتجنب حظر getrandom #318)
+        key_material = bytearray(os.urandom(32))
+        is_zeroized = False
 
         # REQ-SCOPE-B-03: تركيب مرشح Seccomp الصارم
         install_strict_seccomp()
 
-        # REQ-SCOPE-B-01: توليد مادة المفتاح حصرياً داخل العامل وعزلها
-        key_material = bytearray(os.urandom(32))
-        is_zeroized = False
-
         pipe_conn.send("READY")
 
         while True:
-            if pipe_conn.poll(timeout=0.2):
+            # 1. معالجة قناة مراقبة الـ Watchdog المستقلة (REQ-SCOPE-B-07)
+            if wd_conn is not None and wd_conn.poll(timeout=0.05):
+                try:
+                    wd_msg = wd_conn.recv()
+                    if wd_msg == "WD_PING":
+                        wd_conn.send("WD_PONG")
+                except Exception:
+                    pass
+
+            # 2. معالجة قناة الأوامر الرئيسية
+            if pipe_conn.poll(timeout=0.1):
                 try:
                     msg = pipe_conn.recv()
                 except Exception:
@@ -208,9 +226,27 @@ def worker_process_target(pipe_conn: Connection, target_uid: int = 65534, target
         _sys.exit(77)
 
 
-def watchdog_process_target(worker_pid: int, pipe_conn: Connection, alert_conn: Connection, interval: float = 0.2):
-    """REQ-SCOPE-B-07: عملية مراقبة مستقلة تراقب نبض العامل وتُطلق إنذاراً أو تُنهي المراقبة عند التوقف."""
+def watchdog_process_target(
+    worker_pid: int,
+    wd_conn: Connection,
+    alert_conn: Connection,
+    interval: float = 0.2,
+    target_uid: int = 65534,
+    target_gid: int = 65534,
+):
+    """
+    REQ-SCOPE-B-07: عملية مراقبة مستقلة:
+    - تعمل بصلاحيات مقيدة (UID 65534).
+    - تستخدم قناة اتصال مستقلة تماماً عن العملية الرئيسية (wd_conn).
+    - تتخذ إجراء احتواء فعلي (Fail-Closed Containment) بإنهاء العامل عند عدم الاستجابة.
+    """
     try:
+        if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
+            raise RuntimeError("CRITICAL: Watchdog failed to set PR_SET_PDEATHSIG")
+
+        _drop_privileges_and_harden(target_uid, target_gid)
+        alert_conn.send("WATCHDOG_READY")
+
         while True:
             if alert_conn.poll(timeout=0.05):
                 cmd = alert_conn.recv()
@@ -218,29 +254,50 @@ def watchdog_process_target(worker_pid: int, pipe_conn: Connection, alert_conn: 
                     alert_conn.send("WATCHDOG_STOPPED")
                     break
 
+            # فحص وجود العملية
             try:
                 os.kill(worker_pid, 0)
             except OSError:
-                alert_conn.send("WORKER_DEAD")
+                alert_conn.send("FAIL_CLOSED_CONTAINED:WORKER_DEAD")
                 break
 
+            # فحص الاستجابة عبر القناة المستقلة
             try:
-                pipe_conn.send("PING")
-                if pipe_conn.poll(timeout=1.0):
-                    resp = pipe_conn.recv()
-                    if resp != "PONG":
-                        alert_conn.send("WORKER_UNRESPONSIVE")
+                wd_conn.send("WD_PING")
+                if wd_conn.poll(timeout=0.8):
+                    resp = wd_conn.recv()
+                    if resp != "WD_PONG":
+                        try:
+                            os.kill(worker_pid, signal.SIGKILL)
+                        except OSError:
+                            pass
+                        alert_conn.send("FAIL_CLOSED_CONTAINED:INVALID_RESPONSE")
                         break
                 else:
-                    alert_conn.send("WORKER_TIMEOUT")
+                    try:
+                        os.kill(worker_pid, signal.SIGKILL)
+                    except OSError:
+                        pass
+                    alert_conn.send("FAIL_CLOSED_CONTAINED:TIMEOUT")
                     break
             except Exception:
-                alert_conn.send("PIPE_BROKEN")
+                try:
+                    os.kill(worker_pid, signal.SIGKILL)
+                except OSError:
+                    pass
+                alert_conn.send("FAIL_CLOSED_CONTAINED:PIPE_ERROR")
                 break
 
             time.sleep(interval)
-    except Exception:
-        pass
+    except Exception as e:
+        try:
+            os.kill(worker_pid, signal.SIGKILL)
+        except OSError:
+            pass
+        try:
+            alert_conn.send(f"WATCHDOG_ERROR:{e}")
+        except Exception:
+            pass
 
 
 class ScopeBEngine:
