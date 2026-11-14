@@ -97,23 +97,19 @@ def test_scope_b_01_zeroization_lifecycle():
         msg = parent_conn.recv()
         assert msg == "READY"
 
-        # (i) اختبار نجاح العمليات قبل التطهير
         parent_conn.send("COMPUTE")
         assert parent_conn.poll(timeout=2.0), "CRITICAL: Worker did not respond to COMPUTE."
         resp = parent_conn.recv()
         assert isinstance(resp, dict) and resp.get("STATUS") == "OK", f"Compute failed before zeroization: {resp}"
 
-        # اختبار إرسال أمر مجهول أو مشوه و التأكد من رفضه بـ OPERATION_REFUSED
         parent_conn.send("MALFORMED_COMMAND")
         assert parent_conn.poll(timeout=2.0)
         assert parent_conn.recv() == "OPERATION_REFUSED"
 
-        # (ii) تنفيذ التطهير (Zeroization)
         parent_conn.send("ZEROIZE")
         assert parent_conn.poll(timeout=2.0)
         assert parent_conn.recv() == "OK_ZEROIZED"
 
-        # (iii) التأكد من رفض أي طلبات لاحقة (متكررة أو مشوهة) بعد التطهير
         parent_conn.send("COMPUTE")
         assert parent_conn.poll(timeout=2.0)
         assert parent_conn.recv() == "OPERATION_REFUSED"
@@ -126,6 +122,36 @@ def test_scope_b_01_zeroization_lifecycle():
         p.join(timeout=3.0)
         assert p.exitcode == 0
 
+    finally:
+        if p.is_alive():
+            p.terminate()
+            p.join()
+
+
+def test_scope_b_02_mem_access_denied():
+    parent_conn, worker_conn = multiprocessing.Pipe()
+    p = multiprocessing.Process(target=worker_process_target, args=(worker_conn,))
+    p.start()
+    
+    try:
+        assert parent_conn.poll(timeout=5.0)
+        assert parent_conn.recv() == "READY"
+        
+        pid = p.pid
+        mem_path = f"/proc/{pid}/mem"
+        
+        access_denied = False
+        try:
+            with open(mem_path, "rb") as mem_file:
+                mem_file.read(100)
+        except (PermissionError, OSError):
+            access_denied = True
+
+        assert access_denied, "CRITICAL: Successfully read /proc/<pid>/mem of isolated worker! Dump isolation failed (B-02)."
+
+        parent_conn.send("EXIT")
+        p.join(timeout=3.0)
+        assert p.exitcode == 0
     finally:
         if p.is_alive():
             p.terminate()
