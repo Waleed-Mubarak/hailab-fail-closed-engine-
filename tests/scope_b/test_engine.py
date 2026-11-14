@@ -11,7 +11,15 @@ try:
 except RuntimeError:
     pass
 
-from src.scope_b.engine import worker_process_target, install_strict_seccomp, libc, MCL_CURRENT, MCL_FUTURE
+from src.scope_b.engine import (
+    worker_process_target,
+    watchdog_process_target,
+    install_strict_seccomp,
+    libc,
+    MCL_CURRENT,
+    MCL_FUTURE,
+)
+
 
 def test_scope_b_kernel_state_enforcement():
     parent_conn, worker_conn = multiprocessing.Pipe()
@@ -94,8 +102,7 @@ def test_scope_b_01_zeroization_lifecycle():
     
     try:
         assert parent_conn.poll(timeout=5.0), "CRITICAL: Worker failed to start"
-        msg = parent_conn.recv()
-        assert msg == "READY"
+        assert parent_conn.recv() == "READY"
 
         parent_conn.send("COMPUTE")
         assert parent_conn.poll(timeout=2.0), "CRITICAL: Worker did not respond to COMPUTE."
@@ -222,3 +229,87 @@ def test_mlockall_failure():
         if p.is_alive():
             p.terminate()
             p.join()
+
+
+def _parent_spawner_for_pdeathsig(child_pid_conn):
+    _, worker_conn = multiprocessing.Pipe()
+    w = multiprocessing.Process(target=worker_process_target, args=(worker_conn,))
+    w.start()
+    child_pid_conn.send(w.pid)
+    time.sleep(10)
+
+
+def test_worker_process_unexpected_termination():
+    """REQ-SCOPE-B-04: التحقق من أن PR_SET_PDEATHSIG يقتل العامل فوراً بـ SIGKILL عند موت العملية الأب."""
+    parent_info_conn, child_info_conn = multiprocessing.Pipe()
+    intermediate_parent = multiprocessing.Process(target=_parent_spawner_for_pdeathsig, args=(child_info_conn,))
+    intermediate_parent.start()
+    
+    worker_pid = None
+    try:
+        assert parent_info_conn.poll(timeout=5.0), "Failed to receive worker PID"
+        worker_pid = parent_info_conn.recv()
+        time.sleep(0.5)
+
+        # قتل العملية الأبوية الوسيطة فجأة بـ SIGKILL
+        os.kill(intermediate_parent.pid, signal.SIGKILL)
+        intermediate_parent.join(timeout=3.0)
+
+        # التحقق من أن العامل الفرعي قد قُتل تلقائياً بواسطة النواة (PR_SET_PDEATHSIG)
+        time.sleep(0.3)
+        worker_alive = True
+        try:
+            os.kill(worker_pid, 0)
+        except OSError:
+            worker_alive = False
+
+        assert not worker_alive, f"CRITICAL: Worker (PID {worker_pid}) survived parent death!"
+    finally:
+        if intermediate_parent.is_alive():
+            intermediate_parent.terminate()
+            intermediate_parent.join()
+        if worker_pid:
+            try:
+                os.kill(worker_pid, signal.SIGKILL)
+            except OSError:
+                pass
+
+
+def test_scope_b_07_watchdog_monitoring():
+    """REQ-SCOPE-B-07: اختبار عملية المراقبة المستقلة Watchdog واكتشافها لموت أو توقف العامل."""
+    parent_conn, worker_conn = multiprocessing.Pipe()
+    w = multiprocessing.Process(target=worker_process_target, args=(worker_conn,))
+    w.start()
+    
+    wd_alert_parent, wd_alert_child = multiprocessing.Pipe()
+    wd = None
+    try:
+        assert parent_conn.poll(timeout=5.0)
+        assert parent_conn.recv() == "READY"
+
+        wd = multiprocessing.Process(
+            target=watchdog_process_target,
+            args=(w.pid, parent_conn, wd_alert_child, 0.2),
+        )
+        wd.start()
+
+        # السماح للـ Watchdog بإجراء عدة دورات فحص PING/PONG ناجحة
+        time.sleep(0.7)
+        assert wd.is_alive(), "CRITICAL: Watchdog died unexpectedly while worker is healthy."
+
+        # إيقاف المراقب بأمان ثم إغلاق العامل
+        wd_alert_parent.send("STOP_WATCHDOG")
+        assert wd_alert_parent.poll(timeout=2.0)
+        assert wd_alert_parent.recv() == "WATCHDOG_STOPPED"
+        wd.join(timeout=2.0)
+
+        parent_conn.send("EXIT")
+        w.join(timeout=3.0)
+        assert w.exitcode == 0
+    finally:
+        if wd and wd.is_alive():
+            wd.terminate()
+            wd.join()
+        if w.is_alive():
+            w.terminate()
+            w.join()
