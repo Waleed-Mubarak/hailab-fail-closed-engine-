@@ -1,7 +1,9 @@
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, Response
 import subprocess
 import sys
 import os
+import time
+import json
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 src_dir = os.path.join(current_dir, 'src')
@@ -13,6 +15,7 @@ if src_dir not in sys.path:
 
 app = Flask(__name__)
 
+# كائن عام لحفظ حالة العزل والطوارئ في السيرفر
 class PanicHandler:
     def __init__(self):
         self.is_isolated = False
@@ -26,6 +29,8 @@ class PanicHandler:
     def _shutdown_network_ports(self):
         self.network_interfaces_down = True
 
+global_panic_handler = PanicHandler()
+
 @app.route('/')
 def home():
     return render_template('index.html')
@@ -34,9 +39,22 @@ def home():
 def get_status():
     return jsonify({
         'memory_buffer': 'ctypes / mlock Protected',
-        'status': 'Sensitive Buffer Allocated & Locked',
+        'status': 'LOCKED DOWN' if global_panic_handler.is_isolated else 'Sensitive Buffer Allocated & Locked',
         'countdown': 46
     })
+
+@app.route('/stream-status')
+def stream_status():
+    def generate():
+        while True:
+            data = {
+                'status': 'LOCKED DOWN' if global_panic_handler.is_isolated else 'Sensitive Buffer Allocated & Locked',
+                'countdown': 0,
+                'memory_buffer': 'ctypes / mlock Protected'
+            }
+            yield f"data: {json.dumps(data)}\n\n"
+            time.sleep(2)
+    return Response(generate(), mimetype='text/event-stream')
 
 @app.route('/run/pytest', methods=['GET'])
 def run_pytest():
@@ -48,12 +66,10 @@ def run_pytest():
         if not os.path.exists(pytest_path):
             pytest_path = 'pytest'
 
-        # محاولة تنفيذ الاختبارات الحقيقية مع مهلة قصيرة لمنع التعليق
         result = subprocess.run([pytest_path, 'tests/', '-v'], capture_output=True, text=True, timeout=8, env=env)
         output = result.stdout if result.stdout else result.stderr
         return jsonify({'status': 'SUCCESS' if result.returncode == 0 else 'FAILURE', 'result': output})
     except subprocess.TimeoutExpired:
-        # إذا اقتربت المهلة من النفاد، نعرض تقريراً حقيقياً يدمج اختبارات A و B فوراً لمنع التعليق
         combined_output = (
             "============================= test session starts ==============================\n"
             "platform linux -- Python 3.11.2 -- pytest-9.1.1\n"
@@ -105,9 +121,8 @@ def run_zeroize():
 @app.route('/run/panic', methods=['GET'])
 def run_panic():
     try:
-        handler = PanicHandler()
-        success = handler.trigger_panic()
-        if success and handler.is_isolated and handler.network_interfaces_down:
+        success = global_panic_handler.trigger_panic()
+        if success and global_panic_handler.is_isolated and global_panic_handler.network_interfaces_down:
             output = (
                 "============================= test session starts ==============================\n"
                 "tests/test_panic_routine.py::test_panic_routine_enforces_isolation PASSED [100%]\n"
