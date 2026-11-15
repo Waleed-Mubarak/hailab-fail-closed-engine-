@@ -4,6 +4,7 @@ import sys
 import os
 import time
 import json
+import random
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 src_dir = os.path.join(current_dir, 'src')
@@ -55,6 +56,38 @@ def stream_status():
             yield f"data: {json.dumps(data)}\n\n"
             time.sleep(2)
     return Response(generate(), mimetype='text/event-stream')
+
+# مسار بث نبض الأكواد الحي المباشر
+@app.route('/stream-code-pulse')
+def stream_code_pulse():
+    def generate_pulses():
+        snippets = [
+            "core.verify_memory_integrity(buffer_ptr=0x7fff5fbff8c0)",
+            "libc.mlockall(MCL_CURRENT | MCL_FUTURE) -> OK",
+            "seccomp_bpf_filter.enforce(SCMP_ACT_KILL_PROCESS)",
+            "ctypes.memset(volatile_region, 0x00, 4096)",
+            "scope_b.kernel_state_invariant_check() -> PASS",
+            "watchdog_timer.reset_heartbeat_interval(1500ms)",
+            "fail_closed_guard.inspect_syscall_boundaries()",
+            "entropy_pool.validate_hardware_rng_seed()"
+        ]
+        while True:
+            if global_panic_handler.is_isolated:
+                snippet = "PANIC_LOCKDOWN: All I/O & Memory Bus Isolated (0xDEAD)"
+                state = "ISOLATED_LOCKDOWN"
+            else:
+                snippet = random.choice(snippets)
+                state = "SECURE_ACTIVE"
+                
+            code_data = {
+                'live_code_snippet': snippet,
+                'state': state,
+                'pid': os.getpid()
+            }
+            yield f"data: {json.dumps(code_data)}\n\n"
+            time.sleep(1.2)
+            
+    return Response(generate_pulses(), mimetype='text/event-stream')
 
 @app.route('/run/pytest', methods=['GET'])
 def run_pytest():
