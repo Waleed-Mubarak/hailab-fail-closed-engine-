@@ -42,10 +42,13 @@ def get_status():
 def run_pytest():
     try:
         env = os.environ.copy()
-        # إضافة مجلد src ومجلد المشروع الحالي معاً إلى مسار PYTHONPATH
         env["PYTHONPATH"] = f"{src_dir}:{current_dir}"
         
-        result = subprocess.run([sys.executable, '-m', 'pytest', 'tests/', '-v'], capture_output=True, text=True, timeout=60, env=env)
+        pytest_path = os.path.join(current_dir, 'venv', 'bin', 'pytest')
+        if not os.path.exists(pytest_path):
+            pytest_path = 'pytest'
+
+        result = subprocess.run([pytest_path, 'tests/', '-v'], capture_output=True, text=True, timeout=60, env=env)
         output = result.stdout if result.stdout else result.stderr
         return jsonify({'status': 'SUCCESS' if result.returncode == 0 else 'FAILURE', 'result': output})
     except Exception as e:
@@ -55,10 +58,13 @@ def run_pytest():
 def run_fuzz():
     try:
         env = os.environ.copy()
-        # إضافة مجلد src ومجلد المشروع الحالي معاً إلى مسار PYTHONPATH
         env["PYTHONPATH"] = f"{src_dir}:{current_dir}"
         
-        result = subprocess.run([sys.executable, '-m', 'pytest', '-k', 'fuzz', '-v'], capture_output=True, text=True, timeout=60, env=env)
+        pytest_path = os.path.join(current_dir, 'venv', 'bin', 'pytest')
+        if not os.path.exists(pytest_path):
+            pytest_path = 'pytest'
+
+        result = subprocess.run([pytest_path, '-k', 'fuzz', '-v'], capture_output=True, text=True, timeout=60, env=env)
         output = result.stdout if result.stdout else result.stderr
         return jsonify({'status': 'SUCCESS', 'result': output if output else 'Fuzz tests executed successfully.'})
     except Exception as e:
@@ -96,4 +102,4 @@ def run_panic():
         return jsonify({'status': 'ERROR', 'result': f"CRITICAL ERROR: {str(e)}"}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8501, debug=True)
+    app.run(host='0.0.0.0', port=8501, debug=False, threaded=True)
