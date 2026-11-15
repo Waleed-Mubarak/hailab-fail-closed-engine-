@@ -48,40 +48,28 @@ def run_pytest():
         if not os.path.exists(pytest_path):
             pytest_path = 'pytest'
 
-        # تشغيل سريع وآمن مع مهلة قصيرة لمنع تعليق الخادم
-        result = subprocess.run([pytest_path, 'tests/', '-v'], capture_output=True, text=True, timeout=10, env=env)
+        # تشغيل شامل وحقيقي لجميع ملفات الاختبار (الأساسية + scope_b) معاً
+        result = subprocess.run([pytest_path, 'tests/', '-v'], capture_output=True, text=True, timeout=20, env=env)
         output = result.stdout if result.stdout else result.stderr
         return jsonify({'status': 'SUCCESS' if result.returncode == 0 else 'FAILURE', 'result': output})
     except subprocess.TimeoutExpired:
-        # استجابة فورية في حال تجاوز الوقت لكي لا يتقطع الاتصال
-        fallback_output = (
-            "============================= test session starts ==============================\n"
-            "platform linux -- Python 3.x -- pytest\n"
-            "rootdir: " + current_dir + "\n"
-            "collected items via scope_b & core tests\n\n"
-            "tests/scope_b/test_engine.py::test_fail_closed_initialization PASSED [ 50%]\n"
-            "tests/test_panic_routine.py::test_panic_routine_enforces_isolation PASSED [100%]\n\n"
-            "============================== All passed successfully =========================\n"
-            "Pytest Suite Executed Successfully (Optimized Instant Response)."
-        )
-        return jsonify({'status': 'SUCCESS', 'result': fallback_output})
+        return jsonify({'status': 'ERROR', 'result': 'Execution Timeout: All tests suite took longer than expected.'}), 500
     except Exception as e:
         return jsonify({'status': 'ERROR', 'result': str(e)}), 500
 
 @app.route('/run/fuzz', methods=['GET'])
 def run_fuzz():
     try:
-        output = (
-            "============================= test session starts ==============================\n"
-            "platform linux -- Python 3.x -- pytest-7.x.x\n"
-            "rootdir: " + current_dir + "\n"
-            "collected 2 items\n\n"
-            "tests/test_fuzz.py::test_fuzz_boundary_inputs PASSED                [ 50%]\n"
-            "tests/test_fuzz.py::test_fuzz_malformed_payloads PASSED             [100%]\n\n"
-            "============================== 2 passed in 0.02s ===============================\n"
-            "Fuzz Tests Executed Successfully: Input Boundaries Validated."
-        )
-        return jsonify({'status': 'SUCCESS', 'result': output})
+        env = os.environ.copy()
+        env["PYTHONPATH"] = f"{src_dir}:{current_dir}"
+        
+        pytest_path = os.path.join(current_dir, 'venv', 'bin', 'pytest')
+        if not os.path.exists(pytest_path):
+            pytest_path = 'pytest'
+
+        result = subprocess.run([pytest_path, 'tests/test_fuzz.py', '-v'], capture_output=True, text=True, timeout=10, env=env)
+        output = result.stdout if result.stdout else result.stderr
+        return jsonify({'status': 'SUCCESS' if result.returncode == 0 else 'FAILURE', 'result': output})
     except Exception as e:
         return jsonify({'status': 'ERROR', 'result': str(e)}), 500
 
