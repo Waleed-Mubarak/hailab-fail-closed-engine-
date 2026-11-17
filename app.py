@@ -32,8 +32,9 @@ class SecureMemoryBuffer:
         if self.is_purged:
             return "00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00 [ZEROIZED]"
         
-        bytes_list = [f"{ord(c):02x}" for c in self.buffer[:16]]
-        return " ".join(bytes_list) + "  " + " ".join([f"{ord(c):02x}" for c in self.buffer[16:]]) + " [LOCKED RAM]"
+        # قراءة القيم مباشرة وتنسيقها كـ hex لتجنب مشكلة ord() مع ctypes
+        bytes_list = [f"{b:02x}" for b in self.buffer[:16]]
+        return " ".join(bytes_list) + "  " + " ".join([f"{b:02x}" for b in self.buffer[16:]]) + " [LOCKED RAM]"
 
     def zeroize(self):
         # التطهير الحتمي الفوري للذاكرة عبر تجاوز الذاكرة بأصفار
@@ -70,7 +71,7 @@ def get_status():
         'countdown': 46
     })
 
-# مسار جديد كلياً: جلب تفريغ الذاكرة الحي الحقيقي (Hex-Dump)
+# مسار جلب تفريغ الذاكرة الحي الحقيقي (Hex-Dump)
 @app.route('/memory-hex', methods=['GET'])
 def get_memory_hex():
     return jsonify({
@@ -180,7 +181,6 @@ def run_fuzz():
 @app.route('/run/zeroize', methods=['GET'])
 def run_zeroize():
     try:
-        # تنفيذ التطهير الحقيقي على buffer الذاكرة
         memory_store.zeroize()
         return jsonify({
             'status': 'SUCCESS', 
@@ -193,7 +193,7 @@ def run_zeroize():
 def run_panic():
     try:
         success = global_panic_handler.trigger_panic()
-        memory_store.zeroize() # تطهير فوري للذاكرة عند الطوارئ
+        memory_store.zeroize()
         if success and global_panic_handler.is_isolated:
             output = (
                 "============================= KERNEL PANIC TRIGGERED ============================\n"
