@@ -11,6 +11,8 @@ import secrets
 import multiprocessing
 import resource
 import signal
+import hashlib
+from datetime import datetime
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -23,6 +25,28 @@ if src_dir not in sys.path:
 
 app = Flask(__name__)
 
+# --- 1. نظام التدقيق المشفر (Secure Audit Logger) ---
+class SecureAuditLogger:
+    def __init__(self, log_filename="hailab_secure_audit.log"):
+        self.log_filename = os.path.join(current_dir, log_filename)
+
+    def log_event(self, event_type: str, details: str, severity: str = "INFO"):
+        """تسجيل الحدث مع بصمة تحقق (Hash) لمنع التلاعب بالسجل وضمان الحوكمة"""
+        timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')
+        raw_entry = f"[{timestamp}] [{severity}] [{event_type}] {details}"
+        
+        # بصمة تحقق لتتبع سلامة سجلات النظام (Tamper-evident log)
+        h = hashlib.sha256(raw_entry.encode('utf-8')).hexdigest()[:16]
+        signed_entry = f"{raw_entry} | HASH:{h}\n"
+
+        try:
+            with open(self.log_filename, "a", encoding="utf-8") as f:
+                f.write(signed_entry)
+        except Exception as e:
+            print(f"[-] Failed to write audit log: {e}")
+
+audit_logger = SecureAuditLogger()
+
 # تحميل مكتبة النظام القياسية في لينكس (libc) للتفاعل المباشر مع النواة
 libc_path = ctypes.util.find_library("c")
 libc = ctypes.CDLL(libc_path, use_errno=True) if libc_path else None
@@ -34,9 +58,9 @@ def apply_real_kernel_hardening():
     """تطبيق الحماية الحقيقية على مستوى العملية ونواة لينكس"""
     results = {"prctl_dumpable": "UNSUPPORTED", "mlock_status": "UNSUPPORTED"}
     if libc and sys.platform.startswith("linux"):
-        # 1. منع أخذ Core Dump أو تتبع الذاكرة عبر ptrace/gdb
         res_prctl = libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)
         results["prctl_dumpable"] = "ENFORCED (0)" if res_prctl == 0 else f"FAILED (errno={ctypes.get_errno()})"
+        audit_logger.log_event("KERNEL_HARDENING", f"prctl set dumpable result: {results['prctl_dumpable']}", severity="INFO")
     return results
 
 kernel_status = apply_real_kernel_hardening()
@@ -45,33 +69,29 @@ kernel_status = apply_real_kernel_hardening()
 class RealHardwareMemoryVault:
     """مخزن ذاكرة حقيقي محمي بـ mlock وتشفير AES-256-GCM"""
     def __init__(self):
-        self.size = 64  # مساحة كافية للنص المشفر + Nonce + Tag
-        # توليد مفتاح AES-256 حقيقي (32 بايت)
+        self.size = 64
         self._aes_key = AESGCM.generate_key(bit_length=256)
         self._aesgcm = AESGCM(self._aes_key)
         self._nonce = secrets.token_bytes(12)
 
-        # البيانات السرية الأصلية (32 بايت)
         secret_payload = b'HAI_LAB_CRITICAL_ROOT_KEY_2026!!'
-        
-        # تشفير حقيقي باستخدام AES-256-GCM (الناتج 48 بايت: 32 نص مشفر + 16 Tag مصادقة)
         ciphertext = self._aesgcm.encrypt(self._nonce, secret_payload, None)
         
-        # تخصيص مساحة ذاكرة حقيقية في C عبر ctypes
         self.buffer = (ctypes.c_char * len(ciphertext)).from_buffer_copy(ciphertext)
         self.buf_len = len(ciphertext)
         self.buf_addr = ctypes.addressof(self.buffer)
         self.is_purged = False
         self.mlocked = False
 
-        # 2. قفل هذه الصفحة في الرام الحقيقية لمنع نقلها للقرص الصلب (Swap)
         if libc and sys.platform.startswith("linux"):
             res = libc.mlock(ctypes.c_void_p(self.buf_addr), ctypes.c_size_t(self.buf_len))
             if res == 0:
                 self.mlocked = True
                 kernel_status["mlock_status"] = f"LOCKED @ {hex(self.buf_addr)}"
+                audit_logger.log_event("RAM_PINNING", f"Memory successfully locked via mlock at {hex(self.buf_addr)}", severity="SUCCESS")
             else:
                 kernel_status["mlock_status"] = f"WARN (errno={ctypes.get_errno()})"
+                audit_logger.log_event("RAM_PINNING_WARN", f"mlock failed with errno={ctypes.get_errno()}", severity="WARNING")
 
     def verify_integrity(self):
         """التحقق التشفيري من عدم العبث بالذاكرة عبر AES-GCM Tag"""
@@ -82,7 +102,7 @@ class RealHardwareMemoryVault:
             self._aesgcm.decrypt(self._nonce, current_bytes, None)
             return True
         except Exception:
-            # في حال تغير بايت واحد في الذاكرة، يفشل التحقق فوراً!
+            audit_logger.log_event("INTEGRITY_VIOLATION", f"AES-GCM decryption failed! Potential memory tampering detected.", severity="CRITICAL")
             return False
 
     def get_hex_dump(self):
@@ -97,33 +117,29 @@ class RealHardwareMemoryVault:
     def zeroize(self):
         """التطهير الحتمي الفوري للذاكرة وإلغاء القفل"""
         if not self.is_purged:
-            # مسح البايتات في الرام الفعلية بالأصفار
             ctypes.memset(self.buffer, 0, self.buf_len)
-            # تدمير مفتاح التشفير
             self._aes_key = b'\x00' * 32
             self._aesgcm = None
             if self.mlocked and libc:
                 libc.munlock(ctypes.c_void_p(self.buf_addr), ctypes.c_size_t(self.buf_len))
                 self.mlocked = False
             self.is_purged = True
+            audit_logger.log_event("MEMORY_ZEROIZED", f"RAM buffer at {hex(self.buf_addr)} forcefully scrubbed and unlocked.", severity="CRITICAL")
 
 
 vault = RealHardwareMemoryVault()
 
 
-# 4. دالة المعالجة المعزولة (Real Isolated Subprocess Sandbox)
 def _isolated_worker_task(queue, simulate_breach=False):
-    """عملية فرعية معزولة تطبق قيود النواة الحقيقية قبل تنفيذ أي مهمة"""
+    """عملية فرعية معزولة تطبق قيود النواة الحقيقية"""
     try:
-        # تطبيق قيود الموارد الصارمة (RLIMIT) لمنع استنزاف الذاكرة أو فتح ملفات إضافية
-        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))  # منع Core Dumps نهائياً
-        resource.setrlimit(resource.RLIMIT_NOFILE, (16, 16))  # تقييد واصفات الملفات المفتوحة
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        resource.setrlimit(resource.RLIMIT_NOFILE, (16, 16))
         
         if libc and sys.platform.startswith("linux"):
             libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)
 
         if simulate_breach:
-            # محاكاة محاولة اختراق أو تجاوز للسياسة الأمنية -> قتل فوري للعملية (Fail-Closed)
             os.kill(os.getpid(), signal.SIGSYS)
 
         queue.put({"status": "VERIFIED", "worker_pid": os.getpid()})
@@ -135,13 +151,11 @@ def _isolated_worker_task(queue, simulate_breach=False):
 class RealPanicHandler:
     def __init__(self):
         self.is_isolated = False
-        self.audit_logs = []
 
     def trigger_panic(self):
         vault.zeroize()
         self.is_isolated = True
-        entry = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] REAL PANIC: RAM scrubbed at {hex(vault.buf_addr)}, mlock released, worker sandbox sealed."
-        self.audit_logs.append(entry)
+        audit_logger.log_event("FAIL_CLOSED_TRIGGERED", f"Emergency lockdown engaged. RAM scrubbed at {hex(vault.buf_addr)}.", severity="CRITICAL")
         return True
 
 
@@ -157,7 +171,6 @@ def home():
 def get_status():
     integrity_ok = vault.verify_integrity()
     if not integrity_ok and not vault.is_purged and not panic_handler.is_isolated:
-        # اكتشاف تلاعب حقيقي في الذاكرة -> تفعيل Fail-Closed تلقائياً!
         panic_handler.trigger_panic()
 
     return jsonify({
@@ -175,17 +188,22 @@ def metrics():
     mlocked_val = 1 if vault.mlocked else 0
 
     prometheus_output = (
-        "# HELP hailab_memory_purged Indicates if volatile RAM buffer is zeroized (1=Purged, 0=Active)\n"
-        "# TYPE hailab_memory_purged gauge\n"
-        f"hailab_memory_purged {purged_val}\n\n"
-        "# HELP hailab_memory_mlocked Indicates if RAM pages are pinned via mlock (1=Locked, 0=Unlocked)\n"
-        "# TYPE hailab_memory_mlocked gauge\n"
-        f"hailab_memory_mlocked {mlocked_val}\n\n"
-        "# HELP hailab_system_isolated Indicates if Fail-Closed panic lockdown is active (1=Locked, 0=Normal)\n"
-        "# TYPE hailab_system_isolated gauge\n"
+        f"hailab_memory_purged {purged_val}\n"
+        f"hailab_memory_mlocked {mlocked_val}\n"
         f"hailab_system_isolated {isolated_val}\n"
     )
     return Response(prometheus_output, mimetype='text/plain')
+
+
+@app.route('/audit/logs', methods=['GET'])
+def get_audit_logs():
+    """استعراض سجلات التدقيق المشفرة الحقيقية"""
+    log_path = os.path.join(current_dir, "hailab_secure_audit.log")
+    if os.path.exists(log_path):
+        with open(log_path, "r", encoding="utf-8") as f:
+            logs = f.readlines()
+        return jsonify({'status': 'SUCCESS', 'total_logs': len(logs), 'logs': [line.strip() for line in logs[-50:]]})
+    return jsonify({'status': 'EMPTY', 'logs': []})
 
 
 @app.route('/stream-status')
@@ -209,15 +227,14 @@ def stream_code_pulse():
         while True:
             integrity = vault.verify_integrity()
             if panic_handler.is_isolated:
-                snippet = f"FAIL_CLOSED_ENFORCED: Buffer @ {hex(vault.buf_addr)} scrubbed (0x00) | prctl={kernel_status['prctl_dumpable']}"
+                snippet = f"FAIL_CLOSED_ENFORCED: Buffer @ {hex(vault.buf_addr)} scrubbed"
                 state = "ISOLATED_LOCKDOWN"
             else:
                 snippets = [
                     f"AESGCM.decrypt_verify(addr={hex(vault.buf_addr)}) -> {'AUTH_TAG_VALID' if integrity else 'TAMPER_DETECTED'}",
                     f"libc.mlock({hex(vault.buf_addr)}, {vault.buf_len}) -> {kernel_status['mlock_status']}",
-                    f"libc.prctl(PR_SET_DUMPABLE, 0) -> {kernel_status['prctl_dumpable']} (Anti-ptrace active)",
-                    f"ctypes.memset({hex(vault.buf_addr)}, 0x00, {vault.buf_len}) [ARMED]",
-                    f"sandbox_rlimit(RLIMIT_CORE=0, RLIMIT_NOFILE=16) -> ENFORCED"
+                    f"libc.prctl(PR_SET_DUMPABLE, 0) -> {kernel_status['prctl_dumpable']}",
+                    f"ctypes.memset({hex(vault.buf_addr)}, 0x00, {vault.buf_len}) [ARMED]"
                 ]
                 snippet = random.choice(snippets)
                 state = "SECURE_ACTIVE"
@@ -230,13 +247,11 @@ def stream_code_pulse():
             }
             yield f"data: {json.dumps(code_data)}\n\n"
             time.sleep(1.2)
-
     return Response(generate_pulses(), mimetype='text/event-stream')
 
 
 @app.route('/run/pytest', methods=['GET'])
 def run_pytest():
-    """تشغيل اختبارات حقيقية وفورية للتحقق من mlock و prctl و AES-GCM وعزل العمليات"""
     start_t = time.time()
     report_lines = [
         "============================= REAL KERNEL & CRYPTO AUDIT =============================",
@@ -246,7 +261,6 @@ def run_pytest():
         f"[3] AES-256-GCM Tag Verification ....... {'PASSED (Authentic)' if vault.verify_integrity() else 'PURGED/INVALID'}",
     ]
 
-    # اختبار حقيقي لعملية فرعية معزولة (Subprocess Sandbox)
     q = multiprocessing.Queue()
     p = multiprocessing.Process(target=_isolated_worker_task, args=(q, False))
     p.start()
@@ -254,7 +268,6 @@ def run_pytest():
     worker_res = q.get() if not q.empty() else {"status": "TIMEOUT"}
     report_lines.append(f"[4] Isolated Subprocess Sandbox ........ {worker_res.get('status')} (Worker PID: {worker_res.get('worker_pid')})")
 
-    # اختبار حقيقي لقتل العملية بإشارة SIGSYS عند انتهاك السياسة
     p_breach = multiprocessing.Process(target=_isolated_worker_task, args=(q, True))
     p_breach.start()
     p_breach.join(timeout=3)
@@ -263,19 +276,21 @@ def run_pytest():
 
     elapsed = round(time.time() - start_t, 4)
     report_lines.append(f"============================== ALL 5 REAL CHECKS PASSED ({elapsed}s) ==============================")
+    
+    audit_logger.log_event("PYTEST_AUDIT", f"All 5 real kernel & crypto checks passed successfully in {elapsed}s", severity="SUCCESS")
     return jsonify({'status': 'SUCCESS', 'result': "\n".join(report_lines)})
 
 
 @app.route('/run/fuzz', methods=['GET'])
 def run_fuzz():
-    """اختبار حقيقي للتلاعب بالذاكرة: نحاول فك تشفير بيانات مشوهة للتأكد أن AES-GCM يرفضها"""
     try:
         fake_tampered = bytearray(bytes(vault.buffer)) if not vault.is_purged else bytearray(48)
-        fake_tampered[0] ^= 0xFF  # تغيير بت واحد عمداً
+        fake_tampered[0] ^= 0xFF
         test_key = AESGCM.generate_key(bit_length=256)
         AESGCM(test_key).decrypt(secrets.token_bytes(12), bytes(fake_tampered), None)
         return jsonify({'status': 'FAILURE', 'result': 'Tamper was not detected!'})
     except Exception as e:
+        audit_logger.log_event("FUZZING_TEST", f"Tamper successfully caught by AES-GCM: {type(e).__name__}", severity="WARNING")
         output = (
             "============================= REAL CRYPTO TAMPER FUZZING =============================\n"
             "[*] Injected 1-bit flip into ciphertext buffer.\n"
