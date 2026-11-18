@@ -158,7 +158,6 @@ class ForensicBlackBox:
             box_nonce = secrets.token_bytes(12)
             ciphertext = box_aes.encrypt(box_nonce, payload, None)
 
-            # حفظ الصندوق الأسود المشفر مع المفتاح والـ Nonce مؤقتاً للتحقيق الجنائي
             with open(self.filename, "wb") as f:
                 f.write(box_nonce + box_key + ciphertext)
 
@@ -194,9 +193,7 @@ class RealPanicHandler:
         self.is_isolated = False
 
     def trigger_panic(self):
-        # 1. حفظ الأدلة عبر الصندوق الأسود الجنائي أولاً
         black_box.seal_and_record()
-        # 2. تدمير وإبادة الذاكرة الفورية (Zeroization)
         vault.zeroize()
         self.is_isolated = True
         audit_logger.log_event("FAIL_CLOSED_TRIGGERED", f"Emergency lockdown & Black-Box recording engaged at {hex(vault.buf_addr)}.", severity="CRITICAL")
@@ -225,6 +222,7 @@ def get_status():
     })
 
 
+# --- مسار مقاييس الأداء المخصص لـ Prometheus وللوحات المراقبة ---
 @app.route('/metrics', methods=['GET'])
 def metrics():
     purged_val = 1 if vault.is_purged else 0
@@ -232,8 +230,14 @@ def metrics():
     mlocked_val = 1 if vault.mlocked else 0
 
     prometheus_output = (
-        f"hailab_memory_purged {purged_val}\n"
-        f"hailab_memory_mlocked {mlocked_val}\n"
+        f"# HELP hailab_memory_purged Indicates if volatile memory has been wiped (1=Yes, 0=No)\n"
+        f"# TYPE hailab_memory_purged gauge\n"
+        f"hailab_memory_purged {purged_val}\n\n"
+        f"# HELP hailab_memory_mlocked Indicates if memory is pinned via mlock (1=Yes, 0=No)\n"
+        f"# TYPE hailab_memory_mlocked gauge\n"
+        f"hailab_memory_mlocked {mlocked_val}\n\n"
+        f"# HELP hailab_system_isolated Indicates if fail-closed lockdown is engaged (1=Yes, 0=No)\n"
+        f"# TYPE hailab_system_isolated gauge\n"
         f"hailab_system_isolated {isolated_val}\n"
     )
     return Response(prometheus_output, mimetype='text/plain')
@@ -241,7 +245,6 @@ def metrics():
 
 @app.route('/audit/logs', methods=['GET'])
 def get_audit_logs():
-    """استعراض سجلات التدقيق المشفرة الحقيقية"""
     log_path = os.path.join(current_dir, "hailab_secure_audit.log")
     if os.path.exists(log_path):
         with open(log_path, "r", encoding="utf-8") as f:
