@@ -52,11 +52,11 @@
             </div>
         </div>
 
-        <!-- Live Code Pulse Terminal (Updated & Glowing) -->
-        <div class="bg-black border-2 border-emerald-500 rounded-lg p-4 shadow-[0_0_20px_rgba(0,255,102,0.3)]">
-            <div class="flex justify-between items-center mb-2 border-b border-emerald-900 pb-2 text-xs font-bold text-emerald-400">
+        <!-- Live Code Pulse Terminal (Dynamic Color State) -->
+        <div id="pulse-container" class="bg-black border-2 border-emerald-500 rounded-lg p-4 shadow-[0_0_20px_rgba(0,255,102,0.3)] transition-all duration-500">
+            <div class="flex justify-between items-center mb-2 border-b border-emerald-900 pb-2 text-xs font-bold text-emerald-400" id="pulse-header-bar">
                 <span class="flex items-center gap-2">
-                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
+                    <span id="pulse-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
                     // REAL-TIME KERNEL EXECUTION PULSE (LIVE STREAM)
                 </span>
                 <span id="live-pid" class="text-cyan-400 bg-gray-900 px-2 py-0.5 rounded border border-gray-800">PID: ...</span>
@@ -107,10 +107,24 @@
             document.getElementById('memory-hex').innerText = data.memory_hex;
             document.getElementById('live-pid').innerText = `PID: ${data.pid}`;
             
+            // التحقق من حالة الطوارئ وتغيير ألوان صندوق النبض الحي إلى الأحمر الفوري
             if(data.state === 'ISOLATED_LOCKDOWN') {
                 const badge = document.getElementById('system-badge');
                 badge.className = "px-4 py-2 bg-red-950 border border-red-600 rounded text-xs font-bold text-red-400 glow-red";
                 badge.innerText = "CRITICAL: FAIL-CLOSED & BLACK-BOX SEALED";
+
+                // تحويل صندوق النبض الحي للأحمر
+                const pulseContainer = document.getElementById('pulse-container');
+                pulseContainer.className = "bg-black border-2 border-red-600 rounded-lg p-4 shadow-[0_0_25px_rgba(239,68,68,0.5)] transition-all duration-500";
+                
+                const pulseHeader = document.getElementById('pulse-header-bar');
+                pulseHeader.className = "flex justify-between items-center mb-2 border-b border-red-900 pb-2 text-xs font-bold text-red-400";
+
+                const pulseDot = document.getElementById('pulse-dot');
+                pulseDot.className = "w-2.5 h-2.5 rounded-full bg-red-500 animate-ping";
+
+                const codeBox = document.getElementById('code-stream');
+                codeBox.className = "text-base font-bold text-red-300 h-14 flex items-center tracking-wide overflow-hidden bg-red-950/20 px-3 rounded border border-red-900/50";
             }
         };
 
