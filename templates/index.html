@@ -52,14 +52,17 @@
             </div>
         </div>
 
-        <!-- Live Code Pulse Terminal -->
-        <div class="bg-black border border-emerald-900 rounded p-4 shadow-2xl">
-            <div class="flex justify-between items-center mb-2 border-b border-gray-900 pb-2 text-xs text-gray-500">
-                <span>// REAL-TIME KERNEL EXECUTION PULSE</span>
-                <span id="live-pid" class="text-gray-400">PID: ...</span>
+        <!-- Live Code Pulse Terminal (Updated & Glowing) -->
+        <div class="bg-black border-2 border-emerald-500 rounded-lg p-4 shadow-[0_0_20px_rgba(0,255,102,0.3)]">
+            <div class="flex justify-between items-center mb-2 border-b border-emerald-900 pb-2 text-xs font-bold text-emerald-400">
+                <span class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
+                    // REAL-TIME KERNEL EXECUTION PULSE (LIVE STREAM)
+                </span>
+                <span id="live-pid" class="text-cyan-400 bg-gray-900 px-2 py-0.5 rounded border border-gray-800">PID: ...</span>
             </div>
-            <div id="code-stream" class="text-sm text-emerald-400 h-12 flex items-center overflow-hidden">
-                Initializing secure channels...
+            <div id="code-stream" class="text-base font-bold text-emerald-300 h-14 flex items-center tracking-wide overflow-hidden bg-emerald-950/20 px-3 rounded border border-emerald-900/50">
+                Connecting to kernel telemetry...
             </div>
         </div>
 
