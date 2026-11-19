@@ -1,144 +1,306 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HAI Lab | Autonomous Fail-Closed & Forensic Command Center</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
-        body { font-family: 'JetBrains Mono', monospace; background-color: #030712; color: #00ff66; }
-        .glow-red { text-shadow: 0 0 10px rgba(239, 68, 68, 0.8); }
-        .glow-green { text-shadow: 0 0 10px rgba(0, 255, 102, 0.8); }
-        .pulse-box { animation: pulseGlow 2s infinite; }
-        @keyframes pulseGlow {
-            0% { box-shadow: 0 0 5px rgba(0,255,102,0.2); }
-            50% { box-shadow: 0 0 20px rgba(0,255,102,0.6); }
-            100% { box-shadow: 0 0 5px rgba(0,255,102,0.2); }
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HAI LAB // Fail-Closed Engine</title>
+  <style>
+    :root {
+      --bg: #070b12;
+      --panel: #0e1522;
+      --panel-2: #131c2e;
+      --border: #1e2d47;
+      --text: #e6edf7;
+      --muted: #8b9bb4;
+      --ok: #16a34a;
+      --warn: #eab308;
+      --crit: #ef4444;
+      --accent: #38bdf8;
+    }
+    * { box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    body { margin: 0; background: var(--bg); color: var(--text); padding: 20px; }
+    .container { max-width: 1200px; margin: 0 auto; display: grid; gap: 16px; }
+    .header {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+      padding: 16px 20px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px;
+    }
+    .title { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }
+    .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+    .badge {
+      padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+      border: 1px solid var(--border); background: var(--panel-2); color: var(--accent);
+    }
+    .badge.ok { color: #4ade80; border-color: rgba(22,163,74,0.45); }
+    .badge.warn { color: #facc15; border-color: rgba(234,179,8,0.45); }
+    .badge.crit { color: #f87171; border-color: rgba(239,68,68,0.45); }
+    .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+    .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
+    .card {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px;
+    }
+    .card h3 { margin: 0 0 10px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+    .val { font-size: 15px; font-weight: 700; word-break: break-word; }
+    .hex-box {
+      background: #05080d; border: 1px solid var(--border); border-radius: 8px;
+      padding: 12px; font-size: 12px; color: #93c5fd; word-break: break-all; line-height: 1.5;
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    button {
+      background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+      padding: 10px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 700;
+      transition: opacity 0.15s ease, border-color 0.15s ease;
+    }
+    button:hover:not(:disabled) { border-color: var(--accent); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.warn { border-color: rgba(234,179,8,0.5); color: #facc15; }
+    button.crit { border-color: rgba(239,68,68,0.6); color: #f87171; }
+    pre.console {
+      background: #05080d; border: 1px solid var(--border); border-radius: 8px;
+      padding: 12px; font-size: 12px; max-height: 240px; overflow: auto; margin: 0; white-space: pre-wrap;
+    }
+    .timeline { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; font-size: 12px; }
+    .timeline li {
+      padding: 8px 10px; border-radius: 6px; background: var(--panel-2); border-left: 3px solid var(--border);
+      display: flex; justify-content: space-between; gap: 8px;
+    }
+    .timeline li.done { border-left-color: var(--ok); }
+    .timeline li.active { border-left-color: var(--crit); }
+    .metrics-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .metric-box { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center; }
+    .metric-box span { display: block; font-size: 11px; color: var(--muted); }
+    .metric-box strong { font-size: 18px; margin-top: 4px; display: block; }
+  </style>
 </head>
-<body class="p-6">
-    <div class="max-w-7xl mx-auto space-y-6">
-        
-        <!-- Header -->
-        <header class="flex justify-between items-center border-b border-gray-800 pb-4">
-            <div>
-                <h1 class="text-2xl font-bold tracking-wider text-white">HAI LAB // <span class="text-emerald-400">MILITARY-GRADE ENGINE</span></h1>
-                <p class="text-xs text-gray-400">Autonomous Runtime Hardening, AES-256-GCM Vault & Forensic Black-Box</p>
-            </div>
-            <div id="system-badge" class="px-4 py-2 bg-emerald-950 border border-emerald-600 rounded text-xs font-bold glow-green">
-                SYSTEM SECURE: ACTIVE
-            </div>
-        </header>
-
-        <!-- Metrics Grid -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div class="bg-gray-900 border border-gray-800 p-4 rounded pulse-box">
-                <div class="text-xs text-gray-400">MEMORY PINNING (mlock)</div>
-                <div id="metric-mlock" class="text-lg font-bold text-emerald-400 mt-1">LOCKED</div>
-            </div>
-            <div class="bg-gray-900 border border-gray-800 p-4 rounded">
-                <div class="text-xs text-gray-400">ENCRYPTION ENGINE</div>
-                <div class="text-lg font-bold text-cyan-400 mt-1">AES-256-GCM</div>
-            </div>
-            <div class="bg-gray-900 border border-gray-800 p-4 rounded">
-                <div class="text-xs text-gray-400">FORENSIC BLACK-BOX</div>
-                <div class="text-lg font-bold text-yellow-400 mt-1">ARMED (.enc)</div>
-            </div>
-            <div class="bg-gray-900 border border-gray-800 p-4 rounded">
-                <div class="text-xs text-gray-400">KERNEL HARDENING</div>
-                <div class="text-lg font-bold text-purple-400 mt-1">PRCTL/SECCOMP</div>
-            </div>
-        </div>
-
-        <!-- Live Code Pulse Terminal (Dynamic Color State) -->
-        <div id="pulse-container" class="bg-black border-2 border-emerald-500 rounded-lg p-4 shadow-[0_0_20px_rgba(0,255,102,0.3)] transition-all duration-500">
-            <div class="flex justify-between items-center mb-2 border-b border-emerald-900 pb-2 text-xs font-bold text-emerald-400" id="pulse-header-bar">
-                <span class="flex items-center gap-2">
-                    <span id="pulse-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
-                    // REAL-TIME KERNEL EXECUTION PULSE (LIVE STREAM)
-                </span>
-                <span id="live-pid" class="text-cyan-400 bg-gray-900 px-2 py-0.5 rounded border border-gray-800">PID: ...</span>
-            </div>
-            <div id="code-stream" class="text-base font-bold text-emerald-300 h-14 flex items-center tracking-wide overflow-hidden bg-emerald-950/20 px-3 rounded border border-emerald-900/50">
-                Connecting to kernel telemetry...
-            </div>
-        </div>
-
-        <!-- Memory Hex Dump -->
-        <div class="bg-gray-950 border border-gray-800 p-4 rounded">
-            <div class="text-xs text-gray-400 mb-2">// VOLATILE RAM BUFFER HEX DUMP (Encrypted Vault)</div>
-            <div id="memory-hex" class="text-xs text-cyan-300 font-mono bg-black p-3 rounded overflow-x-auto">
-                Loading buffer states...
-            </div>
-        </div>
-
-        <!-- Action Control Center -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <button onclick="triggerAction('/run/pytest')" class="bg-blue-900 hover:bg-blue-800 border border-blue-600 text-white py-3 px-4 rounded text-xs font-bold transition">
-                ⚡ RUN KERNEL AUDIT
-            </button>
-            <button onclick="triggerAction('/run/fuzz')" class="bg-yellow-900 hover:bg-yellow-800 border border-yellow-600 text-white py-3 px-4 rounded text-xs font-bold transition">
-                🛡️ INJECT TAMPER FUZZ
-            </button>
-            <button onclick="triggerAction('/run/zeroize')" class="bg-orange-900 hover:bg-orange-800 border border-orange-600 text-white py-3 px-4 rounded text-xs font-bold transition">
-                🔥 PURGE MEMORY (ZEROIZE)
-            </button>
-            <button onclick="triggerAction('/run/panic')" class="bg-red-950 hover:bg-red-900 border border-red-600 text-red-300 py-3 px-4 rounded text-xs font-bold glow-red transition">
-                🚨 EMERGENCY PANIC (FAIL-CLOSED)
-            </button>
-        </div>
-
-        <!-- Output Terminal Response -->
-        <div class="bg-black border border-gray-800 p-4 rounded">
-            <div class="text-xs text-gray-500 mb-2">// EXECUTION LOG OUTPUT</div>
-            <pre id="output-terminal" class="text-xs text-gray-300 h-40 overflow-y-auto whitespace-pre-wrap">Awaiting operator command...</pre>
-        </div>
-
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <div class="title">HAI LAB // FAIL-CLOSED ENGINE</div>
+        <div style="font-size: 12px; color: var(--muted); margin-top: 4px;" id="pulse-line">Initializing kernel telemetry...</div>
+      </div>
+      <div class="badges">
+        <span class="badge" id="mode-badge">MODE: LAB / DEMO</span>
+        <span class="badge ok" id="system-badge">STATUS: LOADING</span>
+        <span class="badge" id="prctl-badge">PRCTL: --</span>
+      </div>
     </div>
 
-    <script>
-        // Real-time EventSource for Code Pulse
-        const codeStream = new EventSource('/stream-code-pulse');
-        codeStream.onmessage = function(event) {
-            const data = JSON.parse(event.data);
-            document.getElementById('code-stream').innerText = `> ${data.live_code_snippet}`;
-            document.getElementById('memory-hex').innerText = data.memory_hex;
-            document.getElementById('live-pid').innerText = `PID: ${data.pid}`;
-            
-            // التحقق من حالة الطوارئ وتغيير ألوان صندوق النبض الحي إلى الأحمر الفوري
-            if(data.state === 'ISOLATED_LOCKDOWN') {
-                const badge = document.getElementById('system-badge');
-                badge.className = "px-4 py-2 bg-red-950 border border-red-600 rounded text-xs font-bold text-red-400 glow-red";
-                badge.innerText = "CRITICAL: FAIL-CLOSED & BLACK-BOX SEALED";
+    <div class="grid-3">
+      <div class="card">
+        <h3>Memory Pinning (mlock)</h3>
+        <div class="val" id="mlock-val">--</div>
+      </div>
+      <div class="card">
+        <h3>Audit Chain Integrity</h3>
+        <div class="val" id="chain-val">--</div>
+      </div>
+      <div class="card">
+        <h3>Forensic Black-Box</h3>
+        <div class="val" id="blackbox-val">ARMED (.enc)</div>
+      </div>
+    </div>
 
-                // تحويل صندوق النبض الحي للأحمر
-                const pulseContainer = document.getElementById('pulse-container');
-                pulseContainer.className = "bg-black border-2 border-red-600 rounded-lg p-4 shadow-[0_0_25px_rgba(239,68,68,0.5)] transition-all duration-500";
-                
-                const pulseHeader = document.getElementById('pulse-header-bar');
-                pulseHeader.className = "flex justify-between items-center mb-2 border-b border-red-900 pb-2 text-xs font-bold text-red-400";
+    <div class="card">
+      <h3>Volatile RAM Buffer Hex Dump</h3>
+      <div class="hex-box" id="hex-dump">Loading buffer...</div>
+    </div>
 
-                const pulseDot = document.getElementById('pulse-dot');
-                pulseDot.className = "w-2.5 h-2.5 rounded-full bg-red-500 animate-ping";
+    <div class="card">
+      <h3>Controls</h3>
+      <div class="actions" id="controls-bar">
+        <button class="ctrl-btn" onclick="runAction('/run/pytest')">RUN KERNEL AUDIT</button>
+        <button class="ctrl-btn warn" onclick="runAction('/run/fuzz')">INJECT TAMPER FUZZ</button>
+        <button class="ctrl-btn warn" onclick="runAction('/run/zeroize')">PURGE MEMORY (ZEROIZE)</button>
+        <button class="ctrl-btn crit" onclick="runAction('/run/panic')">EMERGENCY PANIC (FAIL-CLOSED)</button>
+        <button class="ctrl-btn" onclick="refreshAll()">REFRESH TELEMETRY</button>
+      </div>
+    </div>
 
-                const codeBox = document.getElementById('code-stream');
-                codeBox.className = "text-base font-bold text-red-300 h-14 flex items-center tracking-wide overflow-hidden bg-red-950/20 px-3 rounded border border-red-900/50";
-            }
-        };
+    <div class="grid-2">
+      <div class="card">
+        <h3>Fail-Closed Lockdown Timeline</h3>
+        <ul class="timeline" id="lockdown-timeline">
+          <li id="step-1"><span>1. Forensic Black-Box Sealed (.enc)</span><strong id="t-1">PENDING</strong></li>
+          <li id="step-2"><span>2. RAM Buffer Zeroized (memset 0x00)</span><strong id="t-2">PENDING</strong></li>
+          <li id="step-3"><span>3. Memory Pages Unlocked (munlock)</span><strong id="t-3">PENDING</strong></li>
+          <li id="step-4"><span>4. Fail-Closed State Enforced</span><strong id="t-4">PENDING</strong></li>
+        </ul>
+      </div>
 
-        function triggerAction(endpoint) {
-            document.getElementById('output-terminal').innerText = `Executing ${endpoint}...\n`;
-            fetch(endpoint)
-                .then(res => res.json())
-                .then(data => {
-                    document.getElementById('output-terminal').innerText = data.result || JSON.stringify(data, null, 2);
-                })
-                .catch(err => {
-                    document.getElementById('output-terminal').innerText = `[-] Execution Error: ${err}`;
-                });
+      <div class="card">
+        <h3>Prometheus Metrics Summary (/metrics)</h3>
+        <div class="metrics-row">
+          <div class="metric-box"><span>mlocked</span><strong id="m-mlocked">0</strong></div>
+          <div class="metric-box"><span>purged</span><strong id="m-purged">0</strong></div>
+          <div class="metric-box"><span>isolated</span><strong id="m-isolated">0</strong></div>
+        </div>
+        <div style="font-size: 11px; color: var(--muted); margin-top: 10px;" id="blackbox-meta">No black-box sealed yet in this session.</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>Command & Audit Output</h3>
+        <pre class="console" id="output-box">Ready.</pre>
+      </div>
+      <div class="card">
+        <h3>Recent Tamper-Evident Audit Logs (/audit/logs)</h3>
+        <pre class="console" id="logs-box">Loading logs...</pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let lastHexValue = "";
+
+    function setHexDump(nextHex) {
+      if (!nextHex || nextHex === lastHexValue) return;
+      lastHexValue = nextHex;
+      document.getElementById("hex-dump").textContent = nextHex;
+    }
+
+    function setControlsDisabled(disabled) {
+      document.querySelectorAll(".ctrl-btn").forEach((btn) => {
+        btn.disabled = disabled;
+      });
+    }
+
+    function setTimelineStep(id, label, stateClass) {
+      const li = document.getElementById("step-" + id);
+      const st = document.getElementById("t-" + id);
+      li.className = stateClass || "";
+      st.textContent = label;
+    }
+
+    function updateTimeline(data) {
+      if (data.is_isolated) {
+        setTimelineStep(1, data.blackbox ? "SEALED" : "RECORDED", "done");
+        setTimelineStep(2, "ZEROIZED", "done");
+        setTimelineStep(3, !data.mlocked ? "UNLOCKED" : "CHECK", "done");
+        setTimelineStep(4, "LOCKED DOWN", "active");
+      } else if (data.is_purged) {
+        setTimelineStep(1, "STANDBY", "");
+        setTimelineStep(2, "ZEROIZED", "done");
+        setTimelineStep(3, !data.mlocked ? "UNLOCKED" : "CHECK", "done");
+        setTimelineStep(4, "STANDBY", "");
+      } else {
+        setTimelineStep(1, "ARMED", "");
+        setTimelineStep(2, "ACTIVE", "");
+        setTimelineStep(3, data.mlocked ? "PINNED" : "UNLOCKED", data.mlocked ? "done" : "");
+        setTimelineStep(4, "NORMAL", "");
+      }
+    }
+
+    function applyLiveMlockUI(mlockedBool, statusText) {
+      const el = document.getElementById("mlock-val");
+      el.textContent = mlockedBool ? `LOCKED (${statusText})` : `UNLOCKED (${statusText})`;
+      el.style.color = mlockedBool ? "#4ade80" : "#facc15";
+    }
+
+    async function refreshAll() {
+      try {
+        const [stRes, sumRes, logsRes, metRes] = await Promise.all([
+          fetch("/status"),
+          fetch("/forensic/summary"),
+          fetch("/audit/logs"),
+          fetch("/metrics")
+        ]);
+        const st = await stRes.json();
+        const sum = await sumRes.json();
+        const logs = await logsRes.json();
+        const metText = await metRes.text();
+
+        applyLiveMlockUI(Boolean(st.mlocked), sum.mlock_status);
+
+        const sysBadge = document.getElementById("system-badge");
+        if (sum.is_isolated) {
+          sysBadge.textContent = `STATUS: ${st.status}`;
+          sysBadge.className = "badge crit";
+        } else if (sum.is_purged) {
+          sysBadge.textContent = "STATUS: MEMORY PURGED (UNPINNED)";
+          sysBadge.className = "badge warn";
+        } else {
+          sysBadge.textContent = `STATUS: ${st.status}`;
+          sysBadge.className = "badge ok";
         }
-    </script>
+
+        document.getElementById("mode-badge").textContent = `MODE: ${sum.mode}`;
+        document.getElementById("prctl-badge").textContent = `PRCTL: ${sum.prctl_dumpable}`;
+        setHexDump(st.memory_hex);
+
+        const ch = sum.chain || {};
+        const chainEl = document.getElementById("chain-val");
+        chainEl.textContent = ch.status === "VERIFIED" ? `VERIFIED (${ch.entries} entries)` : `${ch.status || "UNKNOWN"}`;
+        chainEl.style.color = ch.status === "VERIFIED" ? "#4ade80" : "#f87171";
+
+        const bbMetaEl = document.getElementById("blackbox-meta");
+        const runtimeInfo = `PID: ${sum.pid} | Buffer: ${sum.buffer_address}`;
+        if (sum.blackbox) {
+          document.getElementById("blackbox-val").textContent = `SEALED @ ${sum.blackbox.timestamp}`;
+          bbMetaEl.textContent = `${runtimeInfo} | Sealed PID: ${sum.blackbox.pid}`;
+        } else {
+          document.getElementById("blackbox-val").textContent = "ARMED (.enc)";
+          bbMetaEl.textContent = `${runtimeInfo} | No black-box sealed yet in this session.`;
+        }
+
+        const parseMetric = (name) => {
+          const m = metText.match(new RegExp(`^${name}\\s+([01])`, "m"));
+          return m ? m[1] : "0";
+        };
+        document.getElementById("m-mlocked").textContent = parseMetric("hailab_memory_mlocked");
+        document.getElementById("m-purged").textContent = parseMetric("hailab_memory_purged");
+        document.getElementById("m-isolated").textContent = parseMetric("hailab_system_isolated");
+
+        document.getElementById("logs-box").textContent =
+          (logs.logs && logs.logs.length) ? logs.logs.join("\n") : "No audit entries yet.";
+
+        updateTimeline(sum);
+      } catch (e) {
+        document.getElementById("output-box").textContent = "Telemetry error: " + e;
+      }
+    }
+
+    async function runAction(url) {
+      setControlsDisabled(true);
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        document.getElementById("output-box").textContent = data.result || JSON.stringify(data, null, 2);
+        await refreshAll();
+      } catch (e) {
+        document.getElementById("output-box").textContent = "Action error: " + e;
+      } finally {
+        setControlsDisabled(false);
+      }
+    }
+
+    const pulseSource = new EventSource("/stream-code-pulse");
+    pulseSource.onmessage = (ev) => {
+      try {
+        const d = JSON.parse(ev.data);
+        document.getElementById("pulse-line").textContent =
+          `[PID ${d.pid}] [${d.state}] ${d.live_code_snippet}`;
+        setHexDump(d.memory_hex);
+      } catch (_) {}
+    };
+    pulseSource.onerror = () => {
+      document.getElementById("pulse-line").textContent = "Pulse stream reconnecting...";
+    };
+
+    const statusSource = new EventSource("/stream-status");
+    statusSource.onmessage = (ev) => {
+      try {
+        const d = JSON.parse(ev.data);
+        applyLiveMlockUI(Boolean(d.mlocked), d.memory_buffer);
+        setHexDump(d.memory_hex);
+      } catch (_) {}
+    };
+    statusSource.onerror = () => {
+      // المتصفح يعيد الاتصال تلقائياً بـ EventSource؛ نبقي التحديث الدوري عبر refreshAll
+    };
+
+    refreshAll();
+    setInterval(refreshAll, 3000);
+  </script>
 </body>
 </html>
