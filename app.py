@@ -6,6 +6,7 @@ import json
 import multiprocessing
 import os
 import random
+import re
 import resource
 import secrets
 import signal
@@ -26,6 +27,9 @@ app = Flask(__name__)
 
 # ثوابت نواة لينكس
 PR_SET_DUMPABLE = 4
+
+# نمط التحقق من بصمة SHA-256 في سجل التدقيق
+HASH_LINE_RE = re.compile(r"^(?P<body>.+?)\s*\|\s*HASH:(?P<digest>[0-9a-fA-F]{16})$")
 
 # تحميل مكتبة النظام القياسية في لينكس (libc)
 libc_path = ctypes.util.find_library("c")
@@ -67,6 +71,23 @@ class SecureAuditLogger:
 
 
 audit_logger = SecureAuditLogger()
+
+
+def verify_audit_chain_status() -> dict:
+    """التحقق الحي من سلامة بصمات SHA-256 في سجل التدقيق"""
+    lines = audit_logger.read_lines()
+    if not lines:
+        return {"status": "EMPTY", "entries": 0, "broken_at": None}
+
+    for idx, line in enumerate(lines, start=1):
+        match = HASH_LINE_RE.match(line.strip())
+        if not match:
+            return {"status": "BROKEN", "entries": len(lines), "broken_at": idx}
+        expected = hashlib.sha256(match.group("body").encode("utf-8")).hexdigest()[:16].lower()
+        if match.group("digest").lower() != expected:
+            return {"status": "BROKEN", "entries": len(lines), "broken_at": idx}
+
+    return {"status": "VERIFIED", "entries": len(lines), "broken_at": None}
 
 
 def apply_real_kernel_hardening() -> dict:
@@ -126,6 +147,7 @@ class RealHardwareMemoryVault:
                 )
 
     def verify_integrity(self) -> bool:
+        tampered = False
         with state_lock:
             if self.is_purged or not self._aesgcm:
                 return False
@@ -133,12 +155,15 @@ class RealHardwareMemoryVault:
                 self._aesgcm.decrypt(self._nonce, bytes(self.buffer), None)
                 return True
             except Exception:
-                audit_logger.log_event(
-                    "INTEGRITY_VIOLATION",
-                    "AES-GCM decryption failed! Potential memory tampering detected.",
-                    severity="CRITICAL",
-                )
-                return False
+                tampered = True
+
+        if tampered:
+            audit_logger.log_event(
+                "INTEGRITY_VIOLATION",
+                "AES-GCM decryption failed! Potential memory tampering detected.",
+                severity="CRITICAL",
+            )
+        return False
 
     def get_hex_dump(self) -> str:
         with state_lock:
@@ -151,6 +176,8 @@ class RealHardwareMemoryVault:
 
     def zeroize(self):
         """تصفير الذاكرة وتدمير المفتاح وفك قفل الصفحات مع فحص النتيجة"""
+        unlock_err = None
+        did_zeroize = False
         with state_lock:
             if not self.is_purged:
                 ctypes.memset(self.buffer, 0, self.buf_len)
@@ -166,24 +193,28 @@ class RealHardwareMemoryVault:
                         self.mlocked = False
                         kernel_status["mlock_status"] = f"UNLOCKED @ {hex(self.buf_addr)}"
                     else:
-                        err = ctypes.get_errno()
+                        unlock_err = ctypes.get_errno()
                         self.mlocked = False
-                        kernel_status["mlock_status"] = f"UNLOCK_WARN (errno={err}) @ {hex(self.buf_addr)}"
-                        audit_logger.log_event(
-                            "RAM_UNPIN_WARN",
-                            f"munlock failed with errno={err} at {hex(self.buf_addr)}",
-                            severity="WARNING",
-                        )
+                        kernel_status["mlock_status"] = f"UNLOCK_WARN (errno={unlock_err}) @ {hex(self.buf_addr)}"
                 else:
                     self.mlocked = False
                     kernel_status["mlock_status"] = f"UNLOCKED @ {hex(self.buf_addr)}"
 
                 self.is_purged = True
-                audit_logger.log_event(
-                    "MEMORY_ZEROIZED",
-                    f"RAM buffer at {hex(self.buf_addr)} forcefully scrubbed and unlocked.",
-                    severity="CRITICAL",
-                )
+                did_zeroize = True
+
+        if unlock_err is not None:
+            audit_logger.log_event(
+                "RAM_UNPIN_WARN",
+                f"munlock failed with errno={unlock_err} at {hex(self.buf_addr)}",
+                severity="WARNING",
+            )
+        if did_zeroize:
+            audit_logger.log_event(
+                "MEMORY_ZEROIZED",
+                f"RAM buffer at {hex(self.buf_addr)} forcefully scrubbed and unlocked.",
+                severity="CRITICAL",
+            )
 
 
 vault = RealHardwareMemoryVault()
@@ -194,6 +225,7 @@ class ForensicBlackBox:
 
     def __init__(self, output_filename="hailab_forensic_blackbox.enc"):
         self.output_path = os.path.join(current_dir, output_filename)
+        self.last_seal_info = None
 
     def seal_and_record(self) -> bool:
         try:
@@ -212,6 +244,14 @@ class ForensicBlackBox:
 
             with open(self.output_path, "wb") as f:
                 f.write(box_nonce + box_key + ciphertext)
+
+            with state_lock:
+                self.last_seal_info = {
+                    "timestamp": snapshot["timestamp"],
+                    "pid": snapshot["pid"],
+                    "buffer_address": snapshot["buffer_address"],
+                    "mlock_status": snapshot["kernel_status"]["mlock_status"],
+                }
 
             audit_logger.log_event(
                 "BLACKBOX_SEALED",
@@ -260,9 +300,10 @@ class RealPanicHandler:
         vault.zeroize()
         with state_lock:
             self.is_isolated = True
+            buf_addr_hex = hex(vault.buf_addr)
         audit_logger.log_event(
             "FAIL_CLOSED_TRIGGERED",
-            f"Emergency lockdown & Black-Box recording engaged at {hex(vault.buf_addr)}.",
+            f"Emergency lockdown & Black-Box recording engaged at {buf_addr_hex}.",
             severity="CRITICAL",
         )
         return True
@@ -300,6 +341,28 @@ def get_status():
         "memory_hex": vault.get_hex_dump(),
         "mlocked": snap["mlocked"],
         "countdown": 46,
+    })
+
+
+@app.route("/forensic/summary", methods=["GET"])
+def forensic_summary():
+    snap = _get_runtime_snapshot()
+    with state_lock:
+        buf_addr_hex = hex(vault.buf_addr)
+        prctl_stat = kernel_status["prctl_dumpable"]
+        seal_info = dict(black_box.last_seal_info) if black_box.last_seal_info else None
+
+    return jsonify({
+        "mode": "LAB / DEMO (Flask Dev Server)",
+        "pid": os.getpid(),
+        "buffer_address": buf_addr_hex,
+        "mlocked": snap["mlocked"],
+        "is_purged": snap["is_purged"],
+        "is_isolated": snap["is_isolated"],
+        "prctl_dumpable": prctl_stat,
+        "mlock_status": snap["mlock_status"],
+        "chain": verify_audit_chain_status(),
+        "blackbox": seal_info,
     })
 
 
