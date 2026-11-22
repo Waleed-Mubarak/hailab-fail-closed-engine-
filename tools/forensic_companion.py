@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import urllib.error
@@ -36,6 +37,23 @@ def fetch_text(url: str, timeout: float = 2.0) -> dict:
         return {"reachable": False, "status_code": exc.code, "error": str(exc)}
     except Exception as exc:
         return {"reachable": False, "status_code": None, "error": str(exc)}
+
+
+def parse_key_metrics(metrics_text: str | None) -> dict:
+    if not metrics_text:
+        return {}
+    targets = [
+        "hailab_memory_purged",
+        "hailab_memory_mlocked",
+        "hailab_system_isolated",
+    ]
+    parsed = {}
+    for name in targets:
+        match = re.search(rf"^{re.escape(name)}\s+([0-9.]+)", metrics_text, flags=re.M)
+        if match:
+            val_str = match.group(1)
+            parsed[name] = float(val_str) if "." in val_str else int(val_str)
+    return parsed
 
 
 def file_digest_and_size(path: Path) -> dict:
@@ -87,7 +105,41 @@ def verify_blackbox(decrypt_script: Path, box_path: Path) -> dict:
     }
 
 
-def build_engine_report(base_url: str = "http://127.0.0.1:8501") -> dict:
+def compare_with_previous(previous_report_path: Path, current_artifacts: dict) -> dict:
+    if not previous_report_path.exists():
+        return {"has_previous": False, "changed": None}
+    try:
+        prev = json.loads(previous_report_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {"has_previous": True, "error": str(exc)}
+
+    prev_art = prev.get("artifacts", {})
+    prev_box = prev_art.get("blackbox", {})
+    curr_box = current_artifacts.get("blackbox", {})
+    prev_log = prev_art.get("audit_log", {})
+    curr_log = current_artifacts.get("audit_log", {})
+
+    box_sha_changed = prev_box.get("sha256") != curr_box.get("sha256")
+    audit_lines_delta = (
+        curr_log.get("line_count") - prev_log.get("line_count")
+        if isinstance(curr_log.get("line_count"), int)
+        and isinstance(prev_log.get("line_count"), int)
+        else None
+    )
+
+    return {
+        "has_previous": True,
+        "previous_checked_at_utc": prev.get("checked_at_utc"),
+        "blackbox_sha256_changed": box_sha_changed,
+        "audit_log_line_delta": audit_lines_delta,
+        "changed": bool(box_sha_changed or (audit_lines_delta not in (0, None))),
+    }
+
+
+def build_engine_report(
+    base_url: str = "http://127.0.0.1:8501",
+    previous_report_path: Path = Path("reports/companion_report.json"),
+) -> dict:
     root = Path(".")
     box_path = root / "hailab_forensic_blackbox.enc"
     audit_path = root / "hailab_secure_audit.log"
@@ -96,6 +148,14 @@ def build_engine_report(base_url: str = "http://127.0.0.1:8501") -> dict:
     status_resp = fetch_json(f"{base_url}/status")
     metrics_resp = fetch_text(f"{base_url}/metrics")
     forensic_resp = fetch_json(f"{base_url}/forensic/summary")
+
+    if metrics_resp.get("reachable"):
+        metrics_resp["parsed_metrics"] = parse_key_metrics(metrics_resp.get("text"))
+
+    artifacts = {
+        "blackbox": file_digest_and_size(box_path),
+        "audit_log": inspect_audit_log(audit_path),
+    }
 
     server_online = any(
         item.get("reachable") for item in (status_resp, metrics_resp, forensic_resp)
@@ -110,10 +170,8 @@ def build_engine_report(base_url: str = "http://127.0.0.1:8501") -> dict:
             "metrics": metrics_resp,
             "forensic_summary": forensic_resp,
         },
-        "artifacts": {
-            "blackbox": file_digest_and_size(box_path),
-            "audit_log": inspect_audit_log(audit_path),
-        },
+        "artifacts": artifacts,
+        "diff_from_previous": compare_with_previous(previous_report_path, artifacts),
         "blackbox_verification": verify_blackbox(decrypt_script, box_path),
     }
 
