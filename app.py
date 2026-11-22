@@ -5,6 +5,7 @@ import hashlib
 import json
 import multiprocessing
 import os
+from pathlib import Path
 import random
 import re
 import resource
@@ -540,6 +541,39 @@ def run_panic():
         "============================== ZERO BLAST RADIUS ====================================="
     )
     return jsonify({"status": "SUCCESS", "result": output})
+
+
+COMPANION_REPORT_PATH = Path(current_dir) / "reports" / "companion_report.json"
+
+
+@app.route("/forensic/companion", methods=["GET"])
+def forensic_companion_report():
+    if not COMPANION_REPORT_PATH.exists():
+        return jsonify({
+            "available": False,
+            "reason": "reports/companion_report.json not found yet",
+            "parsed_metrics": None,
+            "diff_from_previous": None,
+        }), 200
+
+    try:
+        data = json.loads(COMPANION_REPORT_PATH.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return jsonify({
+            "available": False,
+            "reason": str(exc),
+            "parsed_metrics": None,
+            "diff_from_previous": None,
+        }), 200
+
+    metrics_obj = data.get("endpoints", {}).get("metrics", {})
+    return jsonify({
+        "available": True,
+        "checked_at_utc": data.get("checked_at_utc"),
+        "server_online": data.get("server_online"),
+        "parsed_metrics": metrics_obj.get("parsed_metrics"),
+        "diff_from_previous": data.get("diff_from_previous"),
+    }), 200
 
 
 if __name__ == "__main__":
