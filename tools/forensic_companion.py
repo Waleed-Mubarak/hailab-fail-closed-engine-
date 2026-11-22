@@ -101,7 +101,17 @@ def build_engine_report(base_url: str = "http://127.0.0.1:5000") -> dict:
     }
 
 
+def save_report(report: dict, output_path: Path = Path("reports/companion_report.json")) -> Path:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(report, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return output_path
+
+
 if __name__ == "__main__":
     report = build_engine_report()
+    saved_to = save_report(report)
     print(json.dumps(report, indent=2, ensure_ascii=False))
-
+    print(f"\nSaved report to: {saved_to}")
