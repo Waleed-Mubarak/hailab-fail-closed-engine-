@@ -39,6 +39,8 @@
       background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px;
     }
     .card h3 { margin: 0 0 10px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+    .card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .card-head h3 { margin: 0; }
     .val { font-size: 15px; font-weight: 700; word-break: break-word; }
     .hex-box {
       background: #05080d; border: 1px solid var(--border); border-radius: 8px;
@@ -50,6 +52,7 @@
       padding: 10px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 700;
       transition: opacity 0.15s ease, border-color 0.15s ease;
     }
+    button.btn-sm { padding: 6px 10px; font-size: 11px; }
     button:hover:not(:disabled) { border-color: var(--accent); }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     button.warn { border-color: rgba(234,179,8,0.5); color: #facc15; }
@@ -138,6 +141,15 @@
       </div>
     </div>
 
+    <div class="card">
+      <div class="card-head">
+        <h3>Companion Forensic Report (/forensic/companion)</h3>
+        <button type="button" class="btn-sm" onclick="refreshCompanion()">REFRESH COMPANION</button>
+      </div>
+      <div style="font-size: 11px; color: var(--muted); margin-bottom: 10px;" id="companion-meta">Loading companion report...</div>
+      <pre class="console" id="companion-box">Loading...</pre>
+    </div>
+
     <div class="grid-2">
       <div class="card">
         <h3>Command & Audit Output</h3>
@@ -195,6 +207,31 @@
       const el = document.getElementById("mlock-val");
       el.textContent = mlockedBool ? `LOCKED (${statusText})` : `UNLOCKED (${statusText})`;
       el.style.color = mlockedBool ? "#4ade80" : "#facc15";
+    }
+
+    async function refreshCompanion() {
+      const metaEl = document.getElementById("companion-meta");
+      const boxEl = document.getElementById("companion-box");
+      try {
+        const res = await fetch("/forensic/companion");
+        const payload = await res.json();
+        if (!payload.available) {
+          metaEl.textContent = `Unavailable: ${payload.reason || "No report found"}`;
+          boxEl.textContent = JSON.stringify({
+            parsed_metrics: payload.parsed_metrics ?? null,
+            diff_from_previous: payload.diff_from_previous ?? null,
+          }, null, 2);
+          return;
+        }
+        metaEl.textContent = `Checked UTC: ${payload.checked_at_utc || "N/A"} | Server Online: ${Boolean(payload.server_online)}`;
+        boxEl.textContent = JSON.stringify({
+          parsed_metrics: payload.parsed_metrics ?? null,
+          diff_from_previous: payload.diff_from_previous ?? null,
+        }, null, 2);
+      } catch (e) {
+        metaEl.textContent = "Companion fetch error";
+        boxEl.textContent = String(e);
+      }
     }
 
     async function refreshAll() {
@@ -255,6 +292,7 @@
           (logs.logs && logs.logs.length) ? logs.logs.join("\n") : "No audit entries yet.";
 
         updateTimeline(sum);
+        await refreshCompanion();
       } catch (e) {
         document.getElementById("output-box").textContent = "Telemetry error: " + e;
       }
