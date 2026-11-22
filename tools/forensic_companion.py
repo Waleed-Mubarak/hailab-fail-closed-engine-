@@ -1,6 +1,7 @@
 import hashlib
 import json
 import subprocess
+import sys
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -15,6 +16,21 @@ def fetch_json(url: str, timeout: float = 2.0) -> dict:
                 "reachable": True,
                 "status_code": resp.status,
                 "data": json.loads(raw),
+            }
+    except urllib.error.HTTPError as exc:
+        return {"reachable": False, "status_code": exc.code, "error": str(exc)}
+    except Exception as exc:
+        return {"reachable": False, "status_code": None, "error": str(exc)}
+
+
+def fetch_text(url: str, timeout: float = 2.0) -> dict:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            return {
+                "reachable": True,
+                "status_code": resp.status,
+                "text": raw,
             }
     except urllib.error.HTTPError as exc:
         return {"reachable": False, "status_code": exc.code, "error": str(exc)}
@@ -71,14 +87,14 @@ def verify_blackbox(decrypt_script: Path, box_path: Path) -> dict:
     }
 
 
-def build_engine_report(base_url: str = "http://127.0.0.1:5000") -> dict:
+def build_engine_report(base_url: str = "http://127.0.0.1:8501") -> dict:
     root = Path(".")
     box_path = root / "hailab_forensic_blackbox.enc"
     audit_path = root / "hailab_secure_audit.log"
     decrypt_script = root / "decrypt_box.py"
 
     status_resp = fetch_json(f"{base_url}/status")
-    metrics_resp = fetch_json(f"{base_url}/metrics")
+    metrics_resp = fetch_text(f"{base_url}/metrics")
     forensic_resp = fetch_json(f"{base_url}/forensic/summary")
 
     server_online = any(
@@ -87,6 +103,7 @@ def build_engine_report(base_url: str = "http://127.0.0.1:5000") -> dict:
 
     return {
         "checked_at_utc": datetime.now(timezone.utc).isoformat(),
+        "base_url": base_url,
         "server_online": server_online,
         "endpoints": {
             "status": status_resp,
@@ -111,7 +128,8 @@ def save_report(report: dict, output_path: Path = Path("reports/companion_report
 
 
 if __name__ == "__main__":
-    report = build_engine_report()
+    target_url = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8501"
+    report = build_engine_report(target_url)
     saved_to = save_report(report)
     print(json.dumps(report, indent=2, ensure_ascii=False))
     print(f"\nSaved report to: {saved_to}")
