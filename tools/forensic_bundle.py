@@ -1,5 +1,6 @@
 import argparse
 import base64
+import fcntl
 import hashlib
 import json
 import os
@@ -17,10 +18,12 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PublicKey,
 )
 
-SCHEMA_VERSION = "1.3.0"
+SCHEMA_VERSION = "1.4.0"
+DOMAIN_PREFIX = b"HAILAB_FORENSIC_BUNDLE_V1\x00"
 RESERVED_MEMBERS = {"manifest.json", "manifest.sig.json", "signer_public.pem"}
 MAX_MEMBER_BYTES = 100 * 1024 * 1024
 MAX_TOTAL_EXTRACT_BYTES = 250 * 1024 * 1024
+GENESIS_HASH = "0" * 64
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -37,6 +40,22 @@ def sha256_file(path: Path) -> str:
 
 def canonicalize_manifest(manifest_obj: dict) -> bytes:
     return json.dumps(manifest_obj, sort_keys=True, ensure_ascii=False).encode("utf-8")
+
+
+def build_signing_payload(manifest_obj: dict) -> bytes:
+    meta = manifest_obj.get("bundle_metadata", {}) if isinstance(manifest_obj, dict) else {}
+    binding_header = json.dumps(
+        {
+            "domain": "HAILAB_FORENSIC_BUNDLE_V1",
+            "schema_version": meta.get("schema_version"),
+            "bundle_id": meta.get("bundle_id"),
+            "case_id": meta.get("case_id"),
+            "public_key_sha256": manifest_obj.get("signature_info", {}).get("public_key_sha256"),
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return DOMAIN_PREFIX + binding_header + b"\x00" + canonicalize_manifest(manifest_obj)
 
 
 def load_private_key(priv_path: Path, passphrase: str | None = None) -> Ed25519PrivateKey:
@@ -193,7 +212,12 @@ def _validate_manifest_structure(manifest_obj: dict) -> tuple[bool, str]:
     return True, "Manifest structure valid"
 
 
-def _verify_semantic_telemetry(manifest_obj: dict, companion_report_path: Path) -> tuple[bool, str]:
+def _verify_semantic_and_cross_artifact(
+    manifest_obj: dict,
+    companion_report_path: Path,
+    blackbox_path: Path,
+    audit_log_path: Path,
+) -> tuple[bool, str]:
     if not companion_report_path.exists() or not companion_report_path.is_file():
         return False, "companion_report.json missing for semantic telemetry check"
 
@@ -210,7 +234,16 @@ def _verify_semantic_telemetry(manifest_obj: dict, companion_report_path: Path) 
     if actual_snapshot != expected_snapshot:
         return False, "Semantic mismatch: manifest telemetry_snapshot differs from companion_report.json"
 
-    return True, "Semantic telemetry matches companion_report.json"
+    if not blackbox_path.exists() or blackbox_path.stat().st_size == 0:
+        return False, "Cross-artifact anomaly: blackbox artifact is missing or empty"
+    if not audit_log_path.exists() or audit_log_path.stat().st_size == 0:
+        return False, "Cross-artifact anomaly: audit log artifact is missing or empty"
+
+    entries = actual_snapshot.get("audit_chain", {}).get("entries")
+    if isinstance(entries, int) and entries < 0:
+        return False, "Cross-artifact anomaly: negative audit_chain entries count"
+
+    return True, "Semantic telemetry and cross-artifact consistency verified"
 
 
 def _is_safe_member_name(name: str) -> bool:
@@ -246,6 +279,51 @@ def _safe_extract_tar(tar: tarfile.TarFile, dest_dir: Path) -> set[str]:
     except TypeError:
         tar.extractall(path=resolved_dest)
     return extracted_members
+
+
+def append_verification_ledger(ledger_path: Path, bundle_file: Path, verify_result: dict) -> str:
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    bundle_sha = sha256_file(bundle_file) if bundle_file.exists() else None
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    with ledger_path.open("a+", encoding="utf-8") as f:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            f.seek(0)
+            lines = [ln for ln in f.read().splitlines() if ln.strip()]
+            index = len(lines)
+            prev_hash = GENESIS_HASH
+            if lines:
+                last_obj = json.loads(lines[-1])
+                prev_hash = last_obj.get("entry_sha256", GENESIS_HASH)
+
+            entry_core = {
+                "index": index,
+                "timestamp_utc": now_iso,
+                "bundle_path": str(bundle_file),
+                "bundle_sha256": bundle_sha,
+                "bundle_id": verify_result.get("bundle_id"),
+                "case_id": verify_result.get("case_id"),
+                "schema_version": verify_result.get("schema_version"),
+                "valid": verify_result.get("valid"),
+                "reason": verify_result.get("reason"),
+                "public_key_sha256": verify_result.get("public_key_sha256"),
+                "checks": verify_result.get("checks"),
+                "prev_entry_sha256": prev_hash,
+            }
+            serialized_core = json.dumps(entry_core, sort_keys=True, ensure_ascii=False).encode("utf-8")
+            entry_hash = sha256_bytes(serialized_core)
+            full_entry = dict(entry_core)
+            full_entry["entry_sha256"] = entry_hash
+
+            f.seek(0, os.SEEK_END)
+            f.write(json.dumps(full_entry, ensure_ascii=False) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+    return entry_hash
 
 
 def create_bundle(
@@ -320,14 +398,17 @@ def create_bundle(
         "signature_info": {
             "algorithm": "Ed25519",
             "signed_target": "manifest.json",
+            "domain_binding": "HAILAB_FORENSIC_BUNDLE_V1",
             "public_key_sha256": pub_fingerprint,
         },
     }
 
     canonical_manifest = canonicalize_manifest(manifest)
-    signature_b64 = base64.b64encode(priv_key.sign(canonical_manifest)).decode("ascii")
+    signing_payload = build_signing_payload(manifest)
+    signature_b64 = base64.b64encode(priv_key.sign(signing_payload)).decode("ascii")
     sig_payload = {
         "algorithm": "Ed25519",
+        "domain_binding": "HAILAB_FORENSIC_BUNDLE_V1",
         "public_key_sha256": pub_fingerprint,
         "signature_base64": signature_b64,
     }
@@ -370,6 +451,7 @@ def verify_bundle(
     bundle_file: Path,
     trusted_pub_key_path: Path | None = None,
     extract_to: Path | None = None,
+    ledger_path: Path | None = None,
 ) -> dict:
     checks: dict[str, bool] = {
         "archive_extraction": False,
@@ -381,8 +463,17 @@ def verify_bundle(
         "semantic_telemetry": False,
     }
 
+    def _finalize(payload: dict) -> dict:
+        if ledger_path is not None:
+            payload["ledger_entry_sha256"] = append_verification_ledger(
+                ledger_path=ledger_path,
+                bundle_file=bundle_file,
+                verify_result=payload,
+            )
+        return payload
+
     if not bundle_file.exists():
-        return {"valid": False, "reason": f"Bundle not found: {bundle_file}", "checks": checks}
+        return _finalize({"valid": False, "reason": f"Bundle not found: {bundle_file}", "checks": checks})
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -391,7 +482,9 @@ def verify_bundle(
                 archive_files = _safe_extract_tar(tar, tmp_path)
             checks["archive_extraction"] = True
         except Exception as exc:
-            return {"valid": False, "reason": f"Archive extraction rejected: {exc}", "checks": checks}
+            return _finalize(
+                {"valid": False, "reason": f"Archive extraction rejected: {exc}", "checks": checks}
+            )
 
         m_path = tmp_path / "manifest.json"
         s_path = tmp_path / "manifest.sig.json"
@@ -399,23 +492,29 @@ def verify_bundle(
 
         for req in (m_path, s_path, k_path):
             if not req.exists():
-                return {"valid": False, "reason": f"Missing {req.name} in bundle", "checks": checks}
+                return _finalize(
+                    {"valid": False, "reason": f"Missing {req.name} in bundle", "checks": checks}
+                )
 
         try:
             manifest_bytes = m_path.read_bytes().strip()
             manifest_obj = json.loads(manifest_bytes.decode("utf-8"))
         except Exception as exc:
-            return {"valid": False, "reason": f"Invalid manifest JSON: {exc}", "checks": checks}
+            return _finalize(
+                {"valid": False, "reason": f"Invalid manifest JSON: {exc}", "checks": checks}
+            )
 
         schema_ok, schema_msg = _validate_manifest_structure(manifest_obj)
         checks["manifest_schema"] = schema_ok
         if not schema_ok:
-            return {"valid": False, "reason": schema_msg, "checks": checks}
+            return _finalize({"valid": False, "reason": schema_msg, "checks": checks})
 
         try:
             bundled_pub = load_public_key(k_path)
         except Exception as exc:
-            return {"valid": False, "reason": f"Invalid bundled public key: {exc}", "checks": checks}
+            return _finalize(
+                {"valid": False, "reason": f"Invalid bundled public key: {exc}", "checks": checks}
+            )
 
         bundled_fp = public_key_fingerprint(bundled_pub)
 
@@ -423,16 +522,20 @@ def verify_bundle(
             try:
                 trusted_pub = load_public_key(trusted_pub_key_path)
             except Exception as exc:
-                return {"valid": False, "reason": f"Invalid trusted public key: {exc}", "checks": checks}
+                return _finalize(
+                    {"valid": False, "reason": f"Invalid trusted public key: {exc}", "checks": checks}
+                )
             trusted_fp = public_key_fingerprint(trusted_pub)
             if bundled_fp != trusted_fp:
-                return {
-                    "valid": False,
-                    "reason": "Bundled public key does not match trusted public key",
-                    "bundled_public_key_sha256": bundled_fp,
-                    "trusted_public_key_sha256": trusted_fp,
-                    "checks": checks,
-                }
+                return _finalize(
+                    {
+                        "valid": False,
+                        "reason": "Bundled public key does not match trusted public key",
+                        "bundled_public_key_sha256": bundled_fp,
+                        "trusted_public_key_sha256": trusted_fp,
+                        "checks": checks,
+                    }
+                )
             verifier_key = trusted_pub
         else:
             verifier_key = bundled_pub
@@ -441,58 +544,72 @@ def verify_bundle(
         try:
             sig_obj = json.loads(s_path.read_text(encoding="utf-8"))
             if sig_obj.get("algorithm") != "Ed25519":
-                return {"valid": False, "reason": "Unsupported signature algorithm", "checks": checks}
+                return _finalize(
+                    {"valid": False, "reason": "Unsupported signature algorithm", "checks": checks}
+                )
             if sig_obj.get("public_key_sha256") != bundled_fp:
-                return {
-                    "valid": False,
-                    "reason": "Public key fingerprint mismatch in signature metadata",
-                    "checks": checks,
-                }
+                return _finalize(
+                    {
+                        "valid": False,
+                        "reason": "Public key fingerprint mismatch in signature metadata",
+                        "checks": checks,
+                    }
+                )
             if manifest_obj.get("signature_info", {}).get("public_key_sha256") != bundled_fp:
-                return {
-                    "valid": False,
-                    "reason": "Public key fingerprint mismatch in manifest",
-                    "checks": checks,
-                }
+                return _finalize(
+                    {
+                        "valid": False,
+                        "reason": "Public key fingerprint mismatch in manifest",
+                        "checks": checks,
+                    }
+                )
 
-            canonical_manifest = canonicalize_manifest(manifest_obj)
             sig_raw = base64.b64decode(sig_obj["signature_base64"], validate=True)
-            verifier_key.verify(sig_raw, canonical_manifest)
+            signing_payload = build_signing_payload(manifest_obj)
+            verifier_key.verify(sig_raw, signing_payload)
             checks["signature"] = True
         except Exception as exc:
-            return {
-                "valid": False,
-                "reason": f"Signature or manifest verification failed: {exc}",
-                "checks": checks,
-            }
+            return _finalize(
+                {
+                    "valid": False,
+                    "reason": f"Signature or manifest verification failed: {exc}",
+                    "checks": checks,
+                }
+            )
 
         verified_items = []
         manifest_members: set[str] = set()
         for item in manifest_obj.get("artifacts", []):
             member_name = item.get("archive_member", "")
             if not _is_safe_member_name(member_name):
-                return {
-                    "valid": False,
-                    "reason": f"Unsafe artifact path in manifest: {member_name}",
-                    "checks": checks,
-                }
+                return _finalize(
+                    {
+                        "valid": False,
+                        "reason": f"Unsafe artifact path in manifest: {member_name}",
+                        "checks": checks,
+                    }
+                )
             manifest_members.add(member_name)
             member_path = tmp_path / member_name
             if not member_path.exists() or not member_path.is_file():
-                return {
-                    "valid": False,
-                    "reason": f"Missing artifact member: {member_name}",
-                    "checks": checks,
-                }
+                return _finalize(
+                    {
+                        "valid": False,
+                        "reason": f"Missing artifact member: {member_name}",
+                        "checks": checks,
+                    }
+                )
 
             actual_size = member_path.stat().st_size
             actual_sha = sha256_file(member_path)
             if actual_size != item.get("size_bytes") or actual_sha != item.get("sha256"):
-                return {
-                    "valid": False,
-                    "reason": f"Artifact integrity mismatch in {member_name}",
-                    "checks": checks,
-                }
+                return _finalize(
+                    {
+                        "valid": False,
+                        "reason": f"Artifact integrity mismatch in {member_name}",
+                        "checks": checks,
+                    }
+                )
             verified_items.append(
                 {
                     "archive_member": member_name,
@@ -506,19 +623,24 @@ def verify_bundle(
         expected_members = manifest_members | RESERVED_MEMBERS
         unexpected_members = sorted(archive_files - expected_members)
         if unexpected_members:
-            return {
-                "valid": False,
-                "reason": f"Unexpected files in bundle outside manifest: {', '.join(unexpected_members)}",
-                "checks": checks,
-            }
+            return _finalize(
+                {
+                    "valid": False,
+                    "reason": f"Unexpected files in bundle outside manifest: {', '.join(unexpected_members)}",
+                    "checks": checks,
+                }
+            )
         checks["archive_allowlist"] = True
 
-        semantic_ok, semantic_msg = _verify_semantic_telemetry(
-            manifest_obj, tmp_path / "companion_report.json"
+        semantic_ok, semantic_msg = _verify_semantic_and_cross_artifact(
+            manifest_obj=manifest_obj,
+            companion_report_path=tmp_path / "companion_report.json",
+            blackbox_path=tmp_path / "hailab_forensic_blackbox.enc",
+            audit_log_path=tmp_path / "hailab_secure_audit.log",
         )
         checks["semantic_telemetry"] = semantic_ok
         if not semantic_ok:
-            return {"valid": False, "reason": semantic_msg, "checks": checks}
+            return _finalize({"valid": False, "reason": semantic_msg, "checks": checks})
 
         extracted_dir_str = None
         if extract_to is not None:
@@ -531,18 +653,20 @@ def verify_bundle(
             extracted_dir_str = str(extract_to.resolve())
 
         meta = manifest_obj.get("bundle_metadata", {})
-        return {
-            "valid": True,
-            "schema_version": meta.get("schema_version"),
-            "bundle_id": meta.get("bundle_id"),
-            "case_id": meta.get("case_id"),
-            "created_at_utc": meta.get("created_at_utc"),
-            "public_key_sha256": bundled_fp,
-            "trusted_key_enforced": trusted_pub_key_path is not None,
-            "checks": checks,
-            "verified_artifacts": verified_items,
-            "extracted_to": extracted_dir_str,
-        }
+        return _finalize(
+            {
+                "valid": True,
+                "schema_version": meta.get("schema_version"),
+                "bundle_id": meta.get("bundle_id"),
+                "case_id": meta.get("case_id"),
+                "created_at_utc": meta.get("created_at_utc"),
+                "public_key_sha256": bundled_fp,
+                "trusted_key_enforced": trusted_pub_key_path is not None,
+                "checks": checks,
+                "verified_artifacts": verified_items,
+                "extracted_to": extracted_dir_str,
+            }
+        )
 
 
 def main() -> None:
@@ -586,6 +710,12 @@ def main() -> None:
         type=Path,
         default=None,
         help="Optional output directory after successful verification",
+    )
+    p_verify.add_argument(
+        "--ledger-out",
+        type=Path,
+        default=None,
+        help="Optional hash-chained JSONL ledger file path to record verification events",
     )
 
     args = parser.parse_args()
@@ -634,6 +764,7 @@ def main() -> None:
                 bundle_file=args.bundle,
                 trusted_pub_key_path=args.trusted_pub_key,
                 extract_to=args.extract_to,
+                ledger_path=args.ledger_out,
             )
             print(json.dumps(res, indent=2))
             sys.exit(0 if res.get("valid") else 1)
