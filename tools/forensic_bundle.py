@@ -17,8 +17,10 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PublicKey,
 )
 
-SCHEMA_VERSION = "1.2.0"
+SCHEMA_VERSION = "1.3.0"
 RESERVED_MEMBERS = {"manifest.json", "manifest.sig.json", "signer_public.pem"}
+MAX_MEMBER_BYTES = 100 * 1024 * 1024
+MAX_TOTAL_EXTRACT_BYTES = 250 * 1024 * 1024
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -148,6 +150,69 @@ def extract_telemetry_summary(report_data: dict) -> dict:
     }
 
 
+def _validate_manifest_structure(manifest_obj: dict) -> tuple[bool, str]:
+    if not isinstance(manifest_obj, dict):
+        return False, "Manifest root must be a JSON object"
+
+    for req_key in ("bundle_metadata", "telemetry_snapshot", "artifacts", "signature_info"):
+        if req_key not in manifest_obj:
+            return False, f"Missing required manifest section: {req_key}"
+
+    meta = manifest_obj.get("bundle_metadata")
+    if not isinstance(meta, dict):
+        return False, "bundle_metadata must be a JSON object"
+    for meta_key in ("schema_version", "bundle_id", "created_at_utc"):
+        if not meta.get(meta_key):
+            return False, f"Missing or empty bundle_metadata.{meta_key}"
+
+    snapshot = manifest_obj.get("telemetry_snapshot")
+    if not isinstance(snapshot, dict):
+        return False, "telemetry_snapshot must be a JSON object"
+
+    artifacts = manifest_obj.get("artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        return False, "artifacts must be a non-empty list"
+
+    seen_members: set[str] = set()
+    for item in artifacts:
+        if not isinstance(item, dict):
+            return False, "Artifact entry must be a JSON object"
+        member = item.get("archive_member")
+        sha_hex = item.get("sha256")
+        size_val = item.get("size_bytes")
+        if not isinstance(member, str) or not member:
+            return False, "Invalid archive_member in manifest"
+        if member in seen_members:
+            return False, f"Duplicate archive_member in manifest: {member}"
+        seen_members.add(member)
+        if not isinstance(sha_hex, str) or len(sha_hex) != 64:
+            return False, f"Invalid sha256 in manifest for {member}"
+        if not isinstance(size_val, int) or isinstance(size_val, bool) or size_val < 0:
+            return False, f"Invalid size_bytes in manifest for {member}"
+
+    return True, "Manifest structure valid"
+
+
+def _verify_semantic_telemetry(manifest_obj: dict, companion_report_path: Path) -> tuple[bool, str]:
+    if not companion_report_path.exists() or not companion_report_path.is_file():
+        return False, "companion_report.json missing for semantic telemetry check"
+
+    try:
+        report_data = json.loads(companion_report_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return False, f"Failed to parse companion_report.json: {exc}"
+
+    if not isinstance(report_data, dict):
+        return False, "companion_report.json root must be a JSON object"
+
+    expected_snapshot = manifest_obj.get("telemetry_snapshot")
+    actual_snapshot = extract_telemetry_summary(report_data)
+    if actual_snapshot != expected_snapshot:
+        return False, "Semantic mismatch: manifest telemetry_snapshot differs from companion_report.json"
+
+    return True, "Semantic telemetry matches companion_report.json"
+
+
 def _is_safe_member_name(name: str) -> bool:
     p = Path(name)
     if not name or p.is_absolute() or ".." in p.parts or name.startswith(("/", "\\")):
@@ -158,6 +223,8 @@ def _is_safe_member_name(name: str) -> bool:
 def _safe_extract_tar(tar: tarfile.TarFile, dest_dir: Path) -> set[str]:
     resolved_dest = dest_dir.resolve()
     extracted_members: set[str] = set()
+    total_bytes = 0
+
     for member in tar.getmembers():
         if not _is_safe_member_name(member.name):
             raise ValueError(f"Unsafe archive member path: {member.name}")
@@ -167,6 +234,11 @@ def _safe_extract_tar(tar: tarfile.TarFile, dest_dir: Path) -> set[str]:
         if not target.is_relative_to(resolved_dest):
             raise ValueError(f"Path traversal attempt detected: {member.name}")
         if member.isfile():
+            if member.size > MAX_MEMBER_BYTES:
+                raise ValueError(f"Archive member exceeds size limit: {member.name}")
+            total_bytes += member.size
+            if total_bytes > MAX_TOTAL_EXTRACT_BYTES:
+                raise ValueError("Archive total uncompressed size exceeds limit")
             extracted_members.add(member.name)
 
     try:
@@ -299,16 +371,27 @@ def verify_bundle(
     trusted_pub_key_path: Path | None = None,
     extract_to: Path | None = None,
 ) -> dict:
+    checks: dict[str, bool] = {
+        "archive_extraction": False,
+        "manifest_schema": False,
+        "trusted_key": False,
+        "signature": False,
+        "artifacts_integrity": False,
+        "archive_allowlist": False,
+        "semantic_telemetry": False,
+    }
+
     if not bundle_file.exists():
-        return {"valid": False, "reason": f"Bundle not found: {bundle_file}"}
+        return {"valid": False, "reason": f"Bundle not found: {bundle_file}", "checks": checks}
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         try:
             with tarfile.open(bundle_file, "r:gz") as tar:
                 archive_files = _safe_extract_tar(tar, tmp_path)
+            checks["archive_extraction"] = True
         except Exception as exc:
-            return {"valid": False, "reason": f"Archive extraction rejected: {exc}"}
+            return {"valid": False, "reason": f"Archive extraction rejected: {exc}", "checks": checks}
 
         m_path = tmp_path / "manifest.json"
         s_path = tmp_path / "manifest.sig.json"
@@ -316,12 +399,23 @@ def verify_bundle(
 
         for req in (m_path, s_path, k_path):
             if not req.exists():
-                return {"valid": False, "reason": f"Missing {req.name} in bundle"}
+                return {"valid": False, "reason": f"Missing {req.name} in bundle", "checks": checks}
+
+        try:
+            manifest_bytes = m_path.read_bytes().strip()
+            manifest_obj = json.loads(manifest_bytes.decode("utf-8"))
+        except Exception as exc:
+            return {"valid": False, "reason": f"Invalid manifest JSON: {exc}", "checks": checks}
+
+        schema_ok, schema_msg = _validate_manifest_structure(manifest_obj)
+        checks["manifest_schema"] = schema_ok
+        if not schema_ok:
+            return {"valid": False, "reason": schema_msg, "checks": checks}
 
         try:
             bundled_pub = load_public_key(k_path)
         except Exception as exc:
-            return {"valid": False, "reason": f"Invalid bundled public key: {exc}"}
+            return {"valid": False, "reason": f"Invalid bundled public key: {exc}", "checks": checks}
 
         bundled_fp = public_key_fingerprint(bundled_pub)
 
@@ -329,7 +423,7 @@ def verify_bundle(
             try:
                 trusted_pub = load_public_key(trusted_pub_key_path)
             except Exception as exc:
-                return {"valid": False, "reason": f"Invalid trusted public key: {exc}"}
+                return {"valid": False, "reason": f"Invalid trusted public key: {exc}", "checks": checks}
             trusted_fp = public_key_fingerprint(trusted_pub)
             if bundled_fp != trusted_fp:
                 return {
@@ -337,39 +431,59 @@ def verify_bundle(
                     "reason": "Bundled public key does not match trusted public key",
                     "bundled_public_key_sha256": bundled_fp,
                     "trusted_public_key_sha256": trusted_fp,
+                    "checks": checks,
                 }
             verifier_key = trusted_pub
         else:
             verifier_key = bundled_pub
+        checks["trusted_key"] = True
 
         try:
             sig_obj = json.loads(s_path.read_text(encoding="utf-8"))
             if sig_obj.get("algorithm") != "Ed25519":
-                return {"valid": False, "reason": "Unsupported signature algorithm"}
+                return {"valid": False, "reason": "Unsupported signature algorithm", "checks": checks}
             if sig_obj.get("public_key_sha256") != bundled_fp:
-                return {"valid": False, "reason": "Public key fingerprint mismatch in signature metadata"}
-
-            manifest_bytes = m_path.read_bytes().strip()
-            manifest_obj = json.loads(manifest_bytes.decode("utf-8"))
+                return {
+                    "valid": False,
+                    "reason": "Public key fingerprint mismatch in signature metadata",
+                    "checks": checks,
+                }
             if manifest_obj.get("signature_info", {}).get("public_key_sha256") != bundled_fp:
-                return {"valid": False, "reason": "Public key fingerprint mismatch in manifest"}
+                return {
+                    "valid": False,
+                    "reason": "Public key fingerprint mismatch in manifest",
+                    "checks": checks,
+                }
 
             canonical_manifest = canonicalize_manifest(manifest_obj)
             sig_raw = base64.b64decode(sig_obj["signature_base64"], validate=True)
             verifier_key.verify(sig_raw, canonical_manifest)
+            checks["signature"] = True
         except Exception as exc:
-            return {"valid": False, "reason": f"Signature or manifest verification failed: {exc}"}
+            return {
+                "valid": False,
+                "reason": f"Signature or manifest verification failed: {exc}",
+                "checks": checks,
+            }
 
         verified_items = []
         manifest_members: set[str] = set()
         for item in manifest_obj.get("artifacts", []):
             member_name = item.get("archive_member", "")
             if not _is_safe_member_name(member_name):
-                return {"valid": False, "reason": f"Unsafe artifact path in manifest: {member_name}"}
+                return {
+                    "valid": False,
+                    "reason": f"Unsafe artifact path in manifest: {member_name}",
+                    "checks": checks,
+                }
             manifest_members.add(member_name)
             member_path = tmp_path / member_name
             if not member_path.exists() or not member_path.is_file():
-                return {"valid": False, "reason": f"Missing artifact member: {member_name}"}
+                return {
+                    "valid": False,
+                    "reason": f"Missing artifact member: {member_name}",
+                    "checks": checks,
+                }
 
             actual_size = member_path.stat().st_size
             actual_sha = sha256_file(member_path)
@@ -377,6 +491,7 @@ def verify_bundle(
                 return {
                     "valid": False,
                     "reason": f"Artifact integrity mismatch in {member_name}",
+                    "checks": checks,
                 }
             verified_items.append(
                 {
@@ -386,6 +501,7 @@ def verify_bundle(
                     "sha256": actual_sha,
                 }
             )
+        checks["artifacts_integrity"] = True
 
         expected_members = manifest_members | RESERVED_MEMBERS
         unexpected_members = sorted(archive_files - expected_members)
@@ -393,7 +509,16 @@ def verify_bundle(
             return {
                 "valid": False,
                 "reason": f"Unexpected files in bundle outside manifest: {', '.join(unexpected_members)}",
+                "checks": checks,
             }
+        checks["archive_allowlist"] = True
+
+        semantic_ok, semantic_msg = _verify_semantic_telemetry(
+            manifest_obj, tmp_path / "companion_report.json"
+        )
+        checks["semantic_telemetry"] = semantic_ok
+        if not semantic_ok:
+            return {"valid": False, "reason": semantic_msg, "checks": checks}
 
         extracted_dir_str = None
         if extract_to is not None:
@@ -414,6 +539,7 @@ def verify_bundle(
             "created_at_utc": meta.get("created_at_utc"),
             "public_key_sha256": bundled_fp,
             "trusted_key_enforced": trusted_pub_key_path is not None,
+            "checks": checks,
             "verified_artifacts": verified_items,
             "extracted_to": extracted_dir_str,
         }
@@ -519,4 +645,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
