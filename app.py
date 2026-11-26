@@ -15,7 +15,7 @@ import sys
 import threading
 import time
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from flask import Flask, Response, jsonify, render_template
+from flask import Flask, Response, jsonify, render_template, request
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 src_dir = os.path.join(current_dir, "src")
@@ -23,6 +23,9 @@ src_dir = os.path.join(current_dir, "src")
 for path in (current_dir, src_dir):
     if path not in sys.path:
         sys.path.insert(0, path)
+
+from tools.forensic_bundle import verify_bundle
+from tools.forensic_companion import build_engine_report, save_report
 
 app = Flask(__name__)
 
@@ -544,6 +547,9 @@ def run_panic():
 
 
 COMPANION_REPORT_PATH = Path(current_dir) / "reports" / "companion_report.json"
+BUNDLES_DIR = Path(current_dir) / "reports" / "bundles"
+DEFAULT_PUB_KEY = Path(current_dir) / "keys" / "forensic_ed25519.pub"
+DEFAULT_LEDGER_PATH = Path(current_dir) / "reports" / "verification_ledger.jsonl"
 
 
 @app.route("/forensic/companion", methods=["GET"])
@@ -574,6 +580,57 @@ def forensic_companion_report():
         "parsed_metrics": metrics_obj.get("parsed_metrics"),
         "diff_from_previous": data.get("diff_from_previous"),
     }), 200
+
+
+@app.route("/api/companion/refresh", methods=["POST"])
+def api_companion_refresh():
+    try:
+        report = build_engine_report(
+            base_url="http://127.0.0.1:8501",
+            previous_report_path=COMPANION_REPORT_PATH,
+        )
+        saved_path = save_report(report, COMPANION_REPORT_PATH)
+        return jsonify({
+            "ok": True,
+            "saved_to": str(saved_path),
+            "checked_at_utc": report.get("checked_at_utc"),
+            "diff_from_previous": report.get("diff_from_previous"),
+            "blackbox_verified": report.get("blackbox_verification", {}).get("verified"),
+        }), 200
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@app.route("/api/bundles", methods=["GET"])
+def api_list_bundles():
+    if not BUNDLES_DIR.exists():
+        return jsonify({"bundles": []}), 200
+    items = []
+    for p in sorted(BUNDLES_DIR.glob("*.tar.gz"), reverse=True):
+        if p.is_file():
+            items.append({
+                "filename": p.name,
+                "size_bytes": p.stat().st_size,
+            })
+    return jsonify({"bundles": items}), 200
+
+
+@app.route("/api/bundles/verify/<filename>", methods=["GET"])
+def api_verify_bundle(filename):
+    safe_name = Path(filename).name
+    if safe_name != filename or not safe_name.endswith(".tar.gz"):
+        return jsonify({"valid": False, "reason": "Invalid bundle filename"}), 400
+
+    bundle_path = BUNDLES_DIR / safe_name
+    trusted_pub = DEFAULT_PUB_KEY if DEFAULT_PUB_KEY.exists() else None
+    record_ledger = request.args.get("ledger", "0") == "1"
+
+    result = verify_bundle(
+        bundle_file=bundle_path,
+        trusted_pub_key_path=trusted_pub,
+        ledger_path=DEFAULT_LEDGER_PATH if record_ledger else None,
+    )
+    return jsonify(result), 200 if result.get("valid") else 400
 
 
 if __name__ == "__main__":
