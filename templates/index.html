@@ -39,24 +39,28 @@
       background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px;
     }
     .card h3 { margin: 0 0 10px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
-    .card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
     .card-head h3 { margin: 0; }
+    .head-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .val { font-size: 15px; font-weight: 700; word-break: break-word; }
     .hex-box {
       background: #05080d; border: 1px solid var(--border); border-radius: 8px;
       padding: 12px; font-size: 12px; color: #93c5fd; word-break: break-all; line-height: 1.5;
     }
     .actions { display: flex; flex-wrap: wrap; gap: 10px; }
-    button {
+    button, select {
       background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
-      padding: 10px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 700;
+      padding: 10px 14px; border-radius: 8px; font-size: 12px; font-weight: 700;
       transition: opacity 0.15s ease, border-color 0.15s ease;
     }
-    button.btn-sm { padding: 6px 10px; font-size: 11px; }
-    button:hover:not(:disabled) { border-color: var(--accent); }
+    button { cursor: pointer; }
+    select { min-width: 240px; max-width: 100%; }
+    button.btn-sm, select.btn-sm { padding: 6px 10px; font-size: 11px; }
+    button:hover:not(:disabled), select:hover:not(:disabled) { border-color: var(--accent); }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     button.warn { border-color: rgba(234,179,8,0.5); color: #facc15; }
     button.crit { border-color: rgba(239,68,68,0.6); color: #f87171; }
+    button.ok-btn { border-color: rgba(22,163,74,0.55); color: #4ade80; }
     pre.console {
       background: #05080d; border: 1px solid var(--border); border-radius: 8px;
       padding: 12px; font-size: 12px; max-height: 240px; overflow: auto; margin: 0; white-space: pre-wrap;
@@ -143,8 +147,29 @@
 
     <div class="card">
       <div class="card-head">
+        <h3>Ed25519 Signed Forensic Bundles (/api/bundles)</h3>
+        <div class="head-actions">
+          <select id="bundle-select" class="btn-sm">
+            <option value="">No bundles found</option>
+          </select>
+          <button type="button" class="btn-sm" onclick="loadBundlesList()">RELOAD LIST</button>
+          <button type="button" class="btn-sm ok-btn" id="verify-bundle-btn" onclick="verifySelectedBundle(false)">VERIFY BUNDLE</button>
+          <button type="button" class="btn-sm" onclick="verifySelectedBundle(true)">VERIFY + LOG LEDGER</button>
+        </div>
+      </div>
+      <div style="font-size: 11px; color: var(--muted); margin-bottom: 10px;" id="bundle-meta">
+        Checks Ed25519 signature, artifact SHA-256 digests, allowlist, and semantic telemetry consistency.
+      </div>
+      <pre class="console" id="bundle-verify-box">Select a .tar.gz bundle from reports/bundles to verify.</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
         <h3>Companion Forensic Report (/forensic/companion)</h3>
-        <button type="button" class="btn-sm" onclick="refreshCompanion()">REFRESH COMPANION</button>
+        <div class="head-actions">
+          <button type="button" class="btn-sm" onclick="refreshCompanion()">REFRESH VIEW</button>
+          <button type="button" class="btn-sm ok-btn" id="regen-companion-btn" onclick="regenerateCompanion()">GENERATE FRESH SNAPSHOT</button>
+        </div>
       </div>
       <div style="font-size: 11px; color: var(--muted); margin-bottom: 10px;" id="companion-meta">Loading companion report...</div>
       <pre class="console" id="companion-box">Loading...</pre>
@@ -207,6 +232,79 @@
       const el = document.getElementById("mlock-val");
       el.textContent = mlockedBool ? `LOCKED (${statusText})` : `UNLOCKED (${statusText})`;
       el.style.color = mlockedBool ? "#4ade80" : "#facc15";
+    }
+
+    async function loadBundlesList() {
+      const sel = document.getElementById("bundle-select");
+      const metaEl = document.getElementById("bundle-meta");
+      const prevVal = sel.value;
+      try {
+        const res = await fetch("/api/bundles");
+        const payload = await res.json();
+        const list = Array.isArray(payload.bundles) ? payload.bundles : [];
+        sel.innerHTML = "";
+        if (!list.length) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "No .tar.gz bundles in reports/bundles";
+          sel.appendChild(opt);
+          metaEl.textContent = "Create a bundle via tools/forensic_bundle.py create, then click RELOAD LIST.";
+          return;
+        }
+        list.forEach((item) => {
+          const opt = document.createElement("option");
+          opt.value = item.filename;
+          opt.textContent = `${item.filename} (${item.size_bytes} B)`;
+          sel.appendChild(opt);
+        });
+        if (prevVal && list.some((x) => x.filename === prevVal)) {
+          sel.value = prevVal;
+        }
+        metaEl.textContent = `Found ${list.length} bundle(s) in reports/bundles.`;
+      } catch (e) {
+        metaEl.textContent = "Failed to load bundles list: " + e;
+      }
+    }
+
+    async function verifySelectedBundle(withLedger) {
+      const sel = document.getElementById("bundle-select");
+      const box = document.getElementById("bundle-verify-box");
+      const metaEl = document.getElementById("bundle-meta");
+      const filename = sel.value;
+      if (!filename) {
+        box.textContent = "No bundle selected.";
+        return;
+      }
+      const btn = document.getElementById("verify-bundle-btn");
+      btn.disabled = true;
+      try {
+        const qs = withLedger ? "?ledger=1" : "";
+        const res = await fetch(`/api/bundles/verify/${encodeURIComponent(filename)}${qs}`);
+        const data = await res.json();
+        metaEl.textContent = data.valid
+          ? `VERIFIED | Bundle ID: ${data.bundle_id} | Key FP: ${(data.public_key_sha256 || "").slice(0, 16)}...`
+          : `VERIFICATION FAILED | Reason: ${data.reason || "Check failed"}`;
+        box.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        box.textContent = "Bundle verification error: " + e;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function regenerateCompanion() {
+      const btn = document.getElementById("regen-companion-btn");
+      btn.disabled = true;
+      try {
+        const res = await fetch("/api/companion/refresh", { method: "POST" });
+        const data = await res.json();
+        document.getElementById("output-box").textContent = JSON.stringify(data, null, 2);
+        await refreshCompanion();
+      } catch (e) {
+        document.getElementById("output-box").textContent = "Companion refresh error: " + e;
+      } finally {
+        btn.disabled = false;
+      }
     }
 
     async function refreshCompanion() {
@@ -338,6 +436,7 @@
     };
 
     refreshAll();
+    loadBundlesList();
     setInterval(refreshAll, 3000);
   </script>
 </body>
