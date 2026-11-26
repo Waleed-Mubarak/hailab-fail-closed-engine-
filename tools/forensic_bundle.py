@@ -337,6 +337,14 @@ def _append_unified_ledger(
         or bundle_file.stem
     )
     bundle_sha = sha256_file(bundle_file) if bundle_file.exists() else None
+    extra_fields = {
+        "bundle_path": str(bundle_file),
+        "bundle_sha256": bundle_sha,
+        "case_id": payload.get("case_id") or (meta.get("case_id") if isinstance(meta, dict) else None),
+        "schema_version": payload.get("schema_version")
+        or (meta.get("schema_version") if isinstance(meta, dict) else SCHEMA_VERSION),
+        "public_key_sha256": payload.get("public_key_sha256"),
+    }
 
     vr = VerificationResult(
         ok=valid,
@@ -344,14 +352,6 @@ def _append_unified_ledger(
         reason_code=reason_code,
         reason=reason,
         checks=checks,
-        artifacts={
-            "bundle_path": str(bundle_file),
-            "bundle_sha256": bundle_sha,
-            "case_id": payload.get("case_id") or (meta.get("case_id") if isinstance(meta, dict) else None),
-            "schema_version": payload.get("schema_version")
-            or (meta.get("schema_version") if isinstance(meta, dict) else SCHEMA_VERSION),
-            "public_key_sha256": payload.get("public_key_sha256"),
-        },
     )
 
     append_verification_to_ledger(
@@ -359,14 +359,7 @@ def _append_unified_ledger(
         bundle_id=str(bundle_id),
         result=vr,
         execution_mode="bundle_verify",
-        extra={
-            "bundle_path": str(bundle_file),
-            "bundle_sha256": bundle_sha,
-            "case_id": payload.get("case_id") or (meta.get("case_id") if isinstance(meta, dict) else None),
-            "schema_version": payload.get("schema_version")
-            or (meta.get("schema_version") if isinstance(meta, dict) else SCHEMA_VERSION),
-            "public_key_sha256": payload.get("public_key_sha256"),
-        },
+        extra=extra_fields,
     )
     return vr.ledger_entry_sha256
 
