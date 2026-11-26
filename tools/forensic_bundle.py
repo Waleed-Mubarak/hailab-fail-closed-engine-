@@ -286,25 +286,37 @@ def _safe_extract_tar(tar: tarfile.TarFile, dest_dir: Path) -> set[str]:
     return extracted_members
 
 
+def _rc(name: str, fallback: str = "ERR_BUNDLE_INVALID") -> str:
+    if hasattr(ReasonCode, name):
+        return str(getattr(ReasonCode, name))
+    return str(getattr(ReasonCode, fallback, fallback))
+
+
 def _infer_reason_code(valid: bool, reason: str, checks: dict[str, bool]) -> str:
     if valid:
-        return ReasonCode.OK
+        return _rc("OK", "OK")
     low = reason.lower()
     if "not found" in low or "missing" in low:
-        return ReasonCode.ERR_MISSING_ARTIFACT
-    if "extraction" in low or "path" in low or "links" in low or "allowlist" in low or not checks.get("archive_extraction"):
-        return ReasonCode.ERR_ARCHIVE_SECURITY
+        return _rc("ERR_MISSING_ARTIFACT")
+    if (
+        "extraction" in low
+        or "path" in low
+        or "links" in low
+        or "allowlist" in low
+        or not checks.get("archive_extraction")
+    ):
+        return _rc("ERR_ARCHIVE_SECURITY")
     if "key" in low or not checks.get("trusted_key"):
-        return ReasonCode.ERR_TRUSTED_KEY
+        return _rc("ERR_TRUSTED_KEY")
     if "signature" in low or not checks.get("signature"):
-        return ReasonCode.ERR_SIGNATURE_INVALID
+        return _rc("ERR_SIGNATURE_INVALID")
     if "manifest" in low or not checks.get("manifest_schema"):
-        return ReasonCode.ERR_MANIFEST_INVALID
+        return _rc("ERR_MANIFEST_INVALID")
     if "integrity" in low or not checks.get("artifacts_integrity"):
-        return ReasonCode.ERR_ARTIFACT_HASH_MISMATCH
+        return _rc("ERR_ARTIFACT_HASH_MISMATCH")
     if "semantic" in low or "anomaly" in low or not checks.get("semantic_telemetry"):
-        return ReasonCode.ERR_SEMANTIC_MISMATCH
-    return ReasonCode.ERR_BUNDLE_INVALID
+        return _rc("ERR_SEMANTIC_MISMATCH")
+    return _rc("ERR_BUNDLE_INVALID")
 
 
 def _append_unified_ledger(
