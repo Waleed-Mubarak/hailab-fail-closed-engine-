@@ -1,6 +1,5 @@
 import argparse
 import base64
-import fcntl
 import hashlib
 import json
 import os
@@ -18,12 +17,18 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PublicKey,
 )
 
+_TOOLS_DIR = Path(__file__).resolve().parent
+if str(_TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(_TOOLS_DIR))
+
+from forensic_ledger import append_verification_to_ledger
+from verification_result import ReasonCode, VerificationResult
+
 SCHEMA_VERSION = "1.4.0"
 DOMAIN_PREFIX = b"HAILAB_FORENSIC_BUNDLE_V1\x00"
 RESERVED_MEMBERS = {"manifest.json", "manifest.sig.json", "signer_public.pem"}
 MAX_MEMBER_BYTES = 100 * 1024 * 1024
 MAX_TOTAL_EXTRACT_BYTES = 250 * 1024 * 1024
-GENESIS_HASH = "0" * 64
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -281,49 +286,77 @@ def _safe_extract_tar(tar: tarfile.TarFile, dest_dir: Path) -> set[str]:
     return extracted_members
 
 
-def append_verification_ledger(ledger_path: Path, bundle_file: Path, verify_result: dict) -> str:
-    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+def _infer_reason_code(valid: bool, reason: str, checks: dict[str, bool]) -> str:
+    if valid:
+        return ReasonCode.OK
+    low = reason.lower()
+    if "not found" in low or "missing" in low:
+        return ReasonCode.ERR_MISSING_ARTIFACT
+    if "extraction" in low or "path" in low or "links" in low or "allowlist" in low or not checks.get("archive_extraction"):
+        return ReasonCode.ERR_ARCHIVE_SECURITY
+    if "key" in low or not checks.get("trusted_key"):
+        return ReasonCode.ERR_TRUSTED_KEY
+    if "signature" in low or not checks.get("signature"):
+        return ReasonCode.ERR_SIGNATURE_INVALID
+    if "manifest" in low or not checks.get("manifest_schema"):
+        return ReasonCode.ERR_MANIFEST_INVALID
+    if "integrity" in low or not checks.get("artifacts_integrity"):
+        return ReasonCode.ERR_ARTIFACT_HASH_MISMATCH
+    if "semantic" in low or "anomaly" in low or not checks.get("semantic_telemetry"):
+        return ReasonCode.ERR_SEMANTIC_MISMATCH
+    return ReasonCode.ERR_BUNDLE_INVALID
+
+
+def _append_unified_ledger(
+    ledger_path: Path,
+    bundle_file: Path,
+    payload: dict,
+    meta: dict | None = None,
+) -> str | None:
+    valid = bool(payload.get("valid"))
+    reason = str(payload.get("reason") or ("Bundle verified" if valid else "Bundle verification failed"))
+    checks_raw = payload.get("checks") or {}
+    checks = {str(k): bool(v) for k, v in checks_raw.items()}
+    reason_code = _infer_reason_code(valid, reason, checks)
+
+    bundle_id = (
+        payload.get("bundle_id")
+        or (meta.get("bundle_id") if isinstance(meta, dict) else None)
+        or bundle_file.stem
+    )
     bundle_sha = sha256_file(bundle_file) if bundle_file.exists() else None
-    now_iso = datetime.now(timezone.utc).isoformat()
 
-    with ledger_path.open("a+", encoding="utf-8") as f:
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-        try:
-            f.seek(0)
-            lines = [ln for ln in f.read().splitlines() if ln.strip()]
-            index = len(lines)
-            prev_hash = GENESIS_HASH
-            if lines:
-                last_obj = json.loads(lines[-1])
-                prev_hash = last_obj.get("entry_sha256", GENESIS_HASH)
+    vr = VerificationResult(
+        ok=valid,
+        returncode=0 if valid else 1,
+        reason_code=reason_code,
+        reason=reason,
+        checks=checks,
+        artifacts={
+            "bundle_path": str(bundle_file),
+            "bundle_sha256": bundle_sha,
+            "case_id": payload.get("case_id") or (meta.get("case_id") if isinstance(meta, dict) else None),
+            "schema_version": payload.get("schema_version")
+            or (meta.get("schema_version") if isinstance(meta, dict) else SCHEMA_VERSION),
+            "public_key_sha256": payload.get("public_key_sha256"),
+        },
+    )
 
-            entry_core = {
-                "index": index,
-                "timestamp_utc": now_iso,
-                "bundle_path": str(bundle_file),
-                "bundle_sha256": bundle_sha,
-                "bundle_id": verify_result.get("bundle_id"),
-                "case_id": verify_result.get("case_id"),
-                "schema_version": verify_result.get("schema_version"),
-                "valid": verify_result.get("valid"),
-                "reason": verify_result.get("reason"),
-                "public_key_sha256": verify_result.get("public_key_sha256"),
-                "checks": verify_result.get("checks"),
-                "prev_entry_sha256": prev_hash,
-            }
-            serialized_core = json.dumps(entry_core, sort_keys=True, ensure_ascii=False).encode("utf-8")
-            entry_hash = sha256_bytes(serialized_core)
-            full_entry = dict(entry_core)
-            full_entry["entry_sha256"] = entry_hash
-
-            f.seek(0, os.SEEK_END)
-            f.write(json.dumps(full_entry, ensure_ascii=False) + "\n")
-            f.flush()
-            os.fsync(f.fileno())
-        finally:
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-
-    return entry_hash
+    append_verification_to_ledger(
+        ledger_path,
+        bundle_id=str(bundle_id),
+        result=vr,
+        execution_mode="bundle_verify",
+        extra={
+            "bundle_path": str(bundle_file),
+            "bundle_sha256": bundle_sha,
+            "case_id": payload.get("case_id") or (meta.get("case_id") if isinstance(meta, dict) else None),
+            "schema_version": payload.get("schema_version")
+            or (meta.get("schema_version") if isinstance(meta, dict) else SCHEMA_VERSION),
+            "public_key_sha256": payload.get("public_key_sha256"),
+        },
+    )
+    return vr.ledger_entry_sha256
 
 
 def create_bundle(
@@ -463,12 +496,13 @@ def verify_bundle(
         "semantic_telemetry": False,
     }
 
-    def _finalize(payload: dict) -> dict:
+    def _finalize(payload: dict, meta: dict | None = None) -> dict:
         if ledger_path is not None:
-            payload["ledger_entry_sha256"] = append_verification_ledger(
+            payload["ledger_entry_sha256"] = _append_unified_ledger(
                 ledger_path=ledger_path,
                 bundle_file=bundle_file,
-                verify_result=payload,
+                payload=payload,
+                meta=meta,
             )
         return payload
 
@@ -504,16 +538,19 @@ def verify_bundle(
                 {"valid": False, "reason": f"Invalid manifest JSON: {exc}", "checks": checks}
             )
 
+        meta_obj = manifest_obj.get("bundle_metadata") if isinstance(manifest_obj, dict) else None
+
         schema_ok, schema_msg = _validate_manifest_structure(manifest_obj)
         checks["manifest_schema"] = schema_ok
         if not schema_ok:
-            return _finalize({"valid": False, "reason": schema_msg, "checks": checks})
+            return _finalize({"valid": False, "reason": schema_msg, "checks": checks}, meta=meta_obj)
 
         try:
             bundled_pub = load_public_key(k_path)
         except Exception as exc:
             return _finalize(
-                {"valid": False, "reason": f"Invalid bundled public key: {exc}", "checks": checks}
+                {"valid": False, "reason": f"Invalid bundled public key: {exc}", "checks": checks},
+                meta=meta_obj,
             )
 
         bundled_fp = public_key_fingerprint(bundled_pub)
@@ -523,7 +560,8 @@ def verify_bundle(
                 trusted_pub = load_public_key(trusted_pub_key_path)
             except Exception as exc:
                 return _finalize(
-                    {"valid": False, "reason": f"Invalid trusted public key: {exc}", "checks": checks}
+                    {"valid": False, "reason": f"Invalid trusted public key: {exc}", "checks": checks},
+                    meta=meta_obj,
                 )
             trusted_fp = public_key_fingerprint(trusted_pub)
             if bundled_fp != trusted_fp:
@@ -534,7 +572,8 @@ def verify_bundle(
                         "bundled_public_key_sha256": bundled_fp,
                         "trusted_public_key_sha256": trusted_fp,
                         "checks": checks,
-                    }
+                    },
+                    meta=meta_obj,
                 )
             verifier_key = trusted_pub
         else:
@@ -545,7 +584,8 @@ def verify_bundle(
             sig_obj = json.loads(s_path.read_text(encoding="utf-8"))
             if sig_obj.get("algorithm") != "Ed25519":
                 return _finalize(
-                    {"valid": False, "reason": "Unsupported signature algorithm", "checks": checks}
+                    {"valid": False, "reason": "Unsupported signature algorithm", "checks": checks},
+                    meta=meta_obj,
                 )
             if sig_obj.get("public_key_sha256") != bundled_fp:
                 return _finalize(
@@ -553,7 +593,8 @@ def verify_bundle(
                         "valid": False,
                         "reason": "Public key fingerprint mismatch in signature metadata",
                         "checks": checks,
-                    }
+                    },
+                    meta=meta_obj,
                 )
             if manifest_obj.get("signature_info", {}).get("public_key_sha256") != bundled_fp:
                 return _finalize(
@@ -561,7 +602,8 @@ def verify_bundle(
                         "valid": False,
                         "reason": "Public key fingerprint mismatch in manifest",
                         "checks": checks,
-                    }
+                    },
+                    meta=meta_obj,
                 )
 
             sig_raw = base64.b64decode(sig_obj["signature_base64"], validate=True)
@@ -574,7 +616,8 @@ def verify_bundle(
                     "valid": False,
                     "reason": f"Signature or manifest verification failed: {exc}",
                     "checks": checks,
-                }
+                },
+                meta=meta_obj,
             )
 
         verified_items = []
@@ -587,7 +630,8 @@ def verify_bundle(
                         "valid": False,
                         "reason": f"Unsafe artifact path in manifest: {member_name}",
                         "checks": checks,
-                    }
+                    },
+                    meta=meta_obj,
                 )
             manifest_members.add(member_name)
             member_path = tmp_path / member_name
@@ -597,7 +641,8 @@ def verify_bundle(
                         "valid": False,
                         "reason": f"Missing artifact member: {member_name}",
                         "checks": checks,
-                    }
+                    },
+                    meta=meta_obj,
                 )
 
             actual_size = member_path.stat().st_size
@@ -608,7 +653,8 @@ def verify_bundle(
                         "valid": False,
                         "reason": f"Artifact integrity mismatch in {member_name}",
                         "checks": checks,
-                    }
+                    },
+                    meta=meta_obj,
                 )
             verified_items.append(
                 {
@@ -628,7 +674,8 @@ def verify_bundle(
                     "valid": False,
                     "reason": f"Unexpected files in bundle outside manifest: {', '.join(unexpected_members)}",
                     "checks": checks,
-                }
+                },
+                meta=meta_obj,
             )
         checks["archive_allowlist"] = True
 
@@ -640,7 +687,7 @@ def verify_bundle(
         )
         checks["semantic_telemetry"] = semantic_ok
         if not semantic_ok:
-            return _finalize({"valid": False, "reason": semantic_msg, "checks": checks})
+            return _finalize({"valid": False, "reason": semantic_msg, "checks": checks}, meta=meta_obj)
 
         extracted_dir_str = None
         if extract_to is not None:
@@ -665,7 +712,8 @@ def verify_bundle(
                 "checks": checks,
                 "verified_artifacts": verified_items,
                 "extracted_to": extracted_dir_str,
-            }
+            },
+            meta=meta,
         )
 
 
