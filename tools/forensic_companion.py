@@ -114,7 +114,7 @@ def verify_blackbox(decrypt_script: Path, box_path: Path) -> dict[str, Any]:
     }
 
 
-def compare_with_previous(previous_report_path: Path, current_artifacts: dict[str, Any]) -> dict[str, Any]:
+def compare_with_previous(previous_report_path: Path, current_state: dict[str, Any]) -> dict[str, Any]:
     if not previous_report_path.exists():
         return {"has_previous": False, "changed": None, "critical_diffs": []}
     try:
@@ -128,9 +128,9 @@ def compare_with_previous(previous_report_path: Path, current_artifacts: dict[st
 
     prev_art = prev.get("artifacts", {})
     prev_box = prev_art.get("blackbox", {})
-    curr_box = current_artifacts.get("blackbox", {})
+    curr_box = current_state.get("blackbox", {})
     prev_log = prev_art.get("audit_log", {})
-    curr_log = current_artifacts.get("audit_log", {})
+    curr_log = current_state.get("audit_log", {})
 
     box_sha_changed = prev_box.get("sha256") != curr_box.get("sha256")
     audit_lines_delta = (
@@ -141,7 +141,7 @@ def compare_with_previous(previous_report_path: Path, current_artifacts: dict[st
     )
 
     critical_diffs: list[str] = []
-    if prev.get("server_online") is True and current_artifacts.get("server_online") is False:
+    if prev.get("server_online") is True and current_state.get("server_online") is False:
         critical_diffs.append("Engine went offline since previous report")
     if prev_box.get("exists") and box_sha_changed:
         critical_diffs.append("Blackbox SHA-256 changed compared to previous report")
@@ -149,7 +149,7 @@ def compare_with_previous(previous_report_path: Path, current_artifacts: dict[st
         critical_diffs.append(f"Audit log line count decreased by {abs(audit_lines_delta)}")
 
     prev_ledger_ok = (prev.get("ledger_verification") or {}).get("ok")
-    curr_ledger_ok = (current_artifacts.get("ledger_verification") or {}).get("ok")
+    curr_ledger_ok = (current_state.get("ledger_verification") or {}).get("ok")
     if prev_ledger_ok is True and curr_ledger_ok is False:
         critical_diffs.append("Ledger hash-chain integrity regressed from OK to broken")
 
@@ -184,9 +184,11 @@ def build_executive_summary(
             f"Blackbox verification failed: {blackbox_check.get('reason') or blackbox_check.get('output')}"
         )
 
-    all_healthy = bool(ledger_check.get("ok")) and (
-        not box_info.get("exists") or bool(blackbox_check.get("verified"))
-    ) and not critical_findings
+    all_healthy = (
+        bool(ledger_check.get("ok"))
+        and (not box_info.get("exists") or bool(blackbox_check.get("verified")))
+        and not critical_findings
+    )
 
     result_contract = build_verification_result(
         passed=all_healthy,
@@ -235,8 +237,9 @@ def render_markdown_summary(report: dict[str, Any]) -> str:
         "",
         "## Critical Diffs & Findings",
     ]
-    if diffs or exec_sum.get("critical_findings"):
-        for item in dict.fromkeys([*diffs, *(exec_sum.get("critical_findings") or [])]):
+    combined = list(dict.fromkeys([*diffs, *(exec_sum.get("critical_findings") or [])]))
+    if combined:
+        for item in combined:
             lines.append(f"- {item}")
     else:
         lines.append("- No critical diffs or integrity regressions detected.")
@@ -268,13 +271,17 @@ def build_engine_report(
     server_online = any(
         item.get("reachable") for item in (status_resp, metrics_resp, forensic_resp)
     )
-    ledger_check = verify_ledger_chain(ledger_path) if ledger_path.exists() else {
-        "ok": True,
-        "reason_code": ReasonCode.OK,
-        "entries_count": 0,
-        "head_sha256": None,
-        "detail": f"Optional ledger not yet created at {ledger_path}",
-    }
+    ledger_check = (
+        verify_ledger_chain(ledger_path)
+        if ledger_path.exists()
+        else {
+            "ok": True,
+            "reason_code": ReasonCode.OK,
+            "entries_count": 0,
+            "head_sha256": None,
+            "detail": f"Optional ledger not yet created at {ledger_path}",
+        }
+    )
     blackbox_check = verify_blackbox(decrypt_script, box_path)
 
     comparison_input = {
