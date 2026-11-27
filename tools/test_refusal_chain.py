@@ -20,6 +20,7 @@ from tools.ephemeral_forensic_ledger import (
     write_ephemeral_forensic_artifact,
 )
 from tools.forensic_bundle import create_bundle, verify_bundle
+from tools.forensic_ledger import append_ephemeral_refusal_to_ledger, verify_ledger_chain
 
 
 class TestRefusalChainAdversarial(unittest.TestCase):
@@ -331,6 +332,31 @@ class TestRefusalChainAdversarial(unittest.TestCase):
             )
             self.assertEqual(attached["evidence_type"], "ephemeral_refusal_chain")
             self.assertTrue(attached["summary"]["verified"])
+
+    def test_append_ephemeral_refusal_to_ledger_and_verify_chain(self) -> None:
+        lease = EphemeralSecretLease(
+            b"ledger-ephemeral-secret",
+            lease_id="lease-ledger-01",
+            lease_ttl_ms=500.0,
+            max_jitter_ms=500.0,
+            proof_ledger=self.ledger,
+        )
+        lease.burn(DestructionReason.EXPLICIT_BURN)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ledger_file = Path(tmp_dir) / "unified_ledger.jsonl"
+            entry = append_ephemeral_refusal_to_ledger(
+                ledger_file,
+                bundle_id="bundle-ephemeral-test",
+                refusal_ledger=self.ledger,
+                witness_key=self.witness_key,
+            )
+            self.assertTrue(entry["ok"])
+            self.assertEqual(entry["extra"]["record_count"], 1)
+
+            chain_status = verify_ledger_chain(ledger_file)
+            self.assertTrue(chain_status["ok"])
+            self.assertEqual(chain_status["entries_count"], 1)
 
 
 if __name__ == "__main__":
