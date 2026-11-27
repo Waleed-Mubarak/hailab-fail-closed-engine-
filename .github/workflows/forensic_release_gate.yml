@@ -25,11 +25,11 @@ jobs:
 
       - name: Compile check Python files
         run: |
-          python -m py_compile tools/verify_bundle_adversarial.py tools/test_verify_bundle_adversarial.py
+          python -m py_compile tools/verify_bundle_adversarial.py
 
       - name: Run adversarial verification tests
         run: |
-          PYTHONPATH=. python -m unittest discover -s tools -p "test_verify_bundle_adversarial.py" -v
+          PYTHONPATH=. python -m unittest discover -s tools -p "*adversarial*.py" -v
 
       - name: Verify latest bundle & ledger if present
         run: |
@@ -59,4 +59,3 @@ jobs:
           res = subprocess.run(cmd, check=False)
           sys.exit(res.returncode)
           EOF
-
