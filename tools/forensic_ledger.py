@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -9,6 +11,8 @@ _TOOLS_DIR = Path(__file__).resolve().parent
 if str(_TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(_TOOLS_DIR))
 
+from ephemeral_evidence import RefusalProofLedger
+from ephemeral_forensic_ledger import build_ephemeral_forensic_payload
 from verification_result import ReasonCode, VerificationResult
 
 
@@ -110,6 +114,47 @@ def append_verification_to_ledger(
     return record
 
 
+def append_ephemeral_refusal_to_ledger(
+    ledger_path: str | Path,
+    *,
+    bundle_id: str,
+    refusal_ledger: RefusalProofLedger,
+    witness_key: bytes | None = None,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """يسجّل ملخص سلسلة الرفض المؤقتة ضمن السجل المترابط تشفيرياً."""
+    payload = build_ephemeral_forensic_payload(refusal_ledger, witness_key=witness_key)
+    summary = payload.get("summary") or {}
+    verified = bool(summary.get("verified"))
+    record_count = int(summary.get("record_count") or len(payload.get("records") or []))
+    jsonl_sha256 = summary.get("jsonl_sha256")
+
+    merged_extra: dict[str, Any] = {
+        "execution_mode": "ephemeral_refusal_chain",
+        "evidence_type": payload.get("evidence_type", "ephemeral_refusal_chain"),
+        "record_count": record_count,
+        "jsonl_sha256": jsonl_sha256,
+        "ephemeral_summary": summary,
+    }
+    if extra:
+        merged_extra.update(extra)
+
+    return append_ledger_entry(
+        ledger_path=ledger_path,
+        bundle_id=bundle_id,
+        ok=verified,
+        returncode=0 if verified else 1,
+        reason_code=str(getattr(ReasonCode, "OK", "OK"))
+        if verified
+        else str(getattr(ReasonCode, "ERR_LEDGER_INTEGRITY", "ERR_LEDGER_INTEGRITY")),
+        reason="Ephemeral refusal chain verified"
+        if verified
+        else "Ephemeral refusal chain verification failed",
+        checks={"ephemeral_chain_verified": verified},
+        extra=merged_extra,
+    )
+
+
 def verify_ledger_chain(ledger_path: str | Path) -> dict[str, Any]:
     path = Path(ledger_path)
     if not path.exists():
@@ -194,4 +239,3 @@ def verify_ledger_chain(ledger_path: str | Path) -> dict[str, Any]:
         "head_sha256": last_good_hash,
         "detail": "Ledger hash-chain verified",
     }
-
