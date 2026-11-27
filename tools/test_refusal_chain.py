@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 import os
+from pathlib import Path
+import tempfile
 import threading
 import time
 import unittest
@@ -11,6 +14,10 @@ from tools.ephemeral_evidence import (
     EphemeralSecretLease,
     EphemeralStateError,
     RefusalProofLedger,
+)
+from tools.ephemeral_forensic_ledger import (
+    build_ephemeral_forensic_payload,
+    write_ephemeral_forensic_artifact,
 )
 
 
@@ -211,6 +218,39 @@ class TestRefusalChainAdversarial(unittest.TestCase):
         tampered_chain = [replace(recs[0], access_count=recs[0].access_count + 1), *recs[1:]]
         ok, _ = RefusalProofLedger.verify_chain(tampered_chain, witness_key=self.witness_key)
         self.assertFalse(ok)
+
+    def test_ephemeral_forensic_payload_and_artifact_write(self) -> None:
+        lease = EphemeralSecretLease(
+            b"forensic-bridge-secret",
+            lease_id="lease-forensic-01",
+            lease_ttl_ms=500.0,
+            max_jitter_ms=500.0,
+            proof_ledger=self.ledger,
+        )
+        lease.burn(DestructionReason.EXPLICIT_BURN)
+
+        payload = build_ephemeral_forensic_payload(
+            self.ledger,
+            witness_key=self.witness_key,
+        )
+        self.assertEqual(payload["evidence_type"], "ephemeral_refusal_chain")
+        self.assertEqual(payload["summary"]["record_count"], 1)
+        self.assertTrue(payload["summary"]["verified"])
+        self.assertEqual(len(payload["records"]), 1)
+        self.assertEqual(payload["records"][0]["lease_id"], "lease-forensic-01")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_path = Path(tmp_dir) / "nested" / "ephemeral_refusal_evidence.json"
+            written = write_ephemeral_forensic_artifact(
+                self.ledger,
+                out_path,
+                witness_key=self.witness_key,
+            )
+            self.assertEqual(written, out_path)
+            self.assertTrue(out_path.exists())
+            loaded = json.loads(out_path.read_text(encoding="utf-8"))
+            self.assertEqual(loaded["summary"]["jsonl_sha256"], payload["summary"]["jsonl_sha256"])
+            self.assertEqual(loaded["records"], payload["records"])
 
 
 if __name__ == "__main__":
