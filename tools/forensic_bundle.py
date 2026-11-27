@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import base64
 import hashlib
@@ -21,6 +23,8 @@ _TOOLS_DIR = Path(__file__).resolve().parent
 if str(_TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(_TOOLS_DIR))
 
+from ephemeral_evidence import RefusalProofLedger
+from ephemeral_forensic_ledger import build_ephemeral_forensic_payload
 from forensic_ledger import append_verification_to_ledger
 from verification_result import ReasonCode, VerificationResult
 
@@ -160,7 +164,7 @@ def extract_telemetry_summary(report_data: dict) -> dict:
     )
     bb_verify = report_data.get("blackbox_verification", {})
 
-    return {
+    summary = {
         "parsed_metrics": metrics_block.get("parsed_metrics", {}),
         "diff_from_previous": report_data.get("diff_from_previous", {}),
         "audit_chain": {
@@ -172,6 +176,10 @@ def extract_telemetry_summary(report_data: dict) -> dict:
             "returncode": bb_verify.get("returncode"),
         },
     }
+    ephemeral_summary = report_data.get("ephemeral_refusal_chain")
+    if isinstance(ephemeral_summary, dict):
+        summary["ephemeral_refusal_chain"] = ephemeral_summary
+    return summary
 
 
 def _validate_manifest_structure(manifest_obj: dict) -> tuple[bool, str]:
@@ -375,6 +383,8 @@ def create_bundle(
     passphrase: str | None = None,
     case_id: str | None = None,
     notes: str | None = None,
+    ephemeral_ledger: RefusalProofLedger | None = None,
+    ephemeral_witness_key: bytes | None = None,
 ) -> dict:
     for p in (report_path, blackbox_path, audit_log_path):
         if not p.exists():
@@ -413,44 +423,8 @@ def create_bundle(
         used_names.add(arc_name)
         staged_artifacts.append((ep, "supporting_attachment", arc_name))
 
-    artifacts_manifest = [
-        build_artifact_entry(src_path, role, arc_name)
-        for src_path, role, arc_name in staged_artifacts
-    ]
-
     created_utc = datetime.now(timezone.utc).isoformat()
     bundle_id = str(uuid.uuid4())
-
-    manifest = {
-        "bundle_metadata": {
-            "schema_version": SCHEMA_VERSION,
-            "bundle_id": bundle_id,
-            "case_id": case_id,
-            "notes": notes,
-            "created_at_utc": created_utc,
-            "generator": "HAI LAB Forensic Bundle Tool",
-            "execution_scope": "Linux x86_64 user-space | Phase 5 Scope B | LAB / DEMO",
-        },
-        "telemetry_snapshot": extract_telemetry_summary(report_data),
-        "artifacts": artifacts_manifest,
-        "signature_info": {
-            "algorithm": "Ed25519",
-            "signed_target": "manifest.json",
-            "domain_binding": "HAILAB_FORENSIC_BUNDLE_V1",
-            "public_key_sha256": pub_fingerprint,
-        },
-    }
-
-    canonical_manifest = canonicalize_manifest(manifest)
-    signing_payload = build_signing_payload(manifest)
-    signature_b64 = base64.b64encode(priv_key.sign(signing_payload)).decode("ascii")
-    sig_payload = {
-        "algorithm": "Ed25519",
-        "domain_binding": "HAILAB_FORENSIC_BUNDLE_V1",
-        "public_key_sha256": pub_fingerprint,
-        "signature_base64": signature_b64,
-    }
-
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     bundle_file = out_dir / f"forensic_bundle_{stamp}_{bundle_id[:8]}.tar.gz"
@@ -461,6 +435,61 @@ def create_bundle(
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
+
+        ephemeral_payload = None
+        if ephemeral_ledger is not None:
+            ephemeral_payload = build_ephemeral_forensic_payload(
+                ephemeral_ledger,
+                witness_key=ephemeral_witness_key,
+            )
+            ep_file = tmp_path / "ephemeral_refusal_chain.json"
+            ep_file.write_text(
+                json.dumps(ephemeral_payload, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            ep_arc_name = "attachments/ephemeral_refusal_chain.json"
+            used_names.add(ep_arc_name)
+            staged_artifacts.append((ep_file, "ephemeral_refusal_chain", ep_arc_name))
+
+        artifacts_manifest = [
+            build_artifact_entry(src_path, role, arc_name)
+            for src_path, role, arc_name in staged_artifacts
+        ]
+
+        telemetry_snapshot = extract_telemetry_summary(report_data)
+        if ephemeral_payload is not None:
+            telemetry_snapshot["ephemeral_refusal_chain"] = ephemeral_payload.get("summary")
+
+        manifest = {
+            "bundle_metadata": {
+                "schema_version": SCHEMA_VERSION,
+                "bundle_id": bundle_id,
+                "case_id": case_id,
+                "notes": notes,
+                "created_at_utc": created_utc,
+                "generator": "HAI LAB Forensic Bundle Tool",
+                "execution_scope": "Linux x86_64 user-space | Phase 5 Scope B | LAB / DEMO",
+            },
+            "telemetry_snapshot": telemetry_snapshot,
+            "artifacts": artifacts_manifest,
+            "signature_info": {
+                "algorithm": "Ed25519",
+                "signed_target": "manifest.json",
+                "domain_binding": "HAILAB_FORENSIC_BUNDLE_V1",
+                "public_key_sha256": pub_fingerprint,
+            },
+        }
+
+        canonical_manifest = canonicalize_manifest(manifest)
+        signing_payload = build_signing_payload(manifest)
+        signature_b64 = base64.b64encode(priv_key.sign(signing_payload)).decode("ascii")
+        sig_payload = {
+            "algorithm": "Ed25519",
+            "domain_binding": "HAILAB_FORENSIC_BUNDLE_V1",
+            "public_key_sha256": pub_fingerprint,
+            "signature_base64": signature_b64,
+        }
+
         m_file = tmp_path / "manifest.json"
         s_file = tmp_path / "manifest.sig.json"
         k_file = tmp_path / "signer_public.pem"
