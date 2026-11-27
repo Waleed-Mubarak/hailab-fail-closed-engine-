@@ -252,6 +252,25 @@ class TestRefusalChainAdversarial(unittest.TestCase):
             self.assertEqual(loaded["summary"]["jsonl_sha256"], payload["summary"]["jsonl_sha256"])
             self.assertEqual(loaded["records"], payload["records"])
 
+    def test_forensic_payload_rejects_wrong_witness_key_and_preserves_jsonl(self) -> None:
+        lease = EphemeralSecretLease(
+            b"wrong-key-check-secret",
+            lease_id="lease-key-check-01",
+            lease_ttl_ms=500.0,
+            max_jitter_ms=500.0,
+            proof_ledger=self.ledger,
+        )
+        lease.burn(DestructionReason.EXPLICIT_BURN)
+
+        wrong_key = os.urandom(32)
+        payload = build_ephemeral_forensic_payload(
+            self.ledger,
+            witness_key=wrong_key,
+        )
+        self.assertFalse(payload["summary"]["verified"])
+        self.assertTrue(payload["jsonl"].endswith("\n"))
+        self.assertEqual(len(payload["records"]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
