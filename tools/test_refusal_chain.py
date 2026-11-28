@@ -283,6 +283,11 @@ class TestRefusalChainAdversarial(unittest.TestCase):
         )
         lease.burn(DestructionReason.EXPLICIT_BURN)
 
+        ephemeral_summary = build_ephemeral_forensic_payload(
+            self.ledger,
+            witness_key=self.witness_key,
+        )["summary"]
+
         with tempfile.TemporaryDirectory() as tmp_dir:
             base = Path(tmp_dir)
             report_path = base / "companion_report.json"
@@ -300,6 +305,7 @@ class TestRefusalChainAdversarial(unittest.TestCase):
                 },
                 "diff_from_previous": {},
                 "blackbox_verification": {"verified": True, "returncode": 0},
+                "ephemeral_refusal_chain": ephemeral_summary,
             }
             report_path.write_text(json.dumps(report_payload), encoding="utf-8")
             blackbox_path.write_bytes(b"encrypted-blackbox-payload")
