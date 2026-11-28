@@ -25,6 +25,61 @@
       padding: 16px 20px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px;
     }
     .title { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }
+    .mini-pulse {
+      margin-top: 10px;
+      background: #070c16;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      display: grid;
+      gap: 4px;
+    }
+    .mini-pulse-top {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 11px;
+    }
+    .mini-pulse-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--ok);
+      display: inline-block;
+    }
+    .pulse-state-pill {
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      border: 1px solid rgba(22,163,74,0.45);
+      background: rgba(22,163,74,0.14);
+      color: #4ade80;
+    }
+    .pulse-state-pill.crit {
+      border-color: rgba(239,68,68,0.55);
+      background: rgba(239,68,68,0.16);
+      color: #f87171;
+    }
+    .pulse-state-pill.warn {
+      border-color: rgba(234,179,8,0.55);
+      background: rgba(234,179,8,0.16);
+      color: #facc15;
+    }
+    .mini-pulse-snippet {
+      font-size: 11px;
+      color: #93c5fd;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .badges { display: flex; flex-wrap: wrap; gap: 8px; }
     .badge {
       padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
@@ -81,9 +136,21 @@
 <body>
   <div class="container">
     <div class="header">
-      <div>
+      <div style="flex: 1 1 520px; min-width: 260px;">
         <div class="title">HAI LAB // FAIL-CLOSED ENGINE</div>
         <div style="font-size: 12px; color: var(--muted); margin-top: 4px;" id="pulse-line">Initializing kernel telemetry...</div>
+
+        <div class="mini-pulse" id="mini-pulse-card">
+          <div class="mini-pulse-top">
+            <div class="mini-pulse-left">
+              <span class="pulse-dot" id="mini-pulse-dot"></span>
+              <span class="pulse-state-pill" id="mini-pulse-state">SECURE_ACTIVE</span>
+              <span id="mini-pulse-count" style="color: var(--muted);">PULSES: 0</span>
+            </div>
+            <span id="mini-pulse-pid" style="color: var(--muted);">PID: --</span>
+          </div>
+          <div class="mini-pulse-snippet" id="mini-pulse-snippet">Awaiting /stream-code-pulse...</div>
+        </div>
       </div>
       <div class="badges">
         <span class="badge" id="mode-badge">MODE: LAB / DEMO</span>
@@ -189,6 +256,46 @@
 
   <script>
     let lastHexValue = "";
+    let pulseCount = 0;
+
+    function applySystemBadge(statusText, isIsolated, isPurged) {
+      const sysBadge = document.getElementById("system-badge");
+      if (!statusText) return;
+      if (isIsolated || statusText === "ISOLATED_LOCKDOWN") {
+        sysBadge.textContent = `STATUS: ${statusText}`;
+        sysBadge.className = "badge crit";
+      } else if (isPurged || statusText === "MEMORY_PURGED") {
+        sysBadge.textContent = "STATUS: MEMORY PURGED (UNPINNED)";
+        sysBadge.className = "badge warn";
+      } else {
+        sysBadge.textContent = `STATUS: ${statusText}`;
+        sysBadge.className = "badge ok";
+      }
+    }
+
+    function updateMiniPulse(stateText, snippetText, pidValue, tone) {
+      const dot = document.getElementById("mini-pulse-dot");
+      const pill = document.getElementById("mini-pulse-state");
+      const countEl = document.getElementById("mini-pulse-count");
+      const pidEl = document.getElementById("mini-pulse-pid");
+      const snipEl = document.getElementById("mini-pulse-snippet");
+
+      const resolvedState = stateText || "SECURE_ACTIVE";
+      pill.textContent = resolvedState;
+      pill.className = "pulse-state-pill" + (tone ? " " + tone : "");
+      dot.style.background =
+        tone === "crit" ? "var(--crit)" :
+        tone === "warn" ? "var(--warn)" :
+        "var(--ok)";
+
+      countEl.textContent = `PULSES: ${pulseCount}`;
+      if (pidValue !== undefined && pidValue !== null) {
+        pidEl.textContent = `PID: ${pidValue}`;
+      }
+      if (snippetText !== undefined && snippetText !== null) {
+        snipEl.textContent = snippetText;
+      }
+    }
 
     function setHexDump(nextHex) {
       if (!nextHex || nextHex === lastHexValue) return;
@@ -242,12 +349,13 @@
         const res = await fetch("/api/bundles");
         const payload = await res.json();
         const list = Array.isArray(payload.bundles) ? payload.bundles : [];
-        sel.innerHTML = "";
+        const nextOptions = [];
         if (!list.length) {
           const opt = document.createElement("option");
           opt.value = "";
           opt.textContent = "No .tar.gz bundles in reports/bundles";
-          sel.appendChild(opt);
+          nextOptions.push(opt);
+          sel.replaceChildren(...nextOptions);
           metaEl.textContent = "Create a bundle via tools/forensic_bundle.py create, then click RELOAD LIST.";
           return;
         }
@@ -255,8 +363,9 @@
           const opt = document.createElement("option");
           opt.value = item.filename;
           opt.textContent = `${item.filename} (${item.size_bytes} B)`;
-          sel.appendChild(opt);
+          nextOptions.push(opt);
         });
+        sel.replaceChildren(...nextOptions);
         if (prevVal && list.some((x) => x.filename === prevVal)) {
           sel.value = prevVal;
         }
@@ -346,18 +455,7 @@
         const metText = await metRes.text();
 
         applyLiveMlockUI(Boolean(st.mlocked), sum.mlock_status);
-
-        const sysBadge = document.getElementById("system-badge");
-        if (sum.is_isolated) {
-          sysBadge.textContent = `STATUS: ${st.status}`;
-          sysBadge.className = "badge crit";
-        } else if (sum.is_purged) {
-          sysBadge.textContent = "STATUS: MEMORY PURGED (UNPINNED)";
-          sysBadge.className = "badge warn";
-        } else {
-          sysBadge.textContent = `STATUS: ${st.status}`;
-          sysBadge.className = "badge ok";
-        }
+        applySystemBadge(st.status, Boolean(sum.is_isolated), Boolean(sum.is_purged));
 
         document.getElementById("mode-badge").textContent = `MODE: ${sum.mode}`;
         document.getElementById("prctl-badge").textContent = `PRCTL: ${sum.prctl_dumpable}`;
@@ -414,13 +512,18 @@
     pulseSource.onmessage = (ev) => {
       try {
         const d = JSON.parse(ev.data);
+        pulseCount += 1;
+        const pulseState = d.state || "SECURE_ACTIVE";
         document.getElementById("pulse-line").textContent =
-          `[PID ${d.pid}] [${d.state}] ${d.live_code_snippet}`;
+          `[PID ${d.pid}] [${pulseState}] ${d.live_code_snippet}`;
+        const tone = pulseState === "ISOLATED_LOCKDOWN" ? "crit" : "";
+        updateMiniPulse(pulseState, d.live_code_snippet, d.pid, tone);
         setHexDump(d.memory_hex);
       } catch (_) {}
     };
     pulseSource.onerror = () => {
       document.getElementById("pulse-line").textContent = "Pulse stream reconnecting...";
+      updateMiniPulse("RECONNECTING", undefined, undefined, "warn");
     };
 
     const statusSource = new EventSource("/stream-status");
@@ -428,6 +531,9 @@
       try {
         const d = JSON.parse(ev.data);
         applyLiveMlockUI(Boolean(d.mlocked), d.memory_buffer);
+        if (d.status) {
+          applySystemBadge(d.status, d.status === "ISOLATED_LOCKDOWN", d.status === "MEMORY_PURGED");
+        }
         setHexDump(d.memory_hex);
       } catch (_) {}
     };
