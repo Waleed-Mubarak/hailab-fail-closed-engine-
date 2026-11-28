@@ -24,6 +24,7 @@ for path in (current_dir, src_dir):
     if path not in sys.path:
         sys.path.insert(0, path)
 
+from frozen_worker_supervisor import FrozenWorkerSupervisor
 from tools.forensic_bundle import verify_bundle
 from tools.forensic_companion import build_engine_report, save_report
 
@@ -314,6 +315,16 @@ class RealPanicHandler:
 
 
 panic_handler = RealPanicHandler()
+worker_supervisor: Optional[FrozenWorkerSupervisor] = None
+supervisor_last_pids: dict[str, Optional[int]] = {"worker_pid": None, "watchdog_pid": None}
+
+
+def _get_or_create_supervisor() -> FrozenWorkerSupervisor:
+    global worker_supervisor
+    with state_lock:
+        if worker_supervisor is None:
+            worker_supervisor = FrozenWorkerSupervisor(ctx_method="spawn")
+        return worker_supervisor
 
 
 def _get_runtime_snapshot() -> dict:
@@ -544,6 +555,82 @@ def run_panic():
         "============================== ZERO BLAST RADIUS ====================================="
     )
     return jsonify({"status": "SUCCESS", "result": output})
+
+
+@app.route("/supervisor/start", methods=["POST"])
+def supervisor_start():
+    try:
+        sup = _get_or_create_supervisor()
+        with state_lock:
+            pids = sup.start()
+            supervisor_last_pids.update(pids)
+        audit_logger.log_event(
+            "SUPERVISOR_START",
+            f"Started supervised processes: worker_pid={pids.get('worker_pid')}, watchdog_pid={pids.get('watchdog_pid')}",
+            severity="INFO",
+        )
+        return jsonify({"ok": True, "pids": pids}), 200
+    except Exception as exc:
+        audit_logger.log_event(
+            "SUPERVISOR_START_FAILED",
+            f"Failed to start supervisor: {exc}",
+            severity="ERROR",
+        )
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@app.route("/supervisor/status", methods=["GET"])
+def supervisor_status():
+    with state_lock:
+        sup = worker_supervisor
+        last_pids = dict(supervisor_last_pids)
+
+    if sup is None:
+        return jsonify({
+            "initialized": False,
+            "worker_alive": False,
+            "watchdog_alive": False,
+            "zeroize_signaled": False,
+            "stop_signaled": False,
+            "pids": last_pids,
+        }), 200
+
+    w_proc = sup.worker_proc
+    wd_proc = sup.watchdog_proc
+    return jsonify({
+        "initialized": True,
+        "worker_alive": bool(w_proc and w_proc.is_alive()),
+        "watchdog_alive": bool(wd_proc and wd_proc.is_alive()),
+        "zeroize_signaled": bool(sup.zeroize_event.is_set()),
+        "stop_signaled": bool(sup.stop_event.is_set()),
+        "pids": {
+            "worker_pid": w_proc.pid if w_proc else last_pids.get("worker_pid"),
+            "watchdog_pid": wd_proc.pid if wd_proc else last_pids.get("watchdog_pid"),
+        },
+    }), 200
+
+
+@app.route("/supervisor/terminate", methods=["POST"])
+def supervisor_terminate():
+    payload = request.get_json(silent=True) or {}
+    grace_timeout = float(payload.get("grace_timeout", 0.5))
+    try:
+        sup = _get_or_create_supervisor()
+        with state_lock:
+            result = sup.fail_closed_terminate(grace_timeout=grace_timeout)
+        audit_logger.log_event(
+            "SUPERVISOR_TERMINATE",
+            f"Fail-closed terminate result: {result}",
+            severity="CRITICAL" if result.get("worker_sigkilled") or result.get("watchdog_sigkilled") else "INFO",
+        )
+        return jsonify({"ok": True, "result": result}), 200
+    except Exception as exc:
+        audit_logger.log_event(
+            "SUPERVISOR_TERMINATE_FAILED",
+            f"Failed to terminate supervisor: {exc}",
+            severity="ERROR",
+        )
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 COMPANION_REPORT_PATH = Path(current_dir) / "reports" / "companion_report.json"
