@@ -102,16 +102,17 @@
       background: #05080d; border: 1px solid var(--border); border-radius: 8px;
       padding: 12px; font-size: 12px; color: #93c5fd; word-break: break-all; line-height: 1.5;
     }
-    .actions { display: flex; flex-wrap: wrap; gap: 10px; }
-    button, select {
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    button, select, input.btn-sm {
       background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
       padding: 10px 14px; border-radius: 8px; font-size: 12px; font-weight: 700;
       transition: opacity 0.15s ease, border-color 0.15s ease;
     }
     button { cursor: pointer; }
     select { min-width: 240px; max-width: 100%; }
-    button.btn-sm, select.btn-sm { padding: 6px 10px; font-size: 11px; }
-    button:hover:not(:disabled), select:hover:not(:disabled) { border-color: var(--accent); }
+    button.btn-sm, select.btn-sm, input.btn-sm { padding: 6px 10px; font-size: 11px; }
+    input.btn-sm { width: 72px; }
+    button:hover:not(:disabled), select:hover:not(:disabled), input.btn-sm:hover:not(:disabled) { border-color: var(--accent); }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     button.warn { border-color: rgba(234,179,8,0.5); color: #facc15; }
     button.crit { border-color: rgba(239,68,68,0.6); color: #f87171; }
@@ -188,6 +189,25 @@
         <button class="ctrl-btn crit" onclick="runAction('/run/panic')">EMERGENCY PANIC (FAIL-CLOSED)</button>
         <button class="ctrl-btn" onclick="refreshAll()">REFRESH TELEMETRY</button>
       </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Frozen Worker Supervisor (/supervisor/*)</h3>
+        <div class="head-actions">
+          <button type="button" class="btn-sm ok-btn sup-btn" onclick="supervisorStart()">START SUPERVISOR</button>
+          <button type="button" class="btn-sm sup-btn" onclick="supervisorRefreshStatus()">REFRESH STATUS</button>
+          <label style="font-size: 11px; color: var(--muted);">
+            Grace (s):
+            <input id="supervisor-grace-timeout" class="btn-sm" type="number" step="0.1" min="0.1" value="0.5" />
+          </label>
+          <button type="button" class="btn-sm crit sup-btn" onclick="supervisorTerminate()">FAIL-CLOSED TERMINATE</button>
+        </div>
+      </div>
+      <div style="font-size: 11px; color: var(--muted); margin-bottom: 10px;" id="supervisor-meta">
+        Worker PID: -- | Watchdog PID: -- | Worker Alive: -- | Watchdog Alive: --
+      </div>
+      <pre class="console" id="supervisor-box">Ready — click "REFRESH STATUS" or "START SUPERVISOR".</pre>
     </div>
 
     <div class="grid-2">
@@ -307,6 +327,73 @@
       document.querySelectorAll(".ctrl-btn").forEach((btn) => {
         btn.disabled = disabled;
       });
+    }
+
+    function setSupervisorDisabled(disabled) {
+      document.querySelectorAll(".sup-btn").forEach((btn) => {
+        btn.disabled = disabled;
+      });
+    }
+
+    function updateSupervisorMeta(data) {
+      const metaEl = document.getElementById("supervisor-meta");
+      if (!data || typeof data !== "object") return;
+      const pids = data.pids || {};
+      const res = data.result || {};
+      const wPid = pids.worker_pid ?? "--";
+      const wdPid = pids.watchdog_pid ?? "--";
+      const wAlive = data.worker_alive !== undefined ? data.worker_alive : (res.worker_alive ?? "--");
+      const wdAlive = data.watchdog_alive !== undefined ? data.watchdog_alive : (res.watchdog_alive ?? "--");
+      metaEl.textContent = `Worker PID: ${wPid} | Watchdog PID: ${wdPid} | Worker Alive: ${wAlive} | Watchdog Alive: ${wdAlive}`;
+    }
+
+    async function supervisorStart() {
+      const box = document.getElementById("supervisor-box");
+      setSupervisorDisabled(true);
+      try {
+        const res = await fetch("/supervisor/start", { method: "POST" });
+        const data = await res.json();
+        box.textContent = JSON.stringify(data, null, 2);
+        updateSupervisorMeta(data);
+      } catch (e) {
+        box.textContent = JSON.stringify({ ok: false, error: String(e) }, null, 2);
+      } finally {
+        setSupervisorDisabled(false);
+      }
+    }
+
+    async function supervisorRefreshStatus() {
+      const box = document.getElementById("supervisor-box");
+      try {
+        const res = await fetch("/supervisor/status");
+        const data = await res.json();
+        box.textContent = JSON.stringify(data, null, 2);
+        updateSupervisorMeta(data);
+      } catch (e) {
+        box.textContent = JSON.stringify({ ok: false, error: String(e) }, null, 2);
+      }
+    }
+
+    async function supervisorTerminate() {
+      const box = document.getElementById("supervisor-box");
+      const inputEl = document.getElementById("supervisor-grace-timeout");
+      const parsed = parseFloat(inputEl && inputEl.value ? inputEl.value : "0.5");
+      const graceTimeout = Number.isFinite(parsed) && parsed > 0 ? parsed : 0.5;
+      setSupervisorDisabled(true);
+      try {
+        const res = await fetch("/supervisor/terminate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ grace_timeout: graceTimeout }),
+        });
+        const data = await res.json();
+        box.textContent = JSON.stringify(data, null, 2);
+        updateSupervisorMeta(data);
+      } catch (e) {
+        box.textContent = JSON.stringify({ ok: false, error: String(e) }, null, 2);
+      } finally {
+        setSupervisorDisabled(false);
+      }
     }
 
     function setTimelineStep(id, label, stateClass) {
@@ -543,6 +630,7 @@
 
     refreshAll();
     loadBundlesList();
+    supervisorRefreshStatus();
     setInterval(refreshAll, 3000);
   </script>
 </body>
