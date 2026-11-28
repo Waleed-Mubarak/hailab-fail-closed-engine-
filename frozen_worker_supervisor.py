@@ -6,9 +6,22 @@ from pathlib import Path
 from typing import Callable, Optional
 
 
-def load_scope_b_engine(engine_path: Optional[Path] = None) -> tuple[Callable, Callable]:
+def _resolve_engine_path(engine_path: Optional[Path] = None) -> Path:
     base_dir = Path(__file__).resolve().parent
-    resolved_path = engine_path or (base_dir / "src" / "scope b" / "engine.py")
+    candidates = [
+        engine_path,
+        base_dir / "src" / "scope_b" / "engine.py",
+        base_dir / "src" / "scope b" / "engine.py",
+        base_dir / "src" / "engine.py",
+    ]
+    resolved = next((Path(p).resolve() for p in candidates if p is not None and Path(p).exists()), None)
+    if resolved is None:
+        raise FileNotFoundError(f"Unable to locate engine.py in candidates: {candidates}")
+    return resolved
+
+
+def load_scope_b_engine(engine_path: Optional[Path] = None) -> tuple[Callable, Callable]:
+    resolved_path = _resolve_engine_path(engine_path)
     spec = importlib.util.spec_from_file_location("hailab_scope_b_engine", resolved_path)
     if spec is None or spec.loader is None:
         raise ImportError(f"Unable to load engine module from {resolved_path}")
@@ -19,6 +32,16 @@ def load_scope_b_engine(engine_path: Optional[Path] = None) -> tuple[Callable, C
     return module.worker_process_target, module.watchdog_process_target
 
 
+def _worker_entry(engine_path_str: str, zeroize_event, stop_event) -> None:
+    worker_target, _ = load_scope_b_engine(Path(engine_path_str))
+    worker_target(zeroize_event, stop_event)
+
+
+def _watchdog_entry(engine_path_str: str, worker_pid: int, zeroize_event, stop_event) -> None:
+    _, watchdog_target = load_scope_b_engine(Path(engine_path_str))
+    watchdog_target(worker_pid, zeroize_event, stop_event)
+
+
 class FrozenWorkerSupervisor:
     def __init__(
         self,
@@ -27,45 +50,43 @@ class FrozenWorkerSupervisor:
         watchdog_target: Optional[Callable] = None,
         engine_path: Optional[Path] = None,
     ) -> None:
-        if worker_target is None or watchdog_target is None:
-            loaded_worker, loaded_watchdog = load_scope_b_engine(engine_path)
-            worker_target = worker_target or loaded_worker
-            watchdog_target = watchdog_target or loaded_watchdog
+        self.engine_path = _resolve_engine_path(engine_path)
+        self._custom_worker_target = worker_target
+        self._custom_watchdog_target = watchdog_target
 
-        self.worker_target = worker_target
-        self.watchdog_target = watchdog_target
+        # التحقق المسبق من وجود الأهداف دون تمرير دوال غير قابلة للـ pickle تحت spawn
+        if self._custom_worker_target is None or self._custom_watchdog_target is None:
+            loaded_worker, loaded_watchdog = load_scope_b_engine(self.engine_path)
+            if self._custom_worker_target is None:
+                self._custom_worker_target = loaded_worker
+            if self._custom_watchdog_target is None:
+                self._custom_watchdog_target = loaded_watchdog
+
         self.ctx = mp.get_context(ctx_method)
         self.zeroize_event = self.ctx.Event()
         self.stop_event = self.ctx.Event()
         self.worker_proc: Optional[mp.Process] = None
         self.watchdog_proc: Optional[mp.Process] = None
 
-    def _spawn_worker(self) -> None:
-        self.worker_proc = self.ctx.Process(
-            target=self.worker_target,
-            args=(self.zeroize_event, self.stop_event),
-            name="frozen_worker",
-        )
-        self.worker_proc.start()
-
-    def _spawn_watchdog(self) -> None:
-        worker_pid = self.worker_proc.pid if self.worker_proc and self.worker_proc.pid else -1
-        self.watchdog_proc = self.ctx.Process(
-            target=self.watchdog_target,
-            args=(worker_pid, self.zeroize_event, self.stop_event),
-            name="frozen_watchdog",
-        )
-        self.watchdog_proc.start()
-
     def start(self) -> dict[str, Optional[int]]:
-        self.zeroize_event.clear()
-        self.stop_event.clear()
-
         if self.worker_proc is None or not self.worker_proc.is_alive():
-            self._spawn_worker()
+            self.zeroize_event.clear()
+            self.stop_event.clear()
+            self.worker_proc = self.ctx.Process(
+                target=_worker_entry,
+                args=(str(self.engine_path), self.zeroize_event, self.stop_event),
+                name="frozen_worker",
+            )
+            self.worker_proc.start()
 
         if self.watchdog_proc is None or not self.watchdog_proc.is_alive():
-            self._spawn_watchdog()
+            worker_pid = self.worker_proc.pid if self.worker_proc else -1
+            self.watchdog_proc = self.ctx.Process(
+                target=_watchdog_entry,
+                args=(str(self.engine_path), worker_pid, self.zeroize_event, self.stop_event),
+                name="frozen_watchdog",
+            )
+            self.watchdog_proc.start()
 
         return {
             "worker_pid": self.worker_proc.pid if self.worker_proc else None,
@@ -100,7 +121,6 @@ class FrozenWorkerSupervisor:
             self.watchdog_proc, grace_timeout
         )
 
-        # لا نعتبر التصفير مؤكداً إذا أُجبر العامل على SIGKILL قبل إتمام خروجه الطوعي
         zeroize_confirmed = not worker_sigkilled and not worker_still_alive
 
         return {
@@ -111,4 +131,3 @@ class FrozenWorkerSupervisor:
             "worker_alive": worker_still_alive,
             "watchdog_alive": watchdog_still_alive,
         }
-
