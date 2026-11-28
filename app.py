@@ -14,6 +14,7 @@ import signal
 import sys
 import threading
 import time
+from typing import Optional
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from flask import Flask, Response, jsonify, render_template, request
 
