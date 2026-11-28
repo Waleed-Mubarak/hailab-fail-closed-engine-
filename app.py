@@ -615,14 +615,34 @@ def supervisor_status():
 def supervisor_terminate():
     payload = request.get_json(silent=True) or {}
     grace_timeout = float(payload.get("grace_timeout", 0.5))
+    seal_box = bool(payload.get("seal_blackbox", True))
+    sync_isolation = bool(payload.get("sync_isolation", True))
+
     try:
+        if seal_box:
+            black_box.seal_and_record()
+
         sup = _get_or_create_supervisor()
         with state_lock:
             result = sup.fail_closed_terminate(grace_timeout=grace_timeout)
+
+        zeroize_confirmed = bool(result.get("zeroize_confirmed"))
+        any_sigkilled = bool(result.get("worker_sigkilled") or result.get("watchdog_sigkilled"))
+        both_stopped = not bool(result.get("worker_alive")) and not bool(result.get("watchdog_alive"))
+
+        if sync_isolation and both_stopped:
+            if zeroize_confirmed:
+                vault.zeroize()
+            with state_lock:
+                panic_handler.is_isolated = True
+
         audit_logger.log_event(
             "SUPERVISOR_TERMINATE",
-            f"Fail-closed terminate result: {result}",
-            severity="CRITICAL" if result.get("worker_sigkilled") or result.get("watchdog_sigkilled") else "INFO",
+            (
+                f"Fail-closed terminate result: {result} | "
+                f"sealed={seal_box}, synced_isolation={sync_isolation and both_stopped}"
+            ),
+            severity="CRITICAL" if (any_sigkilled or sync_isolation) else "INFO",
         )
         return jsonify({"ok": True, "result": result}), 200
     except Exception as exc:
